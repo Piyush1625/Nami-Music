@@ -16,6 +16,24 @@ String _formatDurationPadded(Duration d) {
   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 }
 
+String _formatTotalDurationHoursMins(Duration d) {
+  int hours = d.inHours;
+  int minutes = d.inMinutes % 60;
+  if (hours > 0) {
+    return '${hours}h ${minutes}min';
+  }
+  return '${minutes}min';
+}
+
+String _deterministicPathHash(String input) {
+  int hash = 0x811c9dc5;
+  for (int i = 0; i < input.length; i++) {
+    hash ^= input.codeUnitAt(i);
+    hash = (hash * 0x01000193) & 0xFFFFFFFF;
+  }
+  return hash.toRadixString(16).padLeft(8, '0');
+}
+
 Color _extractDominantColor(Uint8List? bytes, Color fallback) {
   if (bytes == null || bytes.length < 500) return fallback;
   try {
@@ -336,7 +354,7 @@ class _NamidaFastScrollerState extends State<NamidaFastScroller> {
                 right: 0,
                 top: 10,
                 height: trackHeight,
-                width: 28,
+                width: 18,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onVerticalDragStart: (d) {
@@ -349,11 +367,11 @@ class _NamidaFastScrollerState extends State<NamidaFastScroller> {
                   child: Stack(
                     children: [
                       Positioned(
-                        right: 3,
+                        right: 2,
                         top: thumbTop - 10,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 120),
-                          width: _isDragging ? 6.0 : 4.0,
+                          width: _isDragging ? 5.5 : 3.5,
                           height: thumbHeight,
                           decoration: BoxDecoration(
                             color: _isDragging ? accent : Colors.white.withOpacity(0.45),
@@ -367,7 +385,7 @@ class _NamidaFastScrollerState extends State<NamidaFastScroller> {
               ),
             if (_isDragging && widget.itemCount > 0)
               Positioned(
-                right: 36,
+                right: 26,
                 top: thumbTop.clamp(12.0, math.max(12.0, trackHeight - 36)),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -443,7 +461,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   double _playbackSpeed = 1.0;
   String _soundstagePreset = 'Off';
-  bool _eqEnabled = true;
+  bool _eqEnabled = false;
   double _preampGainDb = 0.0;
 
   bool _usbDacExclusive = true;
@@ -571,8 +589,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     try {
       await _androidEqualizer.setEnabled(_eqEnabled);
       await _androidLoudness.setEnabled(_preampGainDb > 0);
-      await _androidLoudness.setTargetGain(_preampGainDb / 10.0);
-      await _applyHardwareEqGains();
+      await _androidLoudness.setTargetGain(_preampGainDb);
+      if (_eqEnabled) {
+        await _applyHardwareEqGains();
+      }
     } catch (_) {}
   }
 
@@ -580,6 +600,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     if (!Platform.isAndroid) return;
     try {
       await _androidEqualizer.setEnabled(_eqEnabled);
+      if (!_eqEnabled) return;
       final params = await _androidEqualizer.parameters;
       final bands = params.bands;
       final values = _eqBands.values.toList();
@@ -634,11 +655,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   .toList() ??
               [];
           for (var s in cachedSongs) {
-            if (s.thumbPath != null) {
-              final tf = File(s.thumbPath!);
-              if (await tf.exists()) {
-                s.albumArt = await tf.readAsBytes();
-              }
+            final expectedThumb = '/storage/emulated/0/Music/.nami_thumbs/${_deterministicPathHash(s.path)}.jpg';
+            final tf = File(s.thumbPath ?? expectedThumb);
+            if (await tf.exists()) {
+              s.thumbPath = tf.path;
+              s.albumArt = await tf.readAsBytes();
             }
           }
           if (cachedSongs.isNotEmpty) {
@@ -1204,7 +1225,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       setState(() {});
                       try {
                         await _androidLoudness.setEnabled(v > 0);
-                        await _androidLoudness.setTargetGain(v / 10.0);
+                        await _androidLoudness.setTargetGain(v);
                       } catch (_) {}
                     },
                   ),
@@ -1319,7 +1340,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                           if (await imgFile.exists()) {
                             customArt = await imgFile.readAsBytes();
                             final thumbDir = await _ensureThumbDir();
-                            final thumbFile = File('${thumbDir.path}/${song.path.hashCode.abs()}.jpg');
+                            final thumbFile = File('${thumbDir.path}/${_deterministicPathHash(song.path)}.jpg');
                             await thumbFile.writeAsBytes(customArt);
                             song.thumbPath = thumbFile.path;
                           }
@@ -1736,160 +1757,353 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     );
   }
 
+  // SS5 (80998.png Exact Namida Queue Layout + Drag-to-Reorder)
   void _showQueueBottomSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setQueueState) => DraggableScrollableSheet(
-          initialChildSize: 0.68,
-          minChildSize: 0.4,
-          maxChildSize: 0.94,
-          builder: (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFF0C0C12),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
+        builder: (context, setQueueState) {
+          final activeList = _playNextQueue.isNotEmpty ? _playNextQueue : _filteredSongs;
+          final totalDur = activeList.fold<Duration>(Duration.zero, (sum, item) => sum + item.duration);
+          final activeIndex = _currentSong != null ? (_songs.indexOf(_currentSong!) + 1) : 1;
+          final accent = Theme.of(context).colorScheme.primary;
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.78,
+            minChildSize: 0.45,
+            maxChildSize: 0.96,
+            builder: (context, scrollController) => Column(
               children: [
-                Center(
-                  child: Container(
-                    width: 38,
-                    height: 4,
-                    margin: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Queue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                          Text('${_playNextQueue.length + 1}/${_songs.length} • Drag handles to reorder', style: const TextStyle(fontSize: 11, color: Colors.white54)),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          if (_playNextQueue.isNotEmpty)
-                            IconButton(
-                              tooltip: 'Save Queue as Playlist',
-                              icon: const Icon(Icons.playlist_add_rounded, size: 20, color: Colors.white70),
-                              onPressed: () {
-                                setState(() {
-                                  _customPlaylists.add(CustomPlaylist(
-                                    name: 'Queue Mix ${_customPlaylists.length + 1}',
-                                    tracks: List.from(_playNextQueue),
-                                  ));
-                                });
-                                _saveStateCache();
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Queue saved as playlist!')));
-                              },
-                            ),
-                          if (_playNextQueue.isNotEmpty)
-                            IconButton(
-                              tooltip: 'Clear Up Next',
-                              icon: const Icon(Icons.clear_all_rounded, size: 20, color: Colors.redAccent),
-                              onPressed: () {
-                                setQueueState(() => _playNextQueue.clear());
-                                setState(() {});
-                              },
-                            ),
-                          IconButton(
-                            tooltip: 'Shuffle Queue',
-                            icon: const Icon(Icons.shuffle_rounded, size: 18, color: Colors.white70),
-                            onPressed: () {
-                              setQueueState(() => _playNextQueue.shuffle());
-                              setState(() {});
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(color: Colors.white10),
+                // 80998.png Top Currently Playing Floating Bar
                 if (_currentSong != null)
                   Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(12)),
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF101016).withOpacity(0.96),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.white10),
+                    ),
                     child: Row(
                       children: [
-                        _buildCoverArt(_currentSong!, 44, 8),
+                        _buildCoverArt(_currentSong!, 46, 10),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Theme.of(context).colorScheme.primary)),
-                              Text(_currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                              Text(_currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.white)),
+                              const SizedBox(height: 2),
+                              Text(_currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
                             ],
                           ),
                         ),
-                        const Icon(Icons.graphic_eq_rounded, color: Colors.white70, size: 18),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: _playNextQueue.isEmpty
-                      ? ListView.builder(
-                          controller: scrollController,
-                          itemCount: _filteredSongs.length,
-                          itemBuilder: (ctx, idx) => _buildNamidaTrackTile(_filteredSongs[idx]),
-                        )
-                      : ReorderableListView.builder(
-                          scrollController: scrollController,
-                          itemCount: _playNextQueue.length,
-                          onReorder: (oldIndex, newIndex) {
-                            setQueueState(() {
-                              if (newIndex > oldIndex) newIndex -= 1;
-                              final item = _playNextQueue.removeAt(oldIndex);
-                              _playNextQueue.insert(newIndex, item);
-                            });
-                            setState(() {});
-                          },
-                          itemBuilder: (ctx, idx) {
-                            final qTrack = _playNextQueue[idx];
-                            return ListTile(
-                              key: ValueKey('q_${qTrack.path}_$idx'),
-                              leading: _buildCoverArt(qTrack, 42, 6),
-                              title: Text(qTrack.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                              subtitle: Text('${qTrack.artist} • ${qTrack.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.redAccent, size: 18),
-                                    onPressed: () {
-                                      setQueueState(() => _playNextQueue.removeAt(idx));
-                                      setState(() {});
-                                    },
-                                  ),
-                                  ReorderableDragStartListener(
-                                    index: idx,
-                                    child: const Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: 4),
-                                      child: Icon(Icons.drag_handle_rounded, color: Colors.white54, size: 22),
-                                    ),
-                                  ),
-                                ],
+                        StreamBuilder<PlayerState>(
+                          stream: _audioPlayer.playerStateStream,
+                          builder: (ctx, snap) {
+                            final playing = snap.data?.playing ?? _audioPlayer.playing;
+                            return GestureDetector(
+                              onTap: _togglePlayPause,
+                              child: Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
+                                child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 22),
                               ),
-                              onTap: () {
-                                _playSong(qTrack);
-                                Navigator.pop(context);
-                              },
                             );
                           },
                         ),
+                      ],
+                    ),
+                  ),
+
+                // Main Queue Sheet Container
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF0B0B10),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                    ),
+                    child: Column(
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 38,
+                            height: 4,
+                            margin: const EdgeInsets.only(top: 10, bottom: 6),
+                            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                          ),
+                        ),
+                        // 80998.png Queue Header Row
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Queue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '$activeIndex/${_songs.length} • ${_formatTotalDurationHoursMins(totalDur)}',
+                                    style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  if (_playNextQueue.isNotEmpty)
+                                    IconButton(
+                                      tooltip: 'Clear Up Next',
+                                      icon: const Icon(Icons.cleaning_services_outlined, size: 18, color: Colors.white70),
+                                      onPressed: () {
+                                        setQueueState(() => _playNextQueue.clear());
+                                        setState(() {});
+                                      },
+                                    ),
+                                  Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
+                                    child: const Icon(Icons.queue_music_rounded, size: 16, color: Colors.white),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: Colors.white70),
+                                    onPressed: () => Navigator.pop(context),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(color: Colors.white10, height: 1),
+
+                        // Reorderable Queue List
+                        Expanded(
+                          child: _playNextQueue.isEmpty
+                              ? ListView.builder(
+                                  controller: scrollController,
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  itemCount: _filteredSongs.length,
+                                  itemBuilder: (ctx, idx) => _buildNamidaQueueRow(
+                                    song: _filteredSongs[idx],
+                                    index: idx,
+                                    isReorderable: false,
+                                    onTap: () {
+                                      _playSong(_filteredSongs[idx]);
+                                      Navigator.pop(context);
+                                    },
+                                    onToggleFav: () {
+                                      setQueueState(() => _filteredSongs[idx].isFavorite = !_filteredSongs[idx].isFavorite);
+                                      setState(() {});
+                                      _saveStateCache();
+                                    },
+                                  ),
+                                )
+                              : ReorderableListView.builder(
+                                  scrollController: scrollController,
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  itemCount: _playNextQueue.length,
+                                  onReorder: (oldIndex, newIndex) {
+                                    setQueueState(() {
+                                      if (newIndex > oldIndex) newIndex -= 1;
+                                      final item = _playNextQueue.removeAt(oldIndex);
+                                      _playNextQueue.insert(newIndex, item);
+                                    });
+                                    setState(() {});
+                                  },
+                                  itemBuilder: (ctx, idx) {
+                                    final qTrack = _playNextQueue[idx];
+                                    return Container(
+                                      key: ValueKey('q_${qTrack.path}_$idx'),
+                                      child: _buildNamidaQueueRow(
+                                        song: qTrack,
+                                        index: idx,
+                                        isReorderable: true,
+                                        onTap: () {
+                                          _playSong(qTrack);
+                                          Navigator.pop(context);
+                                        },
+                                        onToggleFav: () {
+                                          setQueueState(() => qTrack.isFavorite = !qTrack.isFavorite);
+                                          setState(() {});
+                                          _saveStateCache();
+                                        },
+                                        onRemove: () {
+                                          setQueueState(() => _playNextQueue.removeAt(idx));
+                                          setState(() {});
+                                        },
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+
+                        // 80998.png Bottom Action Bar with Shuffle Pill
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF09090D),
+                            border: Border(top: BorderSide(color: Colors.white10)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Save Queue as Playlist',
+                                    icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.white70, size: 22),
+                                    onPressed: () {
+                                      setState(() {
+                                        _customPlaylists.add(CustomPlaylist(
+                                          name: 'Queue Mix ${_customPlaylists.length + 1}',
+                                          tracks: List.from(activeList),
+                                        ));
+                                      });
+                                      _saveStateCache();
+                                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Queue saved as playlist!')));
+                                    },
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Locate Active Track',
+                                    icon: const Icon(Icons.my_location_rounded, color: Colors.white70, size: 20),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _locateActivePlayingTrack();
+                                    },
+                                  ),
+                                ],
+                              ),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent.withOpacity(0.18),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
+                                icon: const Icon(Icons.shuffle_rounded, size: 18),
+                                label: const Text('Shuffle', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                onPressed: () {
+                                  if (_playNextQueue.isNotEmpty) {
+                                    setQueueState(() => _playNextQueue.shuffle());
+                                    setState(() {});
+                                  } else {
+                                    Navigator.pop(context);
+                                    _shufflePlay();
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNamidaQueueRow({
+    required AudioTrack song,
+    required int index,
+    required bool isReorderable,
+    required VoidCallback onTap,
+    required VoidCallback onToggleFav,
+    VoidCallback? onRemove,
+  }) {
+    final isCurrent = _currentSong?.path == song.path;
+    final accent = Theme.of(context).colorScheme.primary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
+        child: Row(
+          children: [
+            _buildCoverArt(song, 46, 8),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    song.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: isCurrent ? accent : Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    song.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    '${song.album} • ${song.addedDate}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10.5, color: Colors.white38),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_formatDurationPadded(song.duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                const SizedBox(height: 3),
+                GestureDetector(
+                  onTap: onToggleFav,
+                  child: Icon(
+                    song.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: song.isFavorite ? accent : Colors.white38,
+                    size: 17,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 10),
+            if (isReorderable)
+              ReorderableDragStartListener(
+                index: index,
+                child: const Icon(Icons.reorder_rounded, color: Colors.white54, size: 20),
+              )
+            else
+              const Icon(Icons.reorder_rounded, color: Colors.white24, size: 20),
+            const SizedBox(width: 4),
+            if (onRemove != null)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 18),
+                onPressed: onRemove,
+              )
+            else
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 18),
+                onPressed: () => _showTrackOptionsMenu(song),
+              ),
+          ],
         ),
       ),
     );
@@ -2366,9 +2580,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         track.albumArt = _extractEmbeddedImageBytes(data, 0, data.length);
       }
 
-      if (track.albumArt != null && track.thumbPath == null) {
-        final tf = File('${thumbDir.path}/${track.path.hashCode.abs()}.jpg');
-        await tf.writeAsBytes(track.albumArt!);
+      if (track.albumArt != null) {
+        final tf = File('${thumbDir.path}/${_deterministicPathHash(track.path)}.jpg');
+        if (!await tf.exists()) {
+          await tf.writeAsBytes(track.albumArt!);
+        }
         track.thumbPath = tf.path;
       }
     } catch (_) {}
@@ -2625,7 +2841,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               itemCount: math.min(uniqueArtists.length, 15),
               itemBuilder: (ctx, idx) {
                 final aName = uniqueArtists[idx];
-                final aTracks = artistGroups[aName]!;
+                final aTracks = _songs.where((s) => s.artist == aName).toList();
                 final firstArt = aTracks.firstWhere((s) => s.albumArt != null, orElse: () => aTracks.first).albumArt;
                 return GestureDetector(
                   onTap: () => _showArtistDetailScreen(aName, aTracks),
@@ -2788,7 +3004,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     );
   }
 
-  // SS3 & SS4: Tracks Tab (Folder icon removed + Fast-Scroll Song Slider added)
+  // SS3 & SS4: Tracks Tab (Folder icon removed + Non-overlapping Fast-Scroll Song Slider)
   Widget _buildTracksPageBody() {
     if (!_hasPermission) {
       return Center(
@@ -2803,7 +3019,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       children: [
         Column(
           children: [
-            // SS3: Clean Utility Bar without the circled Folder button
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
               child: Row(
@@ -2831,7 +3046,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 ],
               ),
             ),
-            // SS4: Fast-Scroll Song Slider wrapping the Tracks ListView
             Expanded(
               child: NamidaFastScroller(
                 controller: _trackListScrollController,
@@ -2843,7 +3057,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 },
                 child: ListView.builder(
                   controller: _trackListScrollController,
-                  padding: const EdgeInsets.only(bottom: 95, right: 6),
+                  padding: const EdgeInsets.only(bottom: 95, right: 14),
                   itemCount: _filteredSongs.length,
                   itemBuilder: (context, index) => _buildNamidaTrackTile(_filteredSongs[index]),
                 ),
@@ -2852,7 +3066,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           ],
         ),
         Positioned(
-          right: 18,
+          right: 26,
           bottom: 92,
           child: FloatingActionButton.small(
             backgroundColor: Theme.of(context).colorScheme.primary,
@@ -2956,7 +3170,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             child: _artistGridMode
                 ? GridView.builder(
                     controller: _artistListScrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 6, 14, 95),
+                    padding: const EdgeInsets.fromLTRB(12, 6, 18, 95),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       childAspectRatio: 0.8,
@@ -2990,7 +3204,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   )
                 : ListView.builder(
                     controller: _artistListScrollController,
-                    padding: const EdgeInsets.fromLTRB(10, 4, 14, 95),
+                    padding: const EdgeInsets.fromLTRB(10, 4, 18, 95),
                     itemCount: uniqueArtists.length,
                     itemBuilder: (context, index) {
                       final aName = uniqueArtists[index];
@@ -3043,7 +3257,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           borderRadius: BorderRadius.circular(12),
           onTap: () => _playSong(song),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 2, 6),
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
             child: Row(
               children: [
                 _buildCoverArt(song, 48, 8),
@@ -3099,8 +3313,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     ),
                   ],
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
                   icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 19),
                   onPressed: () => _showTrackOptionsMenu(song),
                 ),
@@ -3113,6 +3330,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   Widget _buildReactiveMiniPlayer() {
+    final accent = Theme.of(context).colorScheme.primary;
     return ValueListenableBuilder<AudioTrack?>(
       valueListenable: _currentSongNotifier,
       builder: (context, activeSong, _) {
@@ -3131,9 +3349,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             height: 72,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF12121A).withOpacity(0.98),
+              color: _forceMiniColor ? accent.withOpacity(0.22) : const Color(0xFF12121A).withOpacity(0.98),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: _forceMiniColor ? accent.withOpacity(0.4) : Colors.white10),
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 16, spreadRadius: 2)],
             ),
             child: Row(
@@ -3169,10 +3387,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     ],
                   ),
                 ),
-                StreamBuilder<bool>(
-                  stream: _audioPlayer.playingStream,
+                StreamBuilder<PlayerState>(
+                  stream: _audioPlayer.playerStateStream,
                   builder: (ctx, snap) {
-                    final playing = snap.data ?? false;
+                    final playing = snap.data?.playing ?? _audioPlayer.playing;
                     return Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -3630,9 +3848,11 @@ class MainSettingsScreen extends StatefulWidget {
 class _MainSettingsScreenState extends State<MainSettingsScreen> {
   late bool _usbDac;
   late bool _gapless;
+  late bool _mediaNotif;
   late bool _pitchBlack;
   late bool _autoColor;
   late bool _ambientGlow;
+  late bool _forceMini;
   late bool _replayGain;
   double _hueValue = 0.0;
 
@@ -3653,9 +3873,11 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
     super.initState();
     _usbDac = widget.usbDacExclusive;
     _gapless = widget.gaplessPlayback;
+    _mediaNotif = widget.mediaNotificationEnabled;
     _pitchBlack = widget.usePitchBlack;
     _autoColor = widget.autoColoring;
     _ambientGlow = widget.ambientGlow;
+    _forceMini = widget.forceMiniColor;
     _replayGain = widget.replayGain;
   }
 
@@ -3748,6 +3970,16 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
+            title: const Text('Tint Mini-Player With Accent Color'),
+            value: _forceMini,
+            activeColor: themeColor,
+            onChanged: (v) {
+              setState(() => _forceMini = v);
+              widget.onForceMiniColorChanged(v);
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
             title: const Text('Use Pitch Black (AMOLED)'),
             value: _pitchBlack,
             activeColor: themeColor,
@@ -3775,6 +4007,16 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             onChanged: (v) {
               setState(() => _gapless = v);
               widget.onGaplessChanged(v);
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Media Session & Notification Controls'),
+            value: _mediaNotif,
+            activeColor: themeColor,
+            onChanged: (v) {
+              setState(() => _mediaNotif = v);
+              widget.onNotificationChanged(v);
             },
           ),
           SwitchListTile(
@@ -4083,7 +4325,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
               const SizedBox(height: 16),
 
-              // Waveform Seekbar + Transports
+              // Waveform Seekbar & Timestamps (Driven by positionStream)
               StreamBuilder<Duration>(
                 stream: widget.audioPlayer.positionStream,
                 builder: (context, posSnap) {
@@ -4126,35 +4368,45 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 8),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(_formatDurationPadded(pos), style: const TextStyle(color: Colors.white70, fontSize: 11.5)),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: widget.onPrevious),
-                                  const SizedBox(width: 14),
-                                  GestureDetector(
-                                    onTap: widget.onPlayPause,
-                                    child: Container(
-                                      width: 58,
-                                      height: 58,
-                                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
-                                      child: Icon(widget.audioPlayer.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32, color: Colors.white),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: widget.onNext),
-                                ],
-                              ),
                               Text(_formatDurationPadded(dur), style: const TextStyle(color: Colors.white70, fontSize: 11.5)),
                             ],
                           ),
                         ],
                       );
                     },
+                  );
+                },
+              ),
+
+              const SizedBox(height: 6),
+
+              // Independent Transport Controls Row (Driven by playerStateStream so Play/Pause never freezes)
+              StreamBuilder<PlayerState>(
+                stream: widget.audioPlayer.playerStateStream,
+                builder: (context, stateSnap) {
+                  final playing = stateSnap.data?.playing ?? widget.audioPlayer.playing;
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 30, color: Colors.white), onPressed: widget.onPrevious),
+                      const SizedBox(width: 22),
+                      GestureDetector(
+                        onTap: widget.onPlayPause,
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.09), shape: BoxShape.circle),
+                          child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 34, color: Colors.white),
+                        ),
+                      ),
+                      const SizedBox(width: 22),
+                      IconButton(icon: const Icon(Icons.skip_next_rounded, size: 30, color: Colors.white), onPressed: widget.onNext),
+                    ],
                   );
                 },
               ),
