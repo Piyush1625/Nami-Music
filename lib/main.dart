@@ -3048,6 +3048,32 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     track.isMetadataLoaded = true;
   }
 
+  Uint8List? _extractEmbeddedImageBytes(Uint8List data, int start, int end) {
+    for (int j = start; j < end - 8; j++) {
+      if (data[j] == 0xFF && data[j + 1] == 0xD8 && data[j + 2] == 0xFF) {
+        int imgEnd = end;
+        for (int k = j + 4; k < end - 1; k++) {
+          if (data[k] == 0xFF && data[k + 1] == 0xD9) {
+            imgEnd = k + 2;
+            if (imgEnd - j > 2048) break;
+          }
+        }
+        if (imgEnd - j > 1024) return data.sublist(j, imgEnd);
+      }
+      if (data[j] == 0x89 && data[j + 1] == 0x50 && data[j + 2] == 0x4E && data[j + 3] == 0x47) {
+        int imgEnd = end;
+        for (int k = j + 8; k < end - 4; k++) {
+          if (data[k] == 0x49 && data[k + 1] == 0x45 && data[k + 2] == 0x4E && data[k + 3] == 0x44) {
+            imgEnd = (k + 8 <= end) ? k + 8 : end;
+            break;
+          }
+        }
+        if (imgEnd - j > 1024) return data.sublist(j, imgEnd);
+      }
+    }
+    return null;
+  }
+
   Uint8List? _parseFlacPictureBlock(Uint8List picBlock) {
     if (picBlock.length < 32) return null;
     int mimeLen = (picBlock[4] << 24) | (picBlock[5] << 16) | (picBlock[6] << 8) | picBlock[7];
