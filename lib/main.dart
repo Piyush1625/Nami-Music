@@ -138,6 +138,7 @@ class AudioTrack {
   String rawLyrics;
   List<LyricLine> parsedLyrics;
   bool isMetadataLoaded;
+  bool isOnlineEnriched;
   bool isLyricsFetched;
   Duration duration;
   bool isFavorite;
@@ -165,6 +166,7 @@ class AudioTrack {
     this.rawLyrics = "",
     List<LyricLine>? parsedLyrics,
     this.isMetadataLoaded = false,
+    this.isOnlineEnriched = false,
     this.isLyricsFetched = false,
     this.duration = const Duration(minutes: 3, seconds: 30),
     this.isFavorite = false,
@@ -191,6 +193,7 @@ class AudioTrack {
         'sampleRate': sampleRateHz,
         'bitDepth': bitDepth,
         'isFavorite': isFavorite,
+        'isOnlineEnriched': isOnlineEnriched,
         'playCount': playCount,
         'addedDate': addedDate,
         'addedTimestampMs': addedTimestampMs,
@@ -210,6 +213,7 @@ class AudioTrack {
         sampleRateHz: j['sampleRate'] ?? 44100,
         bitDepth: j['bitDepth'] ?? 16,
         isFavorite: j['isFavorite'] ?? false,
+        isOnlineEnriched: j['isOnlineEnriched'] ?? false,
         playCount: j['playCount'] ?? 0,
         addedDate: j['addedDate'] ?? 'Sep 2026',
         addedTimestampMs: j['addedTimestampMs'] ?? 0,
@@ -481,6 +485,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   bool _ambientGlow = false;
   bool _preferEmbeddedLyrics = true;
   bool _syllableLyricsEnabled = true;
+  bool _autoFetchOnlineMetadata = true;
   bool _forceMiniColor = false;
   bool _replayGain = true;
   String _connectedDacName = "KEFINE";
@@ -634,7 +639,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     super.dispose();
   }
 
-  Future<File> get _cacheFile async => File('/storage/emulated/0/Music/.nami_cache_v2.json');
+  Future<File> get _cacheFile async => File('/storage/emulated/0/Music/.nami_cache_v3.json');
 
   Future<Directory> _ensureThumbDir() async {
     final dir = Directory('/storage/emulated/0/Music/.nami_thumbs');
@@ -658,6 +663,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           _userName = data['userName'] ?? 'Piyush';
           _userPhotoPath = data['userPhotoPath'];
           _splitMultiArtists = data['splitMultiArtists'] ?? true;
+          _autoFetchOnlineMetadata = data['autoFetchOnlineMetadata'] ?? true;
           if (data['artistSeparators'] != null) {
             _artistSeparators = List<String>.from(data['artistSeparators']);
           }
@@ -696,6 +702,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'userName': _userName,
         'userPhotoPath': _userPhotoPath,
         'splitMultiArtists': _splitMultiArtists,
+        'autoFetchOnlineMetadata': _autoFetchOnlineMetadata,
         'artistSeparators': _artistSeparators,
         'accentColor': NamiApp.of(context).accentColor.value,
         'cachedTracks': _songs.map((s) => s.toJson()).toList(),
@@ -828,6 +835,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     }
     if (mounted) setState(() {});
     _fetchLyricsOnline(song);
+    if ((song.albumArt == null || song.artist == 'Unknown Artist') && _autoFetchOnlineMetadata) {
+      _ensureThumbDir().then((dir) => _enrichTrackOnlineIfMissing(song, dir).then((_) {
+            if (mounted) setState(() {});
+            _saveStateCache();
+          }));
+    }
     try {
       await _audioPlayer.stop();
       await _audioPlayer.setFilePath(song.path);
@@ -1860,6 +1873,18 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.cloud_sync_rounded),
+                title: const Text('Fetch Cover & Metadata Online'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final dir = await _ensureThumbDir();
+                  song.isOnlineEnriched = false;
+                  await _enrichTrackOnlineIfMissing(song, dir, force: true);
+                  if (mounted) setState(() {});
+                  _saveStateCache();
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.lyrics_outlined),
                 title: const Text('Lyrics Metadata & Editor'),
                 onTap: () {
@@ -1880,7 +1905,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 title: const Text('Go to Artist'),
                 onTap: () {
                   Navigator.pop(context);
-                  _showArtistDetailScreen(song.artist, _songs.where((s) => s.artist == song.artist).toList());
+                  _buildArtistGroupsMap();
+                  final primary = _splitMultiArtists
+                      ? song.artist.split(RegExp(_artistSeparators.map(RegExp.escape).join('|'), caseSensitive: false)).first.trim()
+                      : song.artist;
+                  final tracks = artistGroups[primary] ?? _songs.where((s) => s.artist.toLowerCase().contains(primary.toLowerCase())).toList();
+                  _showArtistDetailScreen(primary.isNotEmpty ? primary : song.artist, tracks);
                 },
               ),
               ListTile(
@@ -2366,6 +2396,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           ambientGlow: _ambientGlow,
           syllableLyricsEnabled: _syllableLyricsEnabled,
           preferEmbeddedLyrics: _preferEmbeddedLyrics,
+          autoFetchOnlineMetadata: _autoFetchOnlineMetadata,
           splitMultiArtists: _splitMultiArtists,
           artistSeparators: _artistSeparators,
           forceMiniColor: _forceMiniColor,
@@ -2386,6 +2417,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           onAmbientGlowChanged: (v) => setState(() => _ambientGlow = v),
           onSyllableLyricsChanged: (v) => setState(() => _syllableLyricsEnabled = v),
           onPreferEmbeddedChanged: (v) => setState(() => _preferEmbeddedLyrics = v),
+          onAutoFetchOnlineChanged: (v) {
+            setState(() => _autoFetchOnlineMetadata = v);
+            _saveStateCache();
+            if (v) _enrichMetadataInBackground();
+          },
           onSplitArtistsChanged: (v) {
             setState(() => _splitMultiArtists = v);
             _saveStateCache();
@@ -2692,6 +2728,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   Future<void> _enrichMetadataInBackground({bool forceReparse = false}) async {
     final thumbDir = await _ensureThumbDir();
+
+    // Pass 1: Local binary metadata + embedded/folder artwork extraction
     for (int i = 0; i < _songs.length; i++) {
       if (forceReparse || !_songs[i].isMetadataLoaded || _songs[i].artist == 'Unknown Artist' || _songs[i].albumArt == null) {
         await _extractAudioMetadataUniversal(_songs[i], thumbDir);
@@ -2699,11 +2737,72 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       }
     }
     if (mounted) setState(() {});
-    _saveStateCache();
+    await _saveStateCache();
+
+    // Pass 2: Online cover art & metadata enrichment for any track still missing cover or artist
+    if (_autoFetchOnlineMetadata) {
+      int fetchedCount = 0;
+      for (int i = 0; i < _songs.length; i++) {
+        final s = _songs[i];
+        if ((s.albumArt == null || s.artist == 'Unknown Artist') && !s.isOnlineEnriched) {
+          await _enrichTrackOnlineIfMissing(s, thumbDir);
+          fetchedCount++;
+          if (fetchedCount % 4 == 0 && mounted) {
+            setState(() {});
+            await _saveStateCache();
+          }
+          await Future.delayed(const Duration(milliseconds: 220));
+        }
+      }
+      if (mounted) setState(() {});
+      await _saveStateCache();
+    }
+  }
+
+  Future<void> _enrichTrackOnlineIfMissing(AudioTrack track, Directory thumbDir, {bool force = false}) async {
+    if (!force && track.isOnlineEnriched && track.albumArt != null && track.artist != 'Unknown Artist') return;
+    track.isOnlineEnriched = true;
+
+    final cleanTitle = _sanitizeMetadataText(track.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '')).trim();
+    if (cleanTitle.isEmpty) return;
+
+    final query = (track.artist != 'Unknown Artist' && track.artist.isNotEmpty)
+        ? '$cleanTitle ${track.artist.split(RegExp(r'[,&/]')).first.trim()}'
+        : cleanTitle;
+
+    try {
+      final uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&entity=song&limit=1');
+      final res = await http.get(uri, headers: {'User-Agent': 'NamiMusicPlayer/1.0'}).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final results = (data['results'] as List?) ?? [];
+        if (results.isNotEmpty) {
+          final hit = results.first;
+          if (track.artist == 'Unknown Artist' || track.artist.isEmpty) {
+            final apiArtist = (hit['artistName'] ?? '').toString().trim();
+            if (apiArtist.isNotEmpty) track.artist = apiArtist;
+          }
+          if (track.album == track.title || track.album == 'Unknown Album') {
+            final apiAlbum = (hit['collectionName'] ?? '').toString().trim();
+            if (apiAlbum.isNotEmpty) track.album = apiAlbum;
+          }
+          final artUrl = hit['artworkUrl100']?.toString().replaceAll('100x100', '600x600');
+          if (artUrl != null && artUrl.isNotEmpty && (track.albumArt == null || force)) {
+            final imgRes = await http.get(Uri.parse(artUrl)).timeout(const Duration(seconds: 6));
+            if (imgRes.statusCode == 200 && imgRes.bodyBytes.length > 512) {
+              track.albumArt = imgRes.bodyBytes;
+              final tf = File('${thumbDir.path}/${_deterministicPathHash(track.path)}.jpg');
+              await tf.writeAsBytes(track.albumArt!);
+              track.thumbPath = tf.path;
+            }
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   // Universal Metadata & Cover Art Extractor:
-  // Handles FLAC (including FLAC with prepended ID3v2 headers!), ID3v2 (UTF-16/UTF-8/Latin1), M4A/MP4 atoms, and folder cover images!
+  // Scans ID3v2 (UTF-16/UTF-8/Latin1), FLAC (anywhere in first 64KB), Base64 METADATA_BLOCK_PICTURE, M4A atoms, folder covers & raw JPEG/PNG fallback.
   Future<void> _extractAudioMetadataUniversal(AudioTrack track, Directory thumbDir) async {
     RandomAccessFile? raf;
     try {
@@ -2715,15 +2814,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       final head12 = await raf.read(12);
       if (head12.length < 12) return;
 
-      int flacStartOffset = 0;
+      int id3EndOffset = 0;
 
-      // Step A: Parse ID3v2 if present at byte 0 (and compute offset in case it's prepended to a FLAC file!)
+      // Step A: Parse ID3v2 if present at byte 0
       if (head12[0] == 0x49 && head12[1] == 0x44 && head12[2] == 0x33) {
         int version = head12[3];
         int flags = head12[5];
         int tagSize = ((head12[6] & 0x7F) << 21) | ((head12[7] & 0x7F) << 14) | ((head12[8] & 0x7F) << 7) | (head12[9] & 0x7F);
         int footerSize = ((flags & 0x10) != 0) ? 10 : 0;
-        flacStartOffset = 10 + tagSize + footerSize;
+        id3EndOffset = 10 + tagSize + footerSize;
 
         int readCap = math.min(10 + tagSize, math.min(track.fileSize, 8 * 1024 * 1024));
         await raf.setPosition(0);
@@ -2789,114 +2888,115 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         }
       }
 
-      // Step B: Check for FLAC stream (either at byte 0 OR right after prepended ID3v2 tag!)
-      if (flacStartOffset + 4 < track.fileSize) {
-        await raf.setPosition(flacStartOffset);
-        final flacMagic = await raf.read(4);
-        if (flacMagic.length == 4 &&
-            flacMagic[0] == 0x66 &&
-            flacMagic[1] == 0x4C &&
-            flacMagic[2] == 0x61 &&
-            flacMagic[3] == 0x43) {
-          int pos = flacStartOffset + 4;
-          while (pos + 4 < track.fileSize) {
-            await raf.setPosition(pos);
-            final hdr = await raf.read(4);
-            if (hdr.length < 4) break;
-            bool isLast = (hdr[0] & 0x80) != 0;
-            int blockType = hdr[0] & 0x7F;
-            int length = (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
-            pos += 4;
-            if (length < 0 || pos + length > track.fileSize) break;
+      // Step B: Search for 'fLaC' magic marker around id3EndOffset (handles prepended ID3 + padding bytes!)
+      int flacMagicPos = -1;
+      if (head12[0] == 0x66 && head12[1] == 0x4C && head12[2] == 0x61 && head12[3] == 0x43) {
+        flacMagicPos = 0;
+      } else if (id3EndOffset < track.fileSize - 4) {
+        final probeLen = math.min(65536, track.fileSize - id3EndOffset);
+        await raf.setPosition(id3EndOffset);
+        final probe = await raf.read(probeLen);
+        for (int i = 0; i < probe.length - 4; i++) {
+          if (probe[i] == 0x66 && probe[i + 1] == 0x4C && probe[i + 2] == 0x61 && probe[i + 3] == 0x43) {
+            flacMagicPos = id3EndOffset + i;
+            break;
+          }
+        }
+      }
 
-            if (blockType == 0 && length >= 18) {
-              final data = await raf.read(18);
-              int sr = (data[10] << 12) | (data[11] << 4) | ((data[12] & 0xF0) >> 4);
-              int bps = (((data[12] & 0x01) << 4) | ((data[13] & 0xF0) >> 4)) + 1;
-              int totalSamples = ((data[13] & 0x0F) << 32) | (data[14] << 24) | (data[15] << 16) | (data[16] << 8) | data[17];
-              if (sr > 0) {
-                track.sampleRateHz = sr;
-                if (totalSamples > 0) {
-                  final secs = totalSamples ~/ sr;
-                  if (secs > 0) {
-                    track.duration = Duration(seconds: secs);
-                    track.bitrateKbps = ((track.fileSize * 8) ~/ 1000) ~/ secs;
-                  }
-                }
-              }
-              if (bps >= 16) track.bitDepth = bps;
-            } else if (blockType == 4 && length <= 2 * 1024 * 1024) {
-              final data = await raf.read(length);
-              int p = 0;
-              if (p + 4 <= data.length) {
-                int vendorLen = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
-                p += 4 + vendorLen;
-                if (p + 4 <= data.length) {
-                  int commentCount = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
-                  p += 4;
-                  String? parsedArtist;
-                  for (int c = 0; c < commentCount && p + 4 <= data.length; c++) {
-                    int cLen = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
-                    p += 4;
-                    if (cLen < 0 || p + cLen > data.length) break;
-                    final commentStr = utf8.decode(data.sublist(p, p + cLen), allowMalformed: true);
-                    p += cLen;
-                    final eqIdx = commentStr.indexOf('=');
-                    if (eqIdx > 0) {
-                      final key = commentStr.substring(0, eqIdx).trim().toUpperCase();
-                      final val = _sanitizeMetadataText(commentStr.substring(eqIdx + 1));
-                      if (val.isNotEmpty) {
-                        if (key == 'TITLE') {
-                          track.title = val;
-                        } else if (key == 'ARTIST' || key == 'ALBUMARTIST' || key == 'PERFORMER') {
-                          if (parsedArtist == null) {
-                            parsedArtist = val;
-                          } else if (!parsedArtist.contains(val)) {
-                            parsedArtist = '$parsedArtist, $val';
-                          }
-                        } else if (key == 'ALBUM') {
-                          track.album = val;
-                        } else if (key == 'GENRE') {
-                          track.genre = val;
-                        } else if (key == 'DATE' || key == 'YEAR') {
-                          track.year = val;
-                        } else if (key == 'TRACKNUMBER') {
-                          track.trackNumber = val;
-                        } else if (key == 'LYRICS' || key == 'UNSYNCEDLYRICS') {
-                          track.rawLyrics = val;
-                          track.parsedLyrics = _parseLrc(val);
-                        }
-                      }
-                    }
-                  }
-                  if (parsedArtist != null && parsedArtist.isNotEmpty) {
-                    track.artist = parsedArtist;
-                  }
-                }
-              }
-            } else if (blockType == 6 && length > 32 && length <= 12 * 1024 * 1024 && track.albumArt == null) {
-              await raf.setPosition(pos);
-              final picBlock = await raf.read(length);
-              if (picBlock.length >= 32) {
-                int mimeLen = (picBlock[4] << 24) | (picBlock[5] << 16) | (picBlock[6] << 8) | picBlock[7];
-                int descLenPos = 8 + mimeLen;
-                if (descLenPos + 4 <= picBlock.length) {
-                  int descLen = (picBlock[descLenPos] << 24) | (picBlock[descLenPos + 1] << 16) | (picBlock[descLenPos + 2] << 8) | picBlock[descLenPos + 3];
-                  int dataLenPos = descLenPos + 4 + descLen + 16;
-                  if (dataLenPos + 4 <= picBlock.length) {
-                    int dataLen = (picBlock[dataLenPos] << 24) | (picBlock[dataLenPos + 1] << 16) | (picBlock[dataLenPos + 2] << 8) | picBlock[dataLenPos + 3];
-                    int imgStart = dataLenPos + 4;
-                    if (dataLen > 256 && imgStart + dataLen <= picBlock.length) {
-                      track.albumArt = picBlock.sublist(imgStart, imgStart + dataLen);
-                    }
-                  }
+      if (flacMagicPos >= 0) {
+        int pos = flacMagicPos + 4;
+        while (pos + 4 < track.fileSize) {
+          await raf.setPosition(pos);
+          final hdr = await raf.read(4);
+          if (hdr.length < 4) break;
+          bool isLast = (hdr[0] & 0x80) != 0;
+          int blockType = hdr[0] & 0x7F;
+          int length = (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
+          pos += 4;
+          if (length < 0 || pos + length > track.fileSize) break;
+
+          if (blockType == 0 && length >= 18) {
+            final data = await raf.read(18);
+            int sr = (data[10] << 12) | (data[11] << 4) | ((data[12] & 0xF0) >> 4);
+            int bps = (((data[12] & 0x01) << 4) | ((data[13] & 0xF0) >> 4)) + 1;
+            int totalSamples = ((data[13] & 0x0F) << 32) | (data[14] << 24) | (data[15] << 16) | (data[16] << 8) | data[17];
+            if (sr > 0) {
+              track.sampleRateHz = sr;
+              if (totalSamples > 0) {
+                final secs = totalSamples ~/ sr;
+                if (secs > 0) {
+                  track.duration = Duration(seconds: secs);
+                  track.bitrateKbps = ((track.fileSize * 8) ~/ 1000) ~/ secs;
                 }
               }
             }
-
-            pos += length;
-            if (isLast) break;
+            if (bps >= 16) track.bitDepth = bps;
+          } else if (blockType == 4 && length <= 4 * 1024 * 1024) {
+            final data = await raf.read(length);
+            int p = 0;
+            if (p + 4 <= data.length) {
+              int vendorLen = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
+              p += 4 + vendorLen;
+              if (p + 4 <= data.length) {
+                int commentCount = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
+                p += 4;
+                String? parsedArtist;
+                for (int c = 0; c < commentCount && p + 4 <= data.length; c++) {
+                  int cLen = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
+                  p += 4;
+                  if (cLen < 0 || p + cLen > data.length) break;
+                  final commentStr = utf8.decode(data.sublist(p, p + cLen), allowMalformed: true);
+                  p += cLen;
+                  final eqIdx = commentStr.indexOf('=');
+                  if (eqIdx > 0) {
+                    final key = commentStr.substring(0, eqIdx).trim().toUpperCase();
+                    final rawVal = commentStr.substring(eqIdx + 1);
+                    if (key == 'METADATA_BLOCK_PICTURE' && track.albumArt == null) {
+                      try {
+                        final picBytes = base64Decode(rawVal.trim());
+                        track.albumArt = _parseFlacPictureBlock(picBytes);
+                      } catch (_) {}
+                      continue;
+                    }
+                    final val = _sanitizeMetadataText(rawVal);
+                    if (val.isNotEmpty) {
+                      if (key == 'TITLE') {
+                        track.title = val;
+                      } else if (key == 'ARTIST' || key == 'ALBUMARTIST' || key == 'PERFORMER') {
+                        if (parsedArtist == null) {
+                          parsedArtist = val;
+                        } else if (!parsedArtist.contains(val)) {
+                          parsedArtist = '$parsedArtist, $val';
+                        }
+                      } else if (key == 'ALBUM') {
+                        track.album = val;
+                      } else if (key == 'GENRE') {
+                        track.genre = val;
+                      } else if (key == 'DATE' || key == 'YEAR') {
+                        track.year = val;
+                      } else if (key == 'TRACKNUMBER') {
+                        track.trackNumber = val;
+                      } else if (key == 'LYRICS' || key == 'UNSYNCEDLYRICS') {
+                        track.rawLyrics = val;
+                        track.parsedLyrics = _parseLrc(val);
+                      }
+                    }
+                  }
+                }
+                if (parsedArtist != null && parsedArtist.isNotEmpty) {
+                  track.artist = parsedArtist;
+                }
+              }
+            }
+          } else if (blockType == 6 && length > 32 && length <= 15 * 1024 * 1024 && track.albumArt == null) {
+            await raf.setPosition(pos);
+            final picBlock = await raf.read(length);
+            track.albumArt = _parseFlacPictureBlock(picBlock);
           }
+
+          pos += length;
+          if (isLast) break;
         }
       }
 
@@ -2905,7 +3005,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         await _parseMp4Atoms(raf, track);
       }
 
-      // Step D: Folder Cover Image Fallback (cover.jpg / folder.jpg / front.jpg)
+      // Step D: Raw JPEG/PNG Header Scan Fallback (catches embedded covers in Ogg/Opus/WAV/non-standard tags)
+      if (track.albumArt == null) {
+        final scanCap = math.min(track.fileSize, 2500 * 1024);
+        await raf.setPosition(0);
+        final rawBuf = await raf.read(scanCap);
+        track.albumArt = _extractEmbeddedImageBytes(rawBuf, 0, rawBuf.length);
+      }
+
+      // Step E: Folder Cover Image Fallback (cover.jpg / folder.jpg / front.jpg)
       if (track.albumArt == null) {
         try {
           final parentDir = file.parent;
@@ -2938,6 +3046,22 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       } catch (_) {}
     }
     track.isMetadataLoaded = true;
+  }
+
+  Uint8List? _parseFlacPictureBlock(Uint8List picBlock) {
+    if (picBlock.length < 32) return null;
+    int mimeLen = (picBlock[4] << 24) | (picBlock[5] << 16) | (picBlock[6] << 8) | picBlock[7];
+    int descLenPos = 8 + mimeLen;
+    if (descLenPos + 4 > picBlock.length) return null;
+    int descLen = (picBlock[descLenPos] << 24) | (picBlock[descLenPos + 1] << 16) | (picBlock[descLenPos + 2] << 8) | picBlock[descLenPos + 3];
+    int dataLenPos = descLenPos + 4 + descLen + 16;
+    if (dataLenPos + 4 > picBlock.length) return null;
+    int dataLen = (picBlock[dataLenPos] << 24) | (picBlock[dataLenPos + 1] << 16) | (picBlock[dataLenPos + 2] << 8) | picBlock[dataLenPos + 3];
+    int imgStart = dataLenPos + 4;
+    if (dataLen > 256 && imgStart + dataLen <= picBlock.length) {
+      return picBlock.sublist(imgStart, imgStart + dataLen);
+    }
+    return null;
   }
 
   Future<void> _parseMp4Atoms(RandomAccessFile raf, AudioTrack track) async {
@@ -3004,7 +3128,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     return input.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
   }
 
-  // Proper ID3v2 Text Decoder supporting ISO-8859-1 (0), UTF-16 with BOM (1), UTF-16BE (2), and UTF-8 (3)
   String _decodeId3TextProper(Uint8List bytes) {
     if (bytes.isEmpty) return '';
     int encoding = bytes[0];
@@ -3042,20 +3165,17 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     return _sanitizeMetadataText(utf8.decode(content, allowMalformed: true));
   }
 
-  // Exact ID3v2 APIC Frame Image Extractor
   Uint8List? _extractApicImageProper(Uint8List payload) {
     if (payload.length < 16) return null;
     int encoding = payload[0];
     int p = 1;
-    // Skip null-terminated MIME string
     while (p < payload.length && payload[p] != 0) {
       p++;
     }
-    p++; // skip null byte
+    p++;
     if (p >= payload.length) return null;
-    p++; // skip picture type byte
+    p++;
 
-    // Skip null-terminated description (2-byte null for UTF-16 encodings 1 & 2, 1-byte null for 0 & 3)
     if (encoding == 1 || encoding == 2) {
       while (p + 1 < payload.length && !(payload[p] == 0 && payload[p + 1] == 0)) {
         p += 2;
@@ -3154,7 +3274,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     } catch (_) {}
   }
 
-  // Focused Namida Home Screen
   Widget _buildNamidaHomeScreen(List<String> uniqueArtists) {
     final accent = Theme.of(context).colorScheme.primary;
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
@@ -3233,8 +3352,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               itemBuilder: (ctx, idx) {
                 final aName = uniqueArtists[idx];
                 final aTracks = artistGroups[aName] ?? _songs.where((s) => s.artist.contains(aName)).toList();
-                final firstArt = aTracks.isNotEmpty
-                    ? aTracks.firstWhere((s) => s.albumArt != null, orElse: () => aTracks.first).albumArt
+                final firstArtTrack = aTracks.isNotEmpty
+                    ? aTracks.firstWhere((s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()), orElse: () => aTracks.first)
                     : null;
                 return GestureDetector(
                   onTap: () => _showArtistDetailScreen(aName, aTracks),
@@ -3243,12 +3362,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     margin: const EdgeInsets.only(right: 10),
                     child: Column(
                       children: [
-                        CircleAvatar(
-                          radius: 34,
-                          backgroundColor: const Color(0xFF161622),
-                          backgroundImage: firstArt != null ? MemoryImage(firstArt) : null,
-                          child: firstArt == null ? const Icon(Icons.person_rounded, color: Colors.white38) : null,
-                        ),
+                        _buildRoundArtistAvatar(firstArtTrack, 34),
                         const SizedBox(height: 6),
                         Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                         Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
@@ -3280,6 +3394,33 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRoundArtistAvatar(AudioTrack? track, double radius) {
+    if (track != null) {
+      if (track.albumArt != null && track.albumArt!.isNotEmpty) {
+        return CircleAvatar(
+          radius: radius,
+          backgroundColor: const Color(0xFF161622),
+          backgroundImage: MemoryImage(track.albumArt!),
+        );
+      }
+      if (track.thumbPath != null) {
+        final f = File(track.thumbPath!);
+        if (f.existsSync()) {
+          return CircleAvatar(
+            radius: radius,
+            backgroundColor: const Color(0xFF161622),
+            backgroundImage: FileImage(f),
+          );
+        }
+      }
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: const Color(0xFF161622),
+      child: Icon(Icons.person_rounded, size: radius * 0.9, color: Colors.white38),
     );
   }
 
@@ -3561,19 +3702,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     itemBuilder: (context, index) {
                       final aName = uniqueArtists[index];
                       final aTracks = artistGroups[aName]!;
-                      final firstArt = aTracks.firstWhere((s) => s.albumArt != null, orElse: () => aTracks.first).albumArt;
+                      final firstArtTrack = aTracks.firstWhere(
+                        (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                        orElse: () => aTracks.first,
+                      );
                       return GestureDetector(
                         onTap: () => _showArtistDetailScreen(aName, aTracks),
                         child: Column(
                           children: [
-                            Expanded(
-                              child: CircleAvatar(
-                                radius: 40,
-                                backgroundColor: const Color(0xFF161622),
-                                backgroundImage: firstArt != null ? MemoryImage(firstArt) : null,
-                                child: firstArt == null ? const Icon(Icons.person_rounded, color: Colors.white38) : null,
-                              ),
-                            ),
+                            Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 40)),
                             const SizedBox(height: 6),
                             Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 10, color: Colors.grey)),
@@ -3590,14 +3727,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       final aName = uniqueArtists[index];
                       final aTracks = artistGroups[aName]!;
                       final albumCount = aTracks.map((s) => s.album).toSet().length;
-                      final firstArt = aTracks.firstWhere((s) => s.albumArt != null, orElse: () => aTracks.first).albumArt;
+                      final firstArtTrack = aTracks.firstWhere(
+                        (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                        orElse: () => aTracks.first,
+                      );
                       return ListTile(
-                        leading: CircleAvatar(
-                          radius: 24,
-                          backgroundColor: const Color(0xFF161622),
-                          backgroundImage: firstArt != null ? MemoryImage(firstArt) : null,
-                          child: firstArt == null ? const Icon(Icons.person_rounded, color: Colors.white38) : null,
-                        ),
+                        leading: _buildRoundArtistAvatar(firstArtTrack, 24),
                         title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
                         trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
@@ -3815,6 +3950,21 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         ),
       );
     }
+    if (song.thumbPath != null) {
+      final f = File(song.thumbPath!);
+      if (f.existsSync()) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: Image.file(
+            f,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _defaultArt(size, radius),
+          ),
+        );
+      }
+    }
     return _defaultArt(size, radius);
   }
 
@@ -3833,43 +3983,49 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     } else if (_currentSong != null) {
       _fetchLyricsOnline(_currentSong!);
     }
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF07070B),
-      barrierColor: Colors.black,
-      builder: (context) => NowPlayingModal(
-        audioPlayer: _audioPlayer,
-        currentSongNotifier: _currentSongNotifier,
-        allSongs: _songs,
-        playNextQueue: _playNextQueue,
-        ambientGlow: _ambientGlow,
-        syllableLyricsEnabled: _syllableLyricsEnabled,
-        onShowPath: () {
-          if (_currentSong != null) _showAudioPathDetails(_currentSong!);
-        },
-        onShowEqualizer: _showEqualizerSheet,
-        onShowSleepTimer: _showSleepTimerDialog,
-        onOpenLyricsManager: () {
-          if (_currentSong != null) _showNamidaLyricsManagerSheet(_currentSong!);
-        },
-        onToggleFavorite: () {
-          if (_currentSong != null) {
-            setState(() => _currentSong!.isFavorite = !_currentSong!.isFavorite);
-            _saveStateCache();
-          }
-        },
-        onRefreshLyrics: () {
-          if (_currentSong != null) {
-            _currentSong!.isLyricsFetched = false;
-            _fetchLyricsOnline(_currentSong!);
-          }
-        },
-        onNext: _playNextTrack,
-        onPrevious: _playPrevTrack,
-        onOpenQueue: () => _showQueueBottomSheet(context),
-        onOpenMoreMenu: () {
-          if (_currentSong != null) _showTrackOptionsMenu(_currentSong!);
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: true,
+        barrierColor: const Color(0xFF07070B),
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (context, animation, secondaryAnimation) => NowPlayingModal(
+          audioPlayer: _audioPlayer,
+          currentSongNotifier: _currentSongNotifier,
+          allSongs: _songs,
+          playNextQueue: _playNextQueue,
+          ambientGlow: _ambientGlow,
+          syllableLyricsEnabled: _syllableLyricsEnabled,
+          onShowPath: () {
+            if (_currentSong != null) _showAudioPathDetails(_currentSong!);
+          },
+          onShowEqualizer: _showEqualizerSheet,
+          onShowSleepTimer: _showSleepTimerDialog,
+          onOpenLyricsManager: () {
+            if (_currentSong != null) _showNamidaLyricsManagerSheet(_currentSong!);
+          },
+          onToggleFavorite: () {
+            if (_currentSong != null) {
+              setState(() => _currentSong!.isFavorite = !_currentSong!.isFavorite);
+              _saveStateCache();
+            }
+          },
+          onRefreshLyrics: () {
+            if (_currentSong != null) {
+              _currentSong!.isLyricsFetched = false;
+              _fetchLyricsOnline(_currentSong!);
+            }
+          },
+          onNext: _playNextTrack,
+          onPrevious: _playPrevTrack,
+          onOpenQueue: () => _showQueueBottomSheet(context),
+          onOpenMoreMenu: () {
+            if (_currentSong != null) _showTrackOptionsMenu(_currentSong!);
+          },
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final tween = Tween(begin: const Offset(0.0, 1.0), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic));
+          return SlideTransition(position: animation.drive(tween), child: child);
         },
       ),
     );
@@ -3877,7 +4033,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   void _showArtistDetailScreen(String artistName, List<AudioTrack> artistTracks) {
     if (artistTracks.isEmpty) return;
-    final firstArt = artistTracks.firstWhere((s) => s.albumArt != null, orElse: () => artistTracks.first).albumArt;
+    final firstArtTrack = artistTracks.firstWhere(
+      (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+      orElse: () => artistTracks.first,
+    );
     final Map<String, List<AudioTrack>> albumsMap = {};
     int totalSeconds = 0;
     for (var s in artistTracks) {
@@ -3917,12 +4076,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundColor: Colors.deepPurple.withOpacity(0.3),
-                          backgroundImage: firstArt != null ? MemoryImage(firstArt) : null,
-                          child: firstArt == null ? const Icon(Icons.person_rounded, size: 50, color: Colors.white38) : null,
-                        ),
+                        _buildRoundArtistAvatar(firstArtTrack, 50),
                         const SizedBox(width: 18),
                         Expanded(
                           child: Column(
@@ -3948,27 +4102,28 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 14),
-                      children: albumsMap.entries
-                          .map((entry) {
-                            final albArtTrack = entry.value.firstWhere((s) => s.albumArt != null, orElse: () => entry.value.first);
-                            return GestureDetector(
-                              onTap: () => _showAlbumDetailScreen(entry.key, entry.value),
-                              child: Container(
-                                width: 100,
-                                margin: const EdgeInsets.only(right: 12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildCoverArt(albArtTrack, 90, 8),
-                                    const SizedBox(height: 4),
-                                    Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                    Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
-                                  ],
-                                ),
-                              ),
-                            );
-                          })
-                          .toList(),
+                      children: albumsMap.entries.map((entry) {
+                        final albArtTrack = entry.value.firstWhere(
+                          (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                          orElse: () => entry.value.first,
+                        );
+                        return GestureDetector(
+                          onTap: () => _showAlbumDetailScreen(entry.key, entry.value),
+                          child: Container(
+                            width: 100,
+                            margin: const EdgeInsets.only(right: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildCoverArt(albArtTrack, 90, 8),
+                                const SizedBox(height: 4),
+                                Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -3991,7 +4146,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
     if (albumTracks.isEmpty) return;
     final firstTrack = albumTracks.first;
-    final firstArt = albumTracks.firstWhere((s) => s.albumArt != null, orElse: () => firstTrack).albumArt;
+    final artTrack = albumTracks.firstWhere(
+      (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+      orElse: () => firstTrack,
+    );
     final totalSecs = albumTracks.fold<int>(0, (sum, s) => sum + s.duration.inSeconds);
     final totalDurText = _formatTotalDurationHoursMins(Duration(seconds: totalSecs));
     final accent = Theme.of(context).colorScheme.primary;
@@ -4014,20 +4172,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 116,
-                          height: 116,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 16)],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: firstArt != null
-                                ? Image.memory(firstArt, fit: BoxFit.cover)
-                                : Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 54, color: Colors.white24)),
-                          ),
-                        ),
+                        _buildCoverArt(artTrack, 116, 16),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
@@ -4038,7 +4183,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                               GestureDetector(
                                 onTap: () => _showArtistDetailScreen(
                                   firstTrack.artist,
-                                  _songs.where((s) => s.artist == firstTrack.artist).toList(),
+                                  _songs.where((s) => s.artist.contains(firstTrack.artist)).toList(),
                                 ),
                                 child: Text(
                                   firstTrack.artist,
@@ -4455,6 +4600,7 @@ class MainSettingsScreen extends StatefulWidget {
   final bool ambientGlow;
   final bool syllableLyricsEnabled;
   final bool preferEmbeddedLyrics;
+  final bool autoFetchOnlineMetadata;
   final bool splitMultiArtists;
   final List<String> artistSeparators;
   final bool forceMiniColor;
@@ -4472,6 +4618,7 @@ class MainSettingsScreen extends StatefulWidget {
   final ValueChanged<bool> onAmbientGlowChanged;
   final ValueChanged<bool> onSyllableLyricsChanged;
   final ValueChanged<bool> onPreferEmbeddedChanged;
+  final ValueChanged<bool> onAutoFetchOnlineChanged;
   final ValueChanged<bool> onSplitArtistsChanged;
   final ValueChanged<List<String>> onArtistSeparatorsChanged;
   final ValueChanged<bool> onForceMiniColorChanged;
@@ -4488,6 +4635,7 @@ class MainSettingsScreen extends StatefulWidget {
     required this.ambientGlow,
     required this.syllableLyricsEnabled,
     required this.preferEmbeddedLyrics,
+    required this.autoFetchOnlineMetadata,
     required this.splitMultiArtists,
     required this.artistSeparators,
     required this.forceMiniColor,
@@ -4505,6 +4653,7 @@ class MainSettingsScreen extends StatefulWidget {
     required this.onAmbientGlowChanged,
     required this.onSyllableLyricsChanged,
     required this.onPreferEmbeddedChanged,
+    required this.onAutoFetchOnlineChanged,
     required this.onSplitArtistsChanged,
     required this.onArtistSeparatorsChanged,
     required this.onForceMiniColorChanged,
@@ -4525,6 +4674,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   late bool _ambientGlow;
   late bool _syllableLyrics;
   late bool _preferEmbedded;
+  late bool _autoFetchOnline;
   late bool _splitArtists;
   late List<String> _separators;
   late bool _forceMini;
@@ -4554,6 +4704,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
     _ambientGlow = widget.ambientGlow;
     _syllableLyrics = widget.syllableLyricsEnabled;
     _preferEmbedded = widget.preferEmbeddedLyrics;
+    _autoFetchOnline = widget.autoFetchOnlineMetadata;
     _splitArtists = widget.splitMultiArtists;
     _separators = List<String>.from(widget.artistSeparators);
     _forceMini = widget.forceMiniColor;
@@ -4757,6 +4908,17 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
           _buildSectionHeader('Library & Artist Separators', Icons.people_outline_rounded),
           _buildSettingsCard([
             SwitchListTile(
+              title: const Text('Auto-Fetch Missing Covers & Artist Info', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Fetch high-res artwork online when files lack embedded tags', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _autoFetchOnline,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _autoFetchOnline = v);
+                widget.onAutoFetchOnlineChanged(v);
+              },
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            SwitchListTile(
               title: const Text('Split Multi-Artist Tags', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
               subtitle: const Text('Separate collaborating artists into individual profiles', style: TextStyle(fontSize: 11, color: Colors.white54)),
               value: _splitArtists,
@@ -4898,8 +5060,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             const Divider(color: Colors.white10, height: 1),
             ListTile(
               leading: Icon(Icons.refresh_rounded, color: themeColor),
-              title: const Text('Force Full Metadata Rescan', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Re-extract FLAC/ID3/M4A tags & album covers', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              title: const Text('Force Full Metadata & Cover Rescan', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Re-extract FLAC/ID3/M4A tags & fetch missing covers', style: TextStyle(fontSize: 11, color: Colors.white54)),
               onTap: () {
                 widget.onRescan();
                 Navigator.pop(context);
@@ -4912,7 +5074,6 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   }
 }
 
-// Exact Namida Now Playing Layout (Matches 038ce540-2aff-4255-83ea-bc7040cc6507.jpg spacing & opaque canvas)
 class NowPlayingModal extends StatefulWidget {
   final AudioPlayer audioPlayer;
   final ValueNotifier<AudioTrack?> currentSongNotifier;
@@ -5090,10 +5251,20 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         final dynamicIdx = (song != null && widget.allSongs.contains(song)) ? (widget.allSongs.indexOf(song) + 1) : 1;
         final totalCount = widget.allSongs.length;
 
-        return Container(
-          height: MediaQuery.of(context).size.height,
-          color: const Color(0xFF07070B),
-          child: Container(
+        Widget artWidget;
+        if (song?.albumArt != null && song!.albumArt!.isNotEmpty) {
+          artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover);
+        } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
+          artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover);
+        } else {
+          artWidget = Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24));
+        }
+
+        return Scaffold(
+          backgroundColor: const Color(0xFF07070B),
+          body: Container(
+            width: double.infinity,
+            height: double.infinity,
             padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
             decoration: BoxDecoration(
               color: const Color(0xFF07070B),
@@ -5111,7 +5282,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
             child: SafeArea(
               child: Column(
                 children: [
-                  // 1. Namida Top Bar
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -5142,7 +5312,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
                   const Spacer(flex: 2),
 
-                  // 2. Square Album Artwork OR 9-Line 5th-Center Syllable-Sweep Lyrics
                   Center(
                     child: _viewMode == 0
                         ? GestureDetector(
@@ -5163,9 +5332,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(20),
-                                child: song?.albumArt != null
-                                    ? Image.memory(song!.albumArt!, fit: BoxFit.cover)
-                                    : Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24)),
+                                child: artWidget,
                               ),
                             ),
                           )
@@ -5282,10 +5449,8 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           ),
                   ),
 
-                  // 3. Exact Namida Breathing Room Between Album Art & Title/Artist (Red-circled area in SS1)
                   const Spacer(flex: 3),
 
-                  // 4. Song Title, Artist & Outline Heart Row
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
@@ -5314,7 +5479,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
                   const Spacer(flex: 2),
 
-                  // 5. Waveform Seekbar
                   StreamBuilder<Duration>(
                     stream: widget.audioPlayer.positionStream,
                     builder: (context, posSnap) {
@@ -5362,7 +5526,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
                   const Spacer(flex: 2),
 
-                  // 6. Single-Row [00:00]   [|◁]  (▷)  [▷|]   [03:32]
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
@@ -5412,7 +5575,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
                   const Spacer(flex: 2),
 
-                  // 7. Namida Bottom Audio Spec & 4-Icon Footer Bar
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Row(
@@ -5481,7 +5643,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 constraints: const BoxConstraints(),
                                 icon: Icon(Icons.lyrics_outlined, size: 20, color: _viewMode == 1 ? accent : Colors.white70),
                                 onPressed: () {
-                                  setState(() => _viewMode = _viewMode == 1 ? 0 : 1);
+                                  setState(() {
+                                    _viewMode = _viewMode == 1 ? 0 : 1;
+                                    _lastScrolledLyricIndex = -1;
+                                  });
                                   if (_viewMode == 1) widget.onRefreshLyrics();
                                 },
                               ),
