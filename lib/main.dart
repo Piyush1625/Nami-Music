@@ -10,6 +10,37 @@ import 'package:audio_session/audio_session.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 
+const Map<String, String> _httpHeaders = {
+  'User-Agent': 'NamiMusicPlayer/1.0 (https://github.com/Piyush1625/nami)',
+  'Accept': 'application/json',
+};
+
+// lower-case, letters/digits only (unicode aware) -> for comparing names across services
+String _normName(String s) => s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+
+bool _namesMatchLoosely(String a, String b) {
+  if (a.isEmpty || b.isEmpty) return false;
+  if (a == b) return true;
+  final shorter = a.length <= b.length ? a : b;
+  final longer = a.length <= b.length ? b : a;
+  return shorter.length >= 4 && longer.contains(shorter) && shorter.length / longer.length >= 0.6;
+}
+
+// artist names from APIs are often "A & B", so "contains" is allowed here
+bool _artistNamesMatch(String a, String b) {
+  if (a.isEmpty || b.isEmpty) return false;
+  if (a == b) return true;
+  return (a.length >= 3 && b.contains(a)) || (b.length >= 3 && a.contains(b));
+}
+
+bool _looksLikeImage(Uint8List b) {
+  if (b.length < 1024) return false;
+  final jpeg = b[0] == 0xFF && b[1] == 0xD8;
+  final png = b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47;
+  final riff = b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46; // webp
+  return jpeg || png || riff;
+}
+
 String _formatDurationPadded(Duration d) {
   int minutes = d.inMinutes;
   int seconds = d.inSeconds % 60;
@@ -193,7 +224,7 @@ class AudioTrack {
         'sampleRate': sampleRateHz,
         'bitDepth': bitDepth,
         'isFavorite': isFavorite,
-        'isOnlineEnriched': isOnlineEnriched,
+        'onlineDone2': isOnlineEnriched,
         'playCount': playCount,
         'addedDate': addedDate,
         'addedTimestampMs': addedTimestampMs,
@@ -213,7 +244,7 @@ class AudioTrack {
         sampleRateHz: j['sampleRate'] ?? 44100,
         bitDepth: j['bitDepth'] ?? 16,
         isFavorite: j['isFavorite'] ?? false,
-        isOnlineEnriched: j['isOnlineEnriched'] ?? false,
+        isOnlineEnriched: j['onlineDone2'] ?? false,
         playCount: j['playCount'] ?? 0,
         addedDate: j['addedDate'] ?? 'Sep 2026',
         addedTimestampMs: j['addedTimestampMs'] ?? 0,
@@ -536,6 +567,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   final Map<String, List<AudioTrack>> artistGroups = {};
   final Map<String, List<AudioTrack>> albumGroups = {};
 
+  // ---- online artwork state (track covers + artist photos) ----
+  final ValueNotifier<int> _artworkTick = ValueNotifier<int>(0);
+  final Map<String, String> _artistImagePaths = {};
+  final Set<String> _artistDiskChecked = {};
+  final Set<String> _artistImageQueued = {};
+  final List<String> _artistImageQueue = [];
+  final Map<String, int> _artistImageRetryAfter = {};
+  int _artistImageActive = 0;
+
   @override
   void initState() {
     super.initState();
@@ -664,6 +704,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           _userPhotoPath = data['userPhotoPath'];
           _splitMultiArtists = data['splitMultiArtists'] ?? true;
           _autoFetchOnlineMetadata = data['autoFetchOnlineMetadata'] ?? true;
+          final rawRetry = data['artistImageRetryAfter'];
+          if (rawRetry is Map) {
+            rawRetry.forEach((k, v) {
+              if (v is int) _artistImageRetryAfter[k.toString()] = v;
+            });
+          }
           if (data['artistSeparators'] != null) {
             _artistSeparators = List<String>.from(data['artistSeparators']);
           }
@@ -703,6 +749,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'userPhotoPath': _userPhotoPath,
         'splitMultiArtists': _splitMultiArtists,
         'autoFetchOnlineMetadata': _autoFetchOnlineMetadata,
+        'artistImageRetryAfter': _artistImageRetryAfter,
         'artistSeparators': _artistSeparators,
         'accentColor': NamiApp.of(context).accentColor.value,
         'cachedTracks': _songs.map((s) => s.toJson()).toList(),
@@ -1906,10 +1953,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 onTap: () {
                   Navigator.pop(context);
                   _buildArtistGroupsMap();
-                  final primary = _splitMultiArtists
-                      ? song.artist.split(RegExp(_artistSeparators.map(RegExp.escape).join('|'), caseSensitive: false)).first.trim()
-                      : song.artist;
-                  final tracks = artistGroups[primary] ?? _songs.where((s) => s.artist.toLowerCase().contains(primary.toLowerCase())).toList();
+                  final primary = _primaryArtist(song.artist);
+                  final tracks = _tracksForArtist(primary);
                   _showArtistDetailScreen(primary.isNotEmpty ? primary : song.artist, tracks);
                 },
               ),
@@ -2420,7 +2465,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           onAutoFetchOnlineChanged: (v) {
             setState(() => _autoFetchOnlineMetadata = v);
             _saveStateCache();
-            if (v) _enrichMetadataInBackground();
+            if (v) {
+              _artistImageRetryAfter.clear();
+              _enrichMetadataInBackground();
+            }
           },
           onSplitArtistsChanged: (v) {
             setState(() => _splitMultiArtists = v);
@@ -2742,10 +2790,16 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     // Pass 2: Online cover art & metadata enrichment for any track still missing cover or artist
     if (_autoFetchOnlineMetadata) {
       int fetchedCount = 0;
+      int consecutiveFailures = 0;
       for (int i = 0; i < _songs.length; i++) {
         final s = _songs[i];
         if ((s.albumArt == null || s.artist == 'Unknown Artist') && !s.isOnlineEnriched) {
-          await _enrichTrackOnlineIfMissing(s, thumbDir);
+          final ok = await _enrichTrackOnlineIfMissing(s, thumbDir);
+          consecutiveFailures = ok ? 0 : consecutiveFailures + 1;
+          if (consecutiveFailures >= 5) {
+            debugPrint('Nami: online metadata paused after 5 failures in a row (offline, or INTERNET permission missing?)');
+            break;
+          }
           fetchedCount++;
           if (fetchedCount % 4 == 0 && mounted) {
             setState(() {});
@@ -2759,46 +2813,251 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     }
   }
 
-  Future<void> _enrichTrackOnlineIfMissing(AudioTrack track, Directory thumbDir, {bool force = false}) async {
-    if (!force && track.isOnlineEnriched && track.albumArt != null && track.artist != 'Unknown Artist') return;
-    track.isOnlineEnriched = true;
+  // Returns true when the lookup reached a definitive answer (match applied, or the service has no match).
+  // Returns false on network / HTTP / image-download trouble so the track is retried later.
+  Future<bool> _enrichTrackOnlineIfMissing(AudioTrack track, Directory thumbDir, {bool force = false}) async {
+    if (!force && track.isOnlineEnriched) return true;
 
-    final cleanTitle = _sanitizeMetadataText(track.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '')).trim();
-    if (cleanTitle.isEmpty) return;
+    final cleanTitle = _sanitizeMetadataText(
+      track.title
+          .replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '')
+          .replaceAll(RegExp(r'\s+(feat\.|ft\.|featuring)\s.*', caseSensitive: false), ''),
+    ).trim();
+    if (cleanTitle.isEmpty) {
+      track.isOnlineEnriched = true;
+      return true;
+    }
 
-    final query = (track.artist != 'Unknown Artist' && track.artist.isNotEmpty)
-        ? '$cleanTitle ${track.artist.split(RegExp(r'[,&/]')).first.trim()}'
-        : cleanTitle;
+    final artistKnown = track.artist.isNotEmpty && track.artist != 'Unknown Artist';
+    final primaryArtist = artistKnown
+        ? _sanitizeMetadataText(track.artist.split(RegExp(r'[,&•/]|feat\.|ft\.', caseSensitive: false)).first)
+        : '';
+    final query = artistKnown ? '$cleanTitle $primaryArtist' : cleanTitle;
 
     try {
-      final uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&entity=song&limit=1');
-      final res = await http.get(uri, headers: {'User-Agent': 'NamiMusicPlayer/1.0'}).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final results = (data['results'] as List?) ?? [];
-        if (results.isNotEmpty) {
-          final hit = results.first;
-          if (track.artist == 'Unknown Artist' || track.artist.isEmpty) {
-            final apiArtist = (hit['artistName'] ?? '').toString().trim();
-            if (apiArtist.isNotEmpty) track.artist = apiArtist;
-          }
-          if (track.album == track.title || track.album == 'Unknown Album') {
-            final apiAlbum = (hit['collectionName'] ?? '').toString().trim();
-            if (apiAlbum.isNotEmpty) track.album = apiAlbum;
-          }
-          final artUrl = hit['artworkUrl100']?.toString().replaceAll('100x100', '600x600');
-          if (artUrl != null && artUrl.isNotEmpty && (track.albumArt == null || force)) {
-            final imgRes = await http.get(Uri.parse(artUrl)).timeout(const Duration(seconds: 6));
-            if (imgRes.statusCode == 200 && imgRes.bodyBytes.length > 512) {
-              track.albumArt = imgRes.bodyBytes;
-              final tf = File('${thumbDir.path}/${_deterministicPathHash(track.path)}.jpg');
-              await tf.writeAsBytes(track.albumArt!);
-              track.thumbPath = tf.path;
-            }
+      final uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&entity=song&limit=10');
+      final res = await http.get(uri, headers: _httpHeaders).timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) {
+        debugPrint('Nami: iTunes search HTTP ${res.statusCode} for "$query"');
+        return false;
+      }
+      final data = jsonDecode(res.body);
+      final List results = (data is Map ? (data['results'] as List?) : null) ?? const [];
+
+      // Pick the best-scoring result instead of blindly trusting result #1.
+      final nTitle = _normName(cleanTitle);
+      final nArtist = _normName(primaryArtist);
+      final nAlbum = _normName(track.album);
+      final Iterable candidates = artistKnown ? results : results.take(1);
+      Map? best;
+      double bestScore = 0;
+      for (final r in candidates) {
+        if (r is! Map) continue;
+        final rTitle = _normName((r['trackName'] ?? '').toString());
+        final rArtist = _normName((r['artistName'] ?? '').toString());
+        final rAlbum = _normName((r['collectionName'] ?? '').toString());
+        double score = 0;
+        if (rTitle == nTitle) {
+          score += 3;
+        } else if (_namesMatchLoosely(rTitle, nTitle)) {
+          score += 1.5;
+        }
+        if (artistKnown) {
+          if (!_artistNamesMatch(rArtist, nArtist)) continue; // a known artist must match
+          score += 2;
+        }
+        if (nAlbum.isNotEmpty && track.album != 'Unknown Album' && _namesMatchLoosely(rAlbum, nAlbum)) score += 1;
+        if (score > bestScore) {
+          bestScore = score;
+          best = r;
+        }
+      }
+
+      if (best != null && bestScore >= 3) {
+        final hit = best;
+        if (!artistKnown) {
+          final apiArtist = (hit['artistName'] ?? '').toString().trim();
+          if (apiArtist.isNotEmpty) track.artist = apiArtist;
+        }
+        if (track.album.isEmpty || track.album == track.title || track.album == 'Unknown Album') {
+          final apiAlbum = (hit['collectionName'] ?? '').toString().trim();
+          if (apiAlbum.isNotEmpty) track.album = apiAlbum;
+        }
+        final artUrl = hit['artworkUrl100']?.toString().replaceAll('100x100', '600x600');
+        if (artUrl != null && artUrl.isNotEmpty && (track.albumArt == null || force)) {
+          final imgRes = await http.get(Uri.parse(artUrl), headers: _httpHeaders).timeout(const Duration(seconds: 10));
+          if (imgRes.statusCode == 200 && _looksLikeImage(imgRes.bodyBytes)) {
+            track.albumArt = imgRes.bodyBytes;
+            final tf = File('${thumbDir.path}/${_deterministicPathHash(track.path)}.jpg');
+            await tf.writeAsBytes(track.albumArt!);
+            track.thumbPath = tf.path;
+          } else {
+            debugPrint('Nami: cover download HTTP ${imgRes.statusCode} for "${track.title}"');
+            return false; // got a match but not the picture -> try again later
           }
         }
       }
-    } catch (_) {}
+      // Only now (answer received) is the track marked as done.
+      track.isOnlineEnriched = true;
+      _artworkTick.value++;
+      return true;
+    } catch (e) {
+      debugPrint('Nami: online enrich failed for "${track.title}": $e');
+      return false;
+    }
+  }
+
+  // Lazily fetch covers for tracks shown on an artist screen.
+  Future<void> _enrichMissingArtForTracks(List<AudioTrack> tracks) async {
+    if (!_autoFetchOnlineMetadata) return;
+    final thumbDir = await _ensureThumbDir();
+    int failures = 0;
+    for (final t in List<AudioTrack>.from(tracks)) {
+      if (!mounted) return;
+      if (t.albumArt != null || t.isOnlineEnriched) continue;
+      final ok = await _enrichTrackOnlineIfMissing(t, thumbDir);
+      failures = ok ? 0 : failures + 1;
+      if (failures >= 3) break;
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    if (mounted) setState(() {});
+    _saveStateCache();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Artist photos: Deezer first, TheAudioDB as fallback. Cached on disk in .nami_thumbs.
+  // ---------------------------------------------------------------------------
+  String _artistKey(String name) => name.trim().toLowerCase();
+
+  File _artistImageFile(String name) =>
+      File('/storage/emulated/0/Music/.nami_thumbs/artist_${_deterministicPathHash(_artistKey(name))}.jpg');
+
+  String? _cachedArtistImagePath(String name) {
+    final key = _artistKey(name);
+    final known = _artistImagePaths[key];
+    if (known != null) return known;
+    if (_artistDiskChecked.add(key)) {
+      final f = _artistImageFile(name);
+      if (f.existsSync()) {
+        _artistImagePaths[key] = f.path;
+        return f.path;
+      }
+    }
+    return null;
+  }
+
+  void _requestArtistImage(String name) {
+    final clean = name.trim();
+    if (clean.isEmpty || clean == 'Unknown Artist' || !_autoFetchOnlineMetadata) return;
+    final key = _artistKey(clean);
+    if (_artistImagePaths.containsKey(key) || _artistImageQueued.contains(key)) return;
+    final retryAfter = _artistImageRetryAfter[key];
+    if (retryAfter != null && DateTime.now().millisecondsSinceEpoch < retryAfter) return;
+    _artistImageQueued.add(key);
+    _artistImageQueue.add(clean);
+    _pumpArtistImageQueue();
+  }
+
+  void _pumpArtistImageQueue() {
+    while (_artistImageActive < 2 && _artistImageQueue.isNotEmpty) {
+      // newest request first = whatever is on screen right now
+      final name = _artistImageQueue.removeLast();
+      _artistImageActive++;
+      _fetchArtistImage(name).whenComplete(() async {
+        await Future.delayed(const Duration(milliseconds: 300)); // stay under Deezer's rate limit
+        _artistImageActive--;
+        _pumpArtistImageQueue();
+      });
+    }
+  }
+
+  Future<void> _fetchArtistImage(String name) async {
+    final key = _artistKey(name);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    bool networkFailed = false;
+    try {
+      String? url;
+      try {
+        url = await _deezerArtistImageUrl(name);
+      } catch (e) {
+        networkFailed = true;
+        debugPrint('Nami: Deezer artist lookup failed for "$name": $e');
+      }
+      if (url == null) {
+        try {
+          url = await _audioDbArtistImageUrl(name);
+        } catch (e) {
+          networkFailed = true;
+          debugPrint('Nami: TheAudioDB artist lookup failed for "$name": $e');
+        }
+      }
+      if (url != null) {
+        final res = await http.get(Uri.parse(url), headers: _httpHeaders).timeout(const Duration(seconds: 12));
+        if (res.statusCode == 200 && _looksLikeImage(res.bodyBytes)) {
+          await _ensureThumbDir();
+          final f = _artistImageFile(name);
+          await f.writeAsBytes(res.bodyBytes, flush: true);
+          _artistImagePaths[key] = f.path;
+          _artistImageRetryAfter.remove(key);
+          _artworkTick.value++;
+          return;
+        }
+        networkFailed = true;
+      }
+    } catch (e) {
+      networkFailed = true;
+      debugPrint('Nami: artist image download failed for "$name": $e');
+    } finally {
+      _artistImageQueued.remove(key);
+    }
+    // No photo this time. Wait 3 days if the services simply don't know the artist, 5 minutes on network trouble.
+    _artistImageRetryAfter[key] = now + (networkFailed ? 5 * 60 * 1000 : 3 * 24 * 3600 * 1000);
+    if (!networkFailed) _saveStateCache();
+  }
+
+  Future<String?> _deezerArtistImageUrl(String name) async {
+    final uri = Uri.parse('https://api.deezer.com/search/artist?q=${Uri.encodeComponent(name)}&limit=5');
+    final res = await http.get(uri, headers: _httpHeaders).timeout(const Duration(seconds: 8));
+    if (res.statusCode != 200) throw HttpException('Deezer HTTP ${res.statusCode}');
+    final data = jsonDecode(res.body);
+    if (data is! Map) return null;
+    if (data['error'] != null) throw HttpException('Deezer error: ${data['error']}');
+    final List list = (data['data'] as List?) ?? const [];
+    final target = _normName(name);
+    Map? best;
+    for (final item in list) {
+      if (item is Map && _normName((item['name'] ?? '').toString()) == target) {
+        best = item;
+        break;
+      }
+    }
+    if (best == null && list.isNotEmpty && list.first is Map) {
+      final first = list.first as Map;
+      if (_namesMatchLoosely(_normName((first['name'] ?? '').toString()), target)) best = first;
+    }
+    if (best == null) return null;
+    final url = (best['picture_big'] ?? best['picture_xl'] ?? best['picture_medium'] ?? '').toString();
+    if (url.isEmpty || url.contains('/artist//')) return null; // Deezer's "no photo" placeholder
+    return url;
+  }
+
+  Future<String?> _audioDbArtistImageUrl(String name) async {
+    final uri = Uri.parse('https://www.theaudiodb.com/api/v1/json/123/search.php?s=${Uri.encodeComponent(name)}');
+    final res = await http.get(uri, headers: _httpHeaders).timeout(const Duration(seconds: 8));
+    if (res.statusCode != 200) throw HttpException('AudioDB HTTP ${res.statusCode}');
+    final body = res.body.trim();
+    if (body.isEmpty) return null;
+    final data = jsonDecode(body);
+    final List? artists = data is Map ? (data['artists'] as List?) : null;
+    if (artists == null || artists.isEmpty) return null;
+    final target = _normName(name);
+    for (final a in artists) {
+      if (a is! Map) continue;
+      if (_normName((a['strArtist'] ?? '').toString()) != target) continue;
+      final thumb = (a['strArtistThumb'] ?? '').toString();
+      if (thumb.isNotEmpty) return thumb;
+    }
+    return null;
   }
 
   // Universal Metadata & Cover Art Extractor:
@@ -3388,7 +3647,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     margin: const EdgeInsets.only(right: 10),
                     child: Column(
                       children: [
-                        _buildRoundArtistAvatar(firstArtTrack, 34),
+                        _buildRoundArtistAvatar(firstArtTrack, 34, artistName: aName),
                         const SizedBox(height: 6),
                         Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                         Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
@@ -3423,7 +3682,29 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     );
   }
 
-  Widget _buildRoundArtistAvatar(AudioTrack? track, double radius) {
+  Widget _buildRoundArtistAvatar(AudioTrack? track, double radius, {String? artistName}) {
+    final name = artistName;
+    if (name == null) return _buildTrackFallbackAvatar(track, radius);
+    return ValueListenableBuilder<int>(
+      valueListenable: _artworkTick,
+      builder: (context, _, __) {
+        final path = _cachedArtistImagePath(name);
+        if (path == null) {
+          // not downloaded yet: ask for it (queued, de-duplicated) and show the album cover meanwhile
+          Future.microtask(() => _requestArtistImage(name));
+          return _buildTrackFallbackAvatar(track, radius);
+        }
+        return CircleAvatar(
+          radius: radius,
+          backgroundColor: const Color(0xFF161622),
+          backgroundImage: FileImage(File(path)),
+          onBackgroundImageError: (_, __) {},
+        );
+      },
+    );
+  }
+
+  Widget _buildTrackFallbackAvatar(AudioTrack? track, double radius) {
     if (track != null) {
       if (track.albumArt != null && track.albumArt!.isNotEmpty) {
         return CircleAvatar(
@@ -3635,23 +3916,50 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     );
   }
 
+  // Primary artist of a tag string, using the same separators as the artist grouping.
+  String _primaryArtist(String artist) {
+    final whole = artist.trim();
+    final escaped = _artistSeparators.where((s) => s.trim().isNotEmpty).map((s) => RegExp.escape(s)).join('|');
+    if (!_splitMultiArtists || escaped.isEmpty) return whole;
+    final first = whole.split(RegExp(escaped, caseSensitive: false)).first.trim();
+    return first.isNotEmpty ? first : whole;
+  }
+
+  // Case-insensitive lookup in artistGroups (falls back to a substring match on the tag).
+  List<AudioTrack> _tracksForArtist(String name) {
+    final lk = name.trim().toLowerCase();
+    if (lk.isEmpty) return const [];
+    final direct = artistGroups[name];
+    if (direct != null) return direct;
+    for (final e in artistGroups.entries) {
+      if (e.key.toLowerCase() == lk) return e.value;
+    }
+    return _songs.where((s) => s.artist.toLowerCase().contains(lk)).toList();
+  }
+
   List<String> _buildArtistGroupsMap() {
     artistGroups.clear();
-    final escaped = _artistSeparators.map((s) => RegExp.escape(s)).join('|');
+    final escaped = _artistSeparators.where((s) => s.trim().isNotEmpty).map((s) => RegExp.escape(s)).join('|');
     final splitter = (_splitMultiArtists && escaped.isNotEmpty) ? RegExp(escaped, caseSensitive: false) : null;
+    final displayNames = <String, String>{}; // lower-case -> first-seen spelling ("drake" and "Drake" are one artist)
+
+    void add(String rawName, AudioTrack song, Set<String> seenForSong) {
+      final clean = rawName.trim();
+      if (clean.isEmpty) return;
+      final lk = clean.toLowerCase();
+      if (!seenForSong.add(lk)) return;
+      final display = displayNames.putIfAbsent(lk, () => clean);
+      artistGroups.putIfAbsent(display, () => []).add(song);
+    }
 
     for (var song in _songs) {
+      final seenForSong = <String>{};
       if (splitter != null) {
-        final parts = song.artist.split(splitter);
-        final seenForSong = <String>{};
-        for (var rawPart in parts) {
-          final clean = rawPart.trim();
-          if (clean.isNotEmpty && seenForSong.add(clean.toLowerCase())) {
-            artistGroups.putIfAbsent(clean, () => []).add(song);
-          }
+        for (final part in song.artist.split(splitter)) {
+          add(part, song, seenForSong);
         }
       } else {
-        artistGroups.putIfAbsent(song.artist, () => []).add(song);
+        add(song.artist.trim().isEmpty ? 'Unknown Artist' : song.artist, song, seenForSong);
       }
     }
 
@@ -3736,7 +4044,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         onTap: () => _showArtistDetailScreen(aName, aTracks),
                         child: Column(
                           children: [
-                            Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 40)),
+                            Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 40, artistName: aName)),
                             const SizedBox(height: 6),
                             Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 10, color: Colors.grey)),
@@ -3758,7 +4066,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         orElse: () => aTracks.first,
                       );
                       return ListTile(
-                        leading: _buildRoundArtistAvatar(firstArtTrack, 24),
+                        leading: _buildRoundArtistAvatar(firstArtTrack, 24, artistName: aName),
                         title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
                         trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
@@ -4059,111 +4367,120 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   void _showArtistDetailScreen(String artistName, List<AudioTrack> artistTracks) {
     if (artistTracks.isEmpty) return;
-    final firstArtTrack = artistTracks.firstWhere(
-      (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
-      orElse: () => artistTracks.first,
-    );
-    final Map<String, List<AudioTrack>> albumsMap = {};
-    int totalSeconds = 0;
-    for (var s in artistTracks) {
-      albumsMap.putIfAbsent(s.album, () => []).add(s);
-      totalSeconds += s.duration.inSeconds;
-    }
-    final formattedTotal = _formatTotalDurationHoursMins(Duration(seconds: totalSeconds));
+    // kick off the online lookups for this artist: photo + any track that still has no cover
+    _requestArtistImage(artistName);
+    _enrichMissingArtForTracks(artistTracks);
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            actions: [
-              IconButton(
-                tooltip: 'Play Artist',
-                icon: const Icon(Icons.play_arrow_rounded),
-                onPressed: () => _playSong(artistTracks.first),
-              ),
-              IconButton(
-                tooltip: 'Shuffle Artist',
-                icon: const Icon(Icons.shuffle_rounded),
-                onPressed: () {
-                  final shuffled = List<AudioTrack>.from(artistTracks)..shuffle();
-                  if (shuffled.isNotEmpty) _playSong(shuffled.first);
-                },
-              ),
-            ],
-          ),
-          body: Stack(
-            children: [
-              ListView(
-                padding: const EdgeInsets.fromLTRB(0, 8, 0, 140),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      children: [
-                        _buildRoundArtistAvatar(firstArtTrack, 50),
-                        const SizedBox(width: 18),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(artistName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                              const SizedBox(height: 4),
-                              Text('${artistTracks.length} Tracks • $formattedTotal', style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+        builder: (context) => ValueListenableBuilder<int>(
+          valueListenable: _artworkTick, // rebuilds this screen whenever a photo / cover lands
+          builder: (context, _, __) {
+            final firstArtTrack = artistTracks.firstWhere(
+              (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+              orElse: () => artistTracks.first,
+            );
+            final Map<String, List<AudioTrack>> albumsMap = {};
+            int totalSeconds = 0;
+            for (var s in artistTracks) {
+              albumsMap.putIfAbsent(s.album, () => []).add(s);
+              totalSeconds += s.duration.inSeconds;
+            }
+            final formattedTotal = _formatTotalDurationHoursMins(Duration(seconds: totalSeconds));
+
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: Colors.transparent,
+                actions: [
+                  IconButton(
+                    tooltip: 'Play Artist',
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    onPressed: () => _playSong(artistTracks.first),
                   ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('Albums (${albumsMap.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    tooltip: 'Shuffle Artist',
+                    icon: const Icon(Icons.shuffle_rounded),
+                    onPressed: () {
+                      final shuffled = List<AudioTrack>.from(artistTracks)..shuffle();
+                      if (shuffled.isNotEmpty) _playSong(shuffled.first);
+                    },
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    height: 140,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      children: albumsMap.entries.map((entry) {
-                        final albArtTrack = entry.value.firstWhere(
-                          (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
-                          orElse: () => entry.value.first,
-                        );
-                        return GestureDetector(
-                          onTap: () => _showAlbumDetailScreen(entry.key, entry.value),
-                          child: Container(
-                            width: 100,
-                            margin: const EdgeInsets.only(right: 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildCoverArt(albArtTrack, 90, 8),
-                                const SizedBox(height: 4),
-                                Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('Songs (${artistTracks.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(height: 10),
-                  ...artistTracks.map((song) => _buildNamidaTrackTile(song)),
                 ],
               ),
-              Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
-            ],
-          ),
+              body: Stack(
+                children: [
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 140),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            _buildRoundArtistAvatar(firstArtTrack, 50, artistName: artistName),
+                            const SizedBox(width: 18),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(artistName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 4),
+                                  Text('${artistTracks.length} Tracks • $formattedTotal', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('Albums (${albumsMap.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 140,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          children: albumsMap.entries.map((entry) {
+                            final albArtTrack = entry.value.firstWhere(
+                              (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                              orElse: () => entry.value.first,
+                            );
+                            return GestureDetector(
+                              onTap: () => _showAlbumDetailScreen(entry.key, entry.value),
+                              child: Container(
+                                width: 100,
+                                margin: const EdgeInsets.only(right: 12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildCoverArt(albArtTrack, 90, 8),
+                                    const SizedBox(height: 4),
+                                    Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                    Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('Songs (${artistTracks.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(height: 10),
+                      ...artistTracks.map((song) => _buildNamidaTrackTile(song)),
+                    ],
+                  ),
+                  Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -4207,10 +4524,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                               Text(albumName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                               const SizedBox(height: 4),
                               GestureDetector(
-                                onTap: () => _showArtistDetailScreen(
-                                  firstTrack.artist,
-                                  _songs.where((s) => s.artist.contains(firstTrack.artist)).toList(),
-                                ),
+                                onTap: () {
+                                  _buildArtistGroupsMap();
+                                  final who = _primaryArtist(firstTrack.artist);
+                                  _showArtistDetailScreen(who, _tracksForArtist(who));
+                                },
                                 child: Text(
                                   firstTrack.artist,
                                   maxLines: 1,
