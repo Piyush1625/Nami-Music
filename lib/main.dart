@@ -1435,12 +1435,19 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   void _showAudioPathDetails(AudioTrack song) {
+    final actualBitrate = song.fileSize > 0 && song.duration.inSeconds > 0
+        ? ((song.fileSize * 8) / 1000 / song.duration.inSeconds).round()
+        : song.bitrateKbps;
+    final isHiRes = song.bitDepth >= 24 ||
+        song.sampleRateHz > 48000 ||
+        actualBitrate > 1000;
     final kHz = (song.sampleRateHz / 1000.0).toStringAsFixed(1);
     final pcmKbps = (song.sampleRateHz * song.bitDepth * 2) ~/ 1000;
+    final extBadge = song.path.split('.').last.toUpperCase();
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF121218),
+      backgroundColor: const Color(0xFF0F0F15),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => SafeArea(
@@ -1461,29 +1468,44 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Audio path',
+                  const Text('Audio Pipeline',
                       style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
                           color: Colors.white)),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                        color: Colors.white10,
+                        color: isHiRes
+                            ? Colors.amber.withOpacity(0.15)
+                            : Colors.white10,
+                        border: Border.all(
+                            color: isHiRes
+                                ? Colors.amber.withOpacity(0.5)
+                                : Colors.transparent),
                         borderRadius: BorderRadius.circular(12)),
                     child: Row(
                       children: [
-                        Icon(Icons.bolt_rounded,
+                        Icon(
+                            isHiRes
+                                ? Icons.high_quality_rounded
+                                : Icons.bolt_rounded,
                             size: 14,
-                            color:
-                                _eqEnabled ? Colors.cyanAccent : Colors.amber),
+                            color: isHiRes
+                                ? Colors.amber
+                                : (_eqEnabled
+                                    ? Colors.cyanAccent
+                                    : Colors.white70)),
                         const SizedBox(width: 4),
-                        Text(_eqEnabled ? 'Hardware DSP' : 'Bit-perfect',
-                            style: const TextStyle(
+                        Text(
+                            isHiRes
+                                ? 'Hi-Res Lossless'
+                                : (_eqEnabled ? 'DSP Active' : 'Bit-perfect'),
+                            style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.white)),
+                                color: isHiRes ? Colors.amber : Colors.white)),
                       ],
                     ),
                   ),
@@ -1492,9 +1514,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               const SizedBox(height: 20),
               _buildAudioPathNode(
                 icon: Icons.music_note_rounded,
-                title: 'Source • PCM',
+                title: 'Source File • $extBadge',
                 subtitle:
-                    '${song.bitDepth}-bit • $kHz kHz • 2 ch • $pcmKbps kbps',
+                    '${song.bitDepth}-bit • $kHz kHz • 2 ch • $actualBitrate kbps (PCM $pcmKbps kbps)',
                 showConnectorDown: true,
               ),
               _buildAudioPathNode(
@@ -4785,7 +4807,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             child: Row(
               children: [
                 if (activeSong != null)
-                  _buildCoverArt(activeSong, 48, 8)
+                  Hero(
+                    tag: 'album_art_${activeSong.path}',
+                    child: _buildCoverArt(activeSong, 48, 8),
+                  )
                 else
                   Container(
                     width: 48,
@@ -6214,82 +6239,120 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           artWidget = Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24));
         }
 
+        final meshColor1 = glowColor.withOpacity(0.26);
+        final meshColor2 =
+            glowColor.withRed((glowColor.red * 0.8).toInt()).withOpacity(0.16);
+        final meshColor3 = glowColor
+            .withBlue((glowColor.blue * 1.2).clamp(0, 255).toInt())
+            .withOpacity(0.20);
+
         return Scaffold(
-          backgroundColor: const Color(0xFF07070B),
+          backgroundColor: const Color(0xFF050508),
           body: Container(
             width: double.infinity,
             height: double.infinity,
-            padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF07070B),
+              color: const Color(0xFF050508),
               gradient: widget.ambientGlow
                   ? RadialGradient(
-                      center: const Alignment(0.0, -0.25),
-                      radius: 0.9,
-                      colors: [
-                        glowColor.withOpacity(0.18),
-                        const Color(0xFF07070B),
-                      ],
+                      center: const Alignment(-0.5, -0.5),
+                      radius: 1.5,
+                      colors: [meshColor1, const Color(0xFF050508)],
                     )
                   : null,
             ),
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 28),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            Text('$dynamicIdx/$totalCount', style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 2),
-                            Text((song?.album ?? 'ALBUM'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
-                          ],
+            child: Stack(
+              children: [
+                if (widget.ambientGlow)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: const Alignment(0.8, 0.2),
+                          radius: 1.2,
+                          colors: [meshColor2, Colors.transparent],
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () => _showMoreAndLoopSheet(song),
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
-                          child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-
-                  const Spacer(flex: 2),
-
-                  Center(
-                    child: _viewMode == 0
-                        ? GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onDoubleTap: () => _seekRelative(-5),
-                            child: Container(
-                              width: artSize,
-                              height: artSize,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.75),
-                                    blurRadius: 32,
-                                    spreadRadius: 4,
+                if (widget.ambientGlow)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: const Alignment(0.0, 0.8),
+                          radius: 1.0,
+                          colors: [meshColor3, Colors.transparent],
+                        ),
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
+                  child: SafeArea(
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 28),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'PLAYING $dynamicIdx/$totalCount',
+                                    style: const TextStyle(fontSize: 10, color: Colors.white54, fontWeight: FontWeight.w800, letterSpacing: 1.3),
                                   ),
+                                  const SizedBox(height: 2),
+                                  Text((song?.album ?? 'ALBUM'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
                                 ],
                               ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: artWidget,
+                            ),
+                            GestureDetector(
+                              onTap: () => _showMoreAndLoopSheet(song),
+                              child: Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
+                                child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
                               ),
                             ),
-                          )
+                          ],
+                        ),
+
+                        const Spacer(flex: 2),
+
+                        Center(
+                          child: _viewMode == 0
+                              ? GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onDoubleTap: () => _seekRelative(-5),
+                                  child: Hero(
+                                    tag: song != null ? 'album_art_${song.path}' : 'album_art_empty',
+                                    child: Container(
+                                      width: artSize,
+                                      height: artSize,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(24),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: glowColor.withOpacity(0.32),
+                                            blurRadius: 40,
+                                            spreadRadius: 2,
+                                            offset: const Offset(0, 14),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(24),
+                                        child: artWidget,
+                                      ),
+                                    ),
+                                  ),
+                                )
                         : SizedBox(
                             width: artSize,
                             height: artSize,
@@ -6618,8 +6681,11 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                       ],
                     ),
                   ),
-                ],
-              ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
