@@ -64,7 +64,7 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
-Inject Permissions, AudioServiceActivity & Background Service
+      - name: Inject Permissions, AudioServiceActivity & Background Service
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q "READ_MEDIA_AUDIO" "$MANIFEST"; then
@@ -107,3 +107,60 @@ Inject Permissions, AudioServiceActivity & Background Service
           KT_EOF
           fi
 
+      - name: Force compileSdk 36 in App & All Plugins
+        run: |
+          if [ -f "android/app/build.gradle.kts" ]; then
+            sed -i 's/compileSdk = .*/compileSdk = 36/g' android/app/build.gradle.kts
+            sed -i 's/targetSdk = .*/targetSdk = 36/g' android/app/build.gradle.kts
+            sed -i 's/minSdk = .*/minSdk = 24/g' android/app/build.gradle.kts
+          fi
+
+          find / -name "build.gradle*" -path "*pub-cache*" 2>/dev/null | while read -r gradle_file; do
+            if [[ "$gradle_file" == *.kts ]]; then
+              sed -i -E 's/^[[:space:]]*compileSdk(Version)?[[:space:]]*=[[:space:]]*.*/    compileSdk = 36/g' "$gradle_file"
+            else
+              sed -i -E 's/^[[:space:]]*compileSdk(Version)?[[:space:]]*[:=]?[[:space:]]*.*/    compileSdkVersion 36/g' "$gradle_file"
+            fi
+          done
+
+          cat << 'KTS_EOF' > android/build.gradle.kts
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
+          rootProject.layout.buildDirectory.value(newBuildDir)
+
+          subprojects {
+              val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+              project.layout.buildDirectory.value(newSubprojectBuildDir)
+          }
+
+          subprojects {
+              project.evaluationDependsOn(":app")
+          }
+
+          tasks.register<Delete>("clean") {
+              delete(rootProject.layout.buildDirectory)
+          }
+          KTS_EOF
+
+      - name: Build Optimized ARM64 Release APK
+        run: flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
+
+      - name: Upload APK to Workflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nami-Release-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Publish Automatic GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Nami Build #${{ github.run_number }}"
+          files: build/app/outputs/flutter-apk/app-release.apk
+          prerelease: false
