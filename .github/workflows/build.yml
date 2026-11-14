@@ -107,6 +107,14 @@ jobs:
           KT_EOF
           fi
 
+      - name: Ensure audio_service dependency in app gradle
+        run: |
+          if [ -f "android/app/build.gradle" ]; then
+            echo "dependencies { implementation project(':audio_service') }" >> android/app/build.gradle
+          elif [ -f "android/app/build.gradle.kts" ]; then
+            echo "dependencies { implementation(project(':audio_service')) }" >> android/app/build.gradle.kts
+          fi
+
       - name: Force compileSdk 36 in App & All Plugins
         run: |
           if [ -f "android/app/build.gradle.kts" ]; then
