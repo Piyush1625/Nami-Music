@@ -84,7 +84,7 @@ jobs:
           fi
 
           if ! grep -q "AudioService" "$MANIFEST"; then
-            sed -i '/<\/activity>/i \
+            sed -i '/<\/application>/i \
               <service android:name="com.ryanheise.audioservice.AudioService" android:foregroundServiceType="mediaPlayback" android:exported="true">\n\
                 <intent-filter>\n\
                   <action android:name="android.media.browse.MediaBrowserService" />\n\
