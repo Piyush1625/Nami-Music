@@ -48,9 +48,8 @@ jobs:
 
       - name: Generate Android Platform Files
         run: |
-          if [ ! -d "android" ]; then
-            flutter create --platforms=android --org com.piyush.nami --project-name nami .
-          fi
+          rm -rf android
+          flutter create --platforms=android --org com.piyush.nami --project-name nami .
 
       - name: Inject Speed Optimizations into gradle.properties
         run: |
@@ -97,10 +96,12 @@ jobs:
               </receiver>' "$MANIFEST"
           fi
 
+          sed -i 's/android:name=".MainActivity"/android:name="com.ryanheise.audioservice.AudioServiceActivity"/g' "$MANIFEST"
           MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
           if [ -n "$MAIN_KT" ]; then
-            cat << 'KT_EOF' > "$MAIN_KT"
-          package com.piyush.nami
+            PKG_LINE=$(grep "^package " "$MAIN_KT" | head -n 1)
+            cat << KT_EOF > "$MAIN_KT"
+          $PKG_LINE
 
           import com.ryanheise.audioservice.AudioServiceActivity
 
