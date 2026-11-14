@@ -112,7 +112,7 @@ jobs:
           if [ -f "android/app/build.gradle" ]; then
             echo "dependencies { implementation project(':audio_service') }" >> android/app/build.gradle
           elif [ -f "android/app/build.gradle.kts" ]; then
-            echo "dependencies { implementation(project(':audio_service')) }" >> android/app/build.gradle.kts
+            echo "dependencies { implementation(project("\:audio_service")) }" >> android/app/build.gradle.kts
           fi
 
       - name: Force compileSdk 36 in App & All Plugins
@@ -151,21 +151,7 @@ jobs:
               project.evaluationDependsOn(":app")
           }
 
-          subprojects {
-              val forceSdk36: Action<Project> = Action {
-                  extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
-                      compileSdkVersion(36)
-                      defaultConfig {
-                          minSdk = 24
-                      }
-                  }
-              }
-              if (project.state.executed) {
-                  forceSdk36.execute(project)
-              } else {
-                  project.afterEvaluate(forceSdk36)
-              }
-          }
+
 
           tasks.register<Delete>("clean") {
               delete(rootProject.layout.buildDirectory)
