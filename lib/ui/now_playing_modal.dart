@@ -195,11 +195,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
     );
   }
 
-  @override
-  void dispose() {
-    _lyricsScrollCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
