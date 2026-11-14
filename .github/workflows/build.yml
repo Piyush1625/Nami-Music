@@ -97,10 +97,10 @@ jobs:
               </receiver>' "$MANIFEST"
           fi
 
-          MAIN_KT=$(find android/app/src/main/kotlin -name "MainActivity.kt" | head -n 1)
+          MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
           if [ -n "$MAIN_KT" ]; then
             cat << 'KT_EOF' > "$MAIN_KT"
-          package com.piyush.nami.nami
+          package com.piyush.nami
 
           import com.ryanheise.audioservice.AudioServiceActivity
 
