@@ -9,91 +9,22 @@ import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
+import 'package:audio_service/audio_service.dart';
 
-const Map<String, String> _httpHeaders = {
-  'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
-  'Accept': 'application/json',
-};
+import 'core/nami_helpers.dart';
+import 'models/nami_models.dart';
+import 'services/metadata_service.dart';
+import 'services/nami_audio_handler.dart';
+import 'services/auto_eq_service.dart';
+import 'services/storage_service.dart';
+import 'ui/namida_fast_scroller.dart';
+import 'ui/now_playing_modal.dart';
+import 'ui/settings_screen.dart';
 
-String _normName(String s) =>
-    s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
-
-bool _namesMatchLoosely(String a, String b) {
-  if (a.isEmpty || b.isEmpty) return false;
-  if (a == b) return true;
-  final shorter = a.length <= b.length ? a : b;
-  final longer = a.length <= b.length ? b : a;
-  return shorter.length >= 4 &&
-      longer.contains(shorter) &&
-      shorter.length / longer.length >= 0.6;
-}
-
-bool _artistNamesMatch(String a, String b) {
-  if (a.isEmpty || b.isEmpty) return false;
-  if (a == b) return true;
-  return (a.length >= 3 && b.contains(a)) || (b.length >= 3 && a.contains(b));
-}
-
-bool _looksLikeImage(Uint8List b) {
-  if (b.length < 512) return false;
-  final jpeg = b[0] == 0xFF && b[1] == 0xD8;
-  final png = b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47;
-  final riff = b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46;
-  return jpeg || png || riff;
-}
-
-String _formatDurationPadded(Duration d) {
-  int minutes = d.inMinutes;
-  int seconds = d.inSeconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-}
-
-String _formatTotalDurationHoursMins(Duration d) {
-  int hours = d.inHours;
-  int minutes = d.inMinutes % 60;
-  if (hours > 0) {
-    return '${hours}h ${minutes}m';
-  }
-  return '${math.max(1, minutes)}m';
-}
-
-String _deterministicPathHash(String input) {
-  int hash = 0x811c9dc5;
-  for (int i = 0; i < input.length; i++) {
-    hash ^= input.codeUnitAt(i);
-    hash = (hash * 0x01000193) & 0xFFFFFFFF;
-  }
-  return hash.toRadixString(16).padLeft(8, '0');
-}
-
-String _colorToHex(Color c) {
-  return '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-}
-
-Color _extractDominantColor(Uint8List? bytes, Color fallback) {
-  if (bytes == null || bytes.length < 500) return fallback;
-  try {
-    int rTotal = 0, gTotal = 0, bTotal = 0, count = 0;
-    int step = math.max(1, bytes.length ~/ 150);
-    for (int i = 64; i < bytes.length - 3; i += step) {
-      int r = bytes[i];
-      int g = bytes[i + 1];
-      int b = bytes[i + 2];
-      int brightness = (r * 299 + g * 587 + b * 114) ~/ 1000;
-      if (brightness > 40 && brightness < 230) {
-        rTotal += r;
-        gTotal += g;
-        bTotal += b;
-        count++;
-      }
-    }
-    if (count > 0) {
-      return Color.fromARGB(
-          255, rTotal ~/ count, gTotal ~/ count, bTotal ~/ count);
-    }
-  } catch (_) {}
-  return fallback;
-}
+NamiAudioHandler? namiAudioHandler;
+late final AndroidEqualizer namiSharedEqualizer;
+late final AndroidLoudnessEnhancer namiSharedLoudness;
+late final AudioPlayer namiSharedAudioPlayer;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -101,6 +32,41 @@ Future<void> main() async {
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Color(0xFF07070B),
   ));
+
+  namiSharedEqualizer = AndroidEqualizer();
+  namiSharedLoudness = AndroidLoudnessEnhancer();
+
+  AudioPipeline? pipeline;
+  if (Platform.isAndroid) {
+    try {
+      pipeline = AudioPipeline(
+        androidAudioEffects: [namiSharedLoudness, namiSharedEqualizer],
+      );
+    } catch (_) {}
+  }
+
+  namiSharedAudioPlayer = AudioPlayer(
+    audioPipeline: pipeline,
+    handleInterruptions: true,
+    androidApplyAudioAttributes: true,
+    handleAudioSessionActivation: true,
+  );
+
+  try {
+    namiAudioHandler = await AudioService.init(
+      builder: () => NamiAudioHandler(namiSharedAudioPlayer),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.piyush.nami.channel.audio',
+        androidNotificationChannelName: 'Nami Audiophile Playback',
+        androidNotificationIcon: 'mipmap/ic_launcher',
+        androidNotificationOngoing: false,
+        androidStopForegroundOnPause: false,
+      ),
+    );
+  } catch (e) {
+    debugPrint('AudioService.init error: $e');
+  }
+
   runApp(const NamiApp());
 }
 
@@ -164,561 +130,6 @@ class _NamiAppState extends State<NamiApp> {
   }
 }
 
-// Interactive 2D Hue/Saturation/Value Palette Canvas
-class HuePaletteCanvas extends StatefulWidget {
-  final Color initialColor;
-  final ValueChanged<Color> onColorChanged;
-
-  const HuePaletteCanvas({
-    super.key,
-    required this.initialColor,
-    required this.onColorChanged,
-  });
-
-  @override
-  State<HuePaletteCanvas> createState() => _HuePaletteCanvasState();
-}
-
-class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
-  late double _hue;
-  late double _saturation;
-  late double _value;
-
-  @override
-  void initState() {
-    super.initState();
-    final hsv = HSVColor.fromColor(widget.initialColor);
-    _hue = hsv.hue;
-    _saturation = hsv.saturation.clamp(0.0, 1.0);
-    _value = hsv.value.clamp(0.0, 1.0);
-  }
-
-  Color get _currentColor =>
-      HSVColor.fromAHSV(1.0, _hue, _saturation, _value).toColor();
-
-  void _updateSV(Offset localPosition, Size size) {
-    setState(() {
-      _saturation = (localPosition.dx / size.width).clamp(0.0, 1.0);
-      _value = (1.0 - (localPosition.dy / size.height)).clamp(0.0, 1.0);
-    });
-    widget.onColorChanged(_currentColor);
-  }
-
-  void _updateHue(double localDx, double width) {
-    setState(() {
-      _hue = ((localDx / width) * 360.0).clamp(0.0, 360.0);
-    });
-    widget.onColorChanged(_currentColor);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pureHueColor = HSVColor.fromAHSV(1.0, _hue, 1.0, 1.0).toColor();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 2D Saturation-Brightness Canvas
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final canvasWidth = constraints.maxWidth;
-            const canvasHeight = 165.0;
-            final thumbX = _saturation * canvasWidth;
-            final thumbY = (1.0 - _value) * canvasHeight;
-
-            return GestureDetector(
-              onPanDown: (d) =>
-                  _updateSV(d.localPosition, Size(canvasWidth, canvasHeight)),
-              onPanUpdate: (d) =>
-                  _updateSV(d.localPosition, Size(canvasWidth, canvasHeight)),
-              child: Container(
-                width: canvasWidth,
-                height: canvasHeight,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(15),
-                  child: Stack(
-                    children: [
-                      // Base Hue
-                      Container(color: pureHueColor),
-                      // Horizontal White -> Transparent (Saturation)
-                      Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [Colors.white, Colors.transparent],
-                          ),
-                        ),
-                      ),
-                      // Vertical Transparent -> Black (Value/Brightness)
-                      Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Colors.black],
-                          ),
-                        ),
-                      ),
-                      // 2D Crosshair Thumb
-                      Positioned(
-                        left: (thumbX - 11).clamp(0.0, canvasWidth - 22),
-                        top: (thumbY - 11).clamp(0.0, canvasHeight - 22),
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: _currentColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.6),
-                                blurRadius: 6,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 14),
-        // 360-Degree Rainbow Hue Spectrum Bar
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final barWidth = constraints.maxWidth;
-            final thumbX = (_hue / 360.0) * barWidth;
-            return GestureDetector(
-              onPanDown: (d) => _updateHue(d.localPosition.dx, barWidth),
-              onPanUpdate: (d) => _updateHue(d.localPosition.dx, barWidth),
-              child: SizedBox(
-                width: barWidth,
-                height: 28,
-                child: Stack(
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    Container(
-                      height: 14,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFFFF0000),
-                            Color(0xFFFFFF00),
-                            Color(0xFF00FF00),
-                            Color(0xFF00FFFF),
-                            Color(0xFF0000FF),
-                            Color(0xFFFF00FF),
-                            Color(0xFFFF0000),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: (thumbX - 11).clamp(0.0, barWidth - 22),
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: pureHueColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2.5),
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withOpacity(0.5),
-                                blurRadius: 4),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        // Live Selected Color Preview & Hex Pill
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: _currentColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  _colorToHex(_currentColor),
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13.5,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              'H: ${_hue.round()}°  S: ${(_saturation * 100).round()}%  B: ${(_value * 100).round()}%',
-              style: const TextStyle(fontSize: 11.5, color: Colors.white54),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class SyllableToken {
-  final Duration timestamp;
-  final String text;
-  SyllableToken({required this.timestamp, required this.text});
-}
-
-class LyricLine {
-  final Duration timestamp;
-  final String text;
-  final List<SyllableToken> syllables;
-  LyricLine({
-    required this.timestamp,
-    required this.text,
-    this.syllables = const [],
-  });
-}
-
-class AudioTrack {
-  String title;
-  String artist;
-  String album;
-  String genre;
-  String albumArtist;
-  String composer;
-  String comment;
-  String trackNumber;
-  String year;
-  final String path;
-  String? thumbPath;
-  Uint8List? albumArt;
-  String rawLyrics;
-  List<LyricLine> parsedLyrics;
-  bool isMetadataLoaded;
-  bool isOnlineEnriched;
-  bool isLyricsFetched;
-  Duration duration;
-  bool isFavorite;
-  String addedDate;
-  int addedTimestampMs;
-  int fileSize;
-  int bitrateKbps;
-  int sampleRateHz;
-  int bitDepth;
-  int playCount;
-
-  AudioTrack({
-    required this.title,
-    required this.artist,
-    required this.album,
-    this.genre = "Hip-Hop/Rap",
-    this.albumArtist = "",
-    this.composer = "",
-    this.comment = "",
-    this.trackNumber = "1/10",
-    this.year = "2025",
-    required this.path,
-    this.thumbPath,
-    this.albumArt,
-    this.rawLyrics = "",
-    List<LyricLine>? parsedLyrics,
-    this.isMetadataLoaded = false,
-    this.isOnlineEnriched = false,
-    this.isLyricsFetched = false,
-    this.duration = const Duration(minutes: 3, seconds: 30),
-    this.isFavorite = false,
-    this.addedDate = "Sep 2026",
-    this.addedTimestampMs = 0,
-    this.fileSize = 0,
-    this.bitrateKbps = 1411,
-    this.sampleRateHz = 44100,
-    this.bitDepth = 24,
-    this.playCount = 0,
-  }) : parsedLyrics = parsedLyrics ?? [];
-
-  Map<String, dynamic> toJson() => {
-        'title': title,
-        'artist': artist,
-        'album': album,
-        'genre': genre,
-        'path': path,
-        'thumbPath': thumbPath,
-        'year': year,
-        'trackNumber': trackNumber,
-        'durationSec': duration.inSeconds,
-        'bitrate': bitrateKbps,
-        'sampleRate': sampleRateHz,
-        'bitDepth': bitDepth,
-        'isFavorite': isFavorite,
-        'onlineDone3': isOnlineEnriched,
-        'playCount': playCount,
-        'addedDate': addedDate,
-        'addedTimestampMs': addedTimestampMs,
-      };
-
-  factory AudioTrack.fromJson(Map<String, dynamic> j) => AudioTrack(
-        title: j['title'] ?? 'Unknown',
-        artist: j['artist'] ?? 'Unknown Artist',
-        album: j['album'] ?? 'Unknown Album',
-        genre: j['genre'] ?? 'Music',
-        path: j['path'] ?? '',
-        thumbPath: j['thumbPath'],
-        year: j['year'] ?? '2026',
-        trackNumber: j['trackNumber'] ?? '1',
-        duration: Duration(seconds: j['durationSec'] ?? 210),
-        bitrateKbps: j['bitrate'] ?? 1411,
-        sampleRateHz: j['sampleRate'] ?? 44100,
-        bitDepth: j['bitDepth'] ?? 16,
-        isFavorite: j['isFavorite'] ?? false,
-        isOnlineEnriched: j['onlineDone3'] ?? false,
-        playCount: j['playCount'] ?? 0,
-        addedDate: j['addedDate'] ?? 'Sep 2026',
-        addedTimestampMs: j['addedTimestampMs'] ?? 0,
-        isMetadataLoaded: (j['artist'] != null &&
-            j['artist'] != 'Unknown Artist' &&
-            j['thumbPath'] != null),
-      );
-}
-
-class CustomPlaylist {
-  String name;
-  List<AudioTrack> tracks;
-  CustomPlaylist({required this.name, required this.tracks});
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'paths': tracks.map((t) => t.path).toList(),
-      };
-}
-
-class MornyeExtension {
-  final String name;
-  final String version;
-  final String author;
-  final String format;
-  final String category;
-  final String description;
-  final String? endpointUrl;
-  bool isInstalled;
-  bool isEnabled;
-
-  MornyeExtension({
-    required this.name,
-    required this.version,
-    required this.author,
-    required this.format,
-    this.category = 'Metadata',
-    this.description = '',
-    this.endpointUrl,
-    this.isInstalled = true,
-    this.isEnabled = true,
-  });
-}
-
-class MornyeCatalogItem {
-  final String title;
-  final String artist;
-  final String album;
-  final String subtitle;
-  final String type;
-  final String service;
-  final String? previewUrl;
-  final String? artworkUrl;
-  final int durationSeconds;
-  final String? collectionId;
-
-  MornyeCatalogItem({
-    required this.title,
-    required this.artist,
-    required this.album,
-    required this.subtitle,
-    required this.type,
-    required this.service,
-    this.previewUrl,
-    this.artworkUrl,
-    this.durationSeconds = 210,
-    this.collectionId,
-  });
-}
-
-class NamidaFastScroller extends StatefulWidget {
-  final ScrollController controller;
-  final int itemCount;
-  final String Function(int index) labelBuilder;
-  final Widget child;
-
-  const NamidaFastScroller({
-    super.key,
-    required this.controller,
-    required this.itemCount,
-    required this.labelBuilder,
-    required this.child,
-  });
-
-  @override
-  State<NamidaFastScroller> createState() => _NamidaFastScrollerState();
-}
-
-class _NamidaFastScrollerState extends State<NamidaFastScroller> {
-  double _scrollFraction = 0.0;
-  bool _isDragging = false;
-  int _activeIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onScroll);
-  }
-
-  @override
-  void didUpdateWidget(covariant NamidaFastScroller oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller) {
-      oldWidget.controller.removeListener(_onScroll);
-      widget.controller.addListener(_onScroll);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onScroll);
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_isDragging || !widget.controller.hasClients) return;
-    final max = widget.controller.position.maxScrollExtent;
-    if (max <= 0) return;
-    final frac = (widget.controller.offset / max).clamp(0.0, 1.0);
-    if ((frac - _scrollFraction).abs() > 0.005 && mounted) {
-      setState(() => _scrollFraction = frac);
-    }
-  }
-
-  void _handleDrag(double localY, double trackHeight) {
-    if (!widget.controller.hasClients ||
-        trackHeight <= 0 ||
-        widget.itemCount <= 0) return;
-    final frac = (localY / trackHeight).clamp(0.0, 1.0);
-    final max = widget.controller.position.maxScrollExtent;
-    widget.controller.jumpTo(frac * max);
-    final idx = (frac * (widget.itemCount - 1))
-        .round()
-        .clamp(0, widget.itemCount - 1);
-    setState(() {
-      _scrollFraction = frac;
-      _activeIndex = idx;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final trackHeight = (constraints.maxHeight - 105)
-            .clamp(120.0, constraints.maxHeight);
-        final thumbHeight = _isDragging ? 52.0 : 40.0;
-        final thumbTop = 8.0 +
-            (_scrollFraction * (trackHeight - thumbHeight))
-                .clamp(0.0, math.max(0.0, trackHeight - thumbHeight));
-
-        return Stack(
-          children: [
-            widget.child,
-            if (widget.itemCount > 12)
-              Positioned(
-                right: 0,
-                top: 8,
-                height: trackHeight,
-                width: 14,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onVerticalDragStart: (d) {
-                    setState(() => _isDragging = true);
-                    _handleDrag(d.localPosition.dy, trackHeight);
-                  },
-                  onVerticalDragUpdate: (d) =>
-                      _handleDrag(d.localPosition.dy, trackHeight),
-                  onVerticalDragEnd: (_) =>
-                      setState(() => _isDragging = false),
-                  onVerticalDragCancel: () =>
-                      setState(() => _isDragging = false),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        right: 1.5,
-                        top: thumbTop - 8,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          width: _isDragging ? 5.0 : 3.2,
-                          height: thumbHeight,
-                          decoration: BoxDecoration(
-                            color: _isDragging
-                                ? accent
-                                : Colors.white.withOpacity(0.42),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            if (_isDragging && widget.itemCount > 0)
-              Positioned(
-                right: 20,
-                top: thumbTop.clamp(10.0, math.max(10.0, trackHeight - 36)),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.6), blurRadius: 10)
-                    ],
-                  ),
-                  child: Text(
-                    widget.labelBuilder(_activeIndex),
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12.5),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
 
 class NamiHomeShell extends StatefulWidget {
   const NamiHomeShell({super.key});
@@ -927,24 +338,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
-    _androidEqualizer = AndroidEqualizer();
-    _androidLoudness = AndroidLoudnessEnhancer();
+    _androidEqualizer = namiSharedEqualizer;
+    _androidLoudness = namiSharedLoudness;
+    _audioPlayer = namiSharedAudioPlayer;
 
-    AudioPipeline? pipeline;
-    if (Platform.isAndroid) {
-      try {
-        pipeline = AudioPipeline(
-          androidAudioEffects: [_androidLoudness, _androidEqualizer],
-        );
-      } catch (_) {}
-    }
-
-    _audioPlayer = AudioPlayer(
-      audioPipeline: pipeline,
-      handleInterruptions: true,
-      androidApplyAudioAttributes: true,
-      handleAudioSessionActivation: true,
-    );
+    namiAudioHandler?.onSkipNext = _playNextTrack;
+    namiAudioHandler?.onSkipPrevious = _playPrevTrack;
 
     _initHardwareDsp();
     _initAudioSessionAndDac();
@@ -1043,17 +442,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     }
   }
 
-  Future<File> get _cacheFile async {
-    final dir = await _ensureThumbDir();
-    return File('${dir.path}/nami_state_cache_v4.json');
-  }
-
   Future<void> _loadStateCache() async {
     try {
-      final f = await _cacheFile;
-      if (await f.exists()) {
-        final data = jsonDecode(await f.readAsString());
-        if (data is Map<String, dynamic>) {
+      final data = await NamiStorageService.loadCacheData();
+      if (data != null) {
           _totalListenSeconds = data['totalListenSeconds'] ?? 0;
           _userName = data['userName'] ?? 'Piyush';
           _userPhotoPath = data['userPhotoPath'];
@@ -1079,7 +471,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               [];
           for (var s in cachedSongs) {
             final expectedThumb =
-                '${thumbDir.path}/${_deterministicPathHash(s.path)}.jpg';
+                '${thumbDir.path}/${namiDeterministicPathHash(s.path)}.jpg';
             final tf = File(s.thumbPath ?? expectedThumb);
             if (await tf.exists()) {
               s.thumbPath = tf.path;
@@ -1092,14 +484,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               _filteredSongs = List.from(cachedSongs);
             });
           }
-        }
       }
     } catch (_) {}
   }
 
   Future<void> _saveStateCache() async {
     try {
-      final f = await _cacheFile;
       final map = {
         'totalListenSeconds': _totalListenSeconds,
         'userName': _userName,
@@ -1111,7 +501,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'accentColor': mounted ? NamiApp.of(context).accentColor.value : null,
         'cachedTracks': _songs.map((s) => s.toJson()).toList(),
       };
-      await f.writeAsString(jsonEncode(map));
+      await NamiStorageService.saveCacheData(map);
     } catch (_) {}
   }
 
@@ -1242,10 +632,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     _historyTracks.insert(0, song);
     if (_autoColoring && song.albumArt != null) {
       final dominant =
-          _extractDominantColor(song.albumArt, const Color(0xFFE53935));
+          namiExtractDominantColor(song.albumArt, const Color(0xFFE53935));
       NamiApp.of(context).updateTheme(newAccent: dominant);
     }
     if (mounted) setState(() {});
+    namiAudioHandler?.updateCurrentMediaItem(song);
     _fetchLyricsOnline(song);
 
     if (song.albumArt == null || song.artist == 'Unknown Artist') {
@@ -1643,6 +1034,37 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
+                  children: AutoEqPreset.getPresets().map((autoEq) {
+                    final sel = _selectedEqPreset == autoEq.name;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        avatar: const Icon(Icons.headphones_rounded, size: 14, color: Colors.white70),
+                        label: Text(
+                          '${autoEq.name} (${autoEq.headphoneModel})',
+                          style: TextStyle(fontSize: 11.5, color: sel ? Colors.white : Colors.white70),
+                        ),
+                        selected: sel,
+                        selectedColor: Theme.of(context).colorScheme.primary,
+                        backgroundColor: const Color(0xFF0A0A0E),
+                        onSelected: (_) async {
+                          setEqState(() {
+                            _selectedEqPreset = autoEq.name;
+                            _eqEnabled = true;
+                            _eqBands.addAll(autoEq.bands);
+                          });
+                          setState(() {});
+                          await _applyHardwareEqGains();
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   children: [
                     'Hi-Fi Master',
                     'Bass Boost',
@@ -1837,7 +1259,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               final res = await http.get(
                 Uri.parse(
                     'https://lrclib.net/api/search?q=${Uri.encodeComponent(searchCtrl.text.trim())}'),
-                headers: _httpHeaders,
+                headers: namiHttpHeaders,
               ).timeout(const Duration(seconds: 6));
               if (res.statusCode == 200) {
                 final data = jsonDecode(res.body);
@@ -2352,7 +1774,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                             customArt = await imgFile.readAsBytes();
                             final thumbDir = await _ensureThumbDir();
                             final thumbFile = File(
-                                '${thumbDir.path}/${_deterministicPathHash(song.path)}.jpg');
+                                '${thumbDir.path}/${namiDeterministicPathHash(song.path)}.jpg');
                             await thumbFile.writeAsBytes(customArt);
                             song.thumbPath = thumbFile.path;
                           }
@@ -2799,7 +2221,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                                   const Text('Queue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '$activeIndex/${_songs.length} • ${_formatTotalDurationHoursMins(totalDur)}',
+                                    '$activeIndex/${_songs.length} • ${namiFormatTotalDurationHoursMins(totalDur)}',
                                     style: const TextStyle(fontSize: 11.5, color: Colors.white54),
                                   ),
                                 ],
@@ -3013,7 +2435,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_formatDurationPadded(song.duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                Text(namiFormatDurationPadded(song.duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
                 const SizedBox(height: 3),
                 GestureDetector(
                   onTap: onToggleFav,
@@ -3082,6 +2504,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           onUsbDacChanged: (v) => setState(() => _usbDacExclusive = v),
           onGaplessChanged: (v) => setState(() => _gaplessPlayback = v),
           onNotificationChanged: (v) => setState(() => _mediaNotificationEnabled = v),
+          onAccentChanged: (c) {
+            NamiApp.of(context).updateTheme(newAccent: c);
+            _saveStateCache();
+          },
           onPitchBlackChanged: (v) {
             setState(() => _usePitchBlack = v);
             NamiApp.of(context).updateTheme(isPitchBlack: v);
@@ -3297,24 +2723,61 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     }
   }
 
-  Future<void> _requestPermissionsAndInitBackground() async {
-    PermissionStatus status = await Permission.audio.request();
-    await Permission.photos.request();
-    if (!status.isGranted) status = await Permission.storage.request();
-    if (!status.isGranted) status = await Permission.manageExternalStorage.request();
+  Future<bool> _checkAnyStorageGranted() async {
+    try {
+      if (await Permission.audio.isGranted ||
+          await Permission.storage.isGranted ||
+          await Permission.manageExternalStorage.isGranted) {
+        return true;
+      }
+      final musicDir = Directory('/storage/emulated/0/Music');
+      if (await musicDir.exists()) {
+        musicDir.listSync().take(1).toList();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<void> _requestPermissionsAndInitBackground({bool userTriggered = false}) async {
+    bool granted = await _checkAnyStorageGranted();
+
+    if (!granted) {
+      var audioStatus = await Permission.audio.status;
+      if (audioStatus.isDenied) {
+        audioStatus = await Permission.audio.request();
+      }
+      if (!audioStatus.isGranted) {
+        var storageStatus = await Permission.storage.status;
+        if (storageStatus.isDenied) {
+          storageStatus = await Permission.storage.request();
+        }
+      }
+      if (!(await Permission.audio.isGranted) && !(await Permission.storage.isGranted)) {
+        var manageStatus = await Permission.manageExternalStorage.status;
+        if (manageStatus.isDenied && userTriggered) {
+          manageStatus = await Permission.manageExternalStorage.request();
+        }
+      }
+      granted = await _checkAnyStorageGranted();
+    }
 
     try {
-      if (await Permission.ignoreBatteryOptimizations.isDenied) {
-        await Permission.ignoreBatteryOptimizations.request();
+      if (await Permission.notification.isDenied) {
+        await Permission.notification.request();
       }
     } catch (_) {}
 
-    if (status.isGranted || await Permission.storage.isGranted || await Permission.manageExternalStorage.isGranted) {
-      setState(() {
-        _hasPermission = true;
-        if (_songs.isEmpty) _isScanning = true;
-      });
+    if (granted || _songs.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _hasPermission = true;
+          if (_songs.isEmpty) _isScanning = true;
+        });
+      }
       await _fastScanDeviceMusic();
+    } else if (mounted) {
+      setState(() => _hasPermission = false);
     }
   }
 
@@ -3460,611 +2923,28 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     AudioTrack track,
     Directory thumbDir, {
     bool force = false,
-  }) async {
-    if (!force &&
-        track.isOnlineEnriched &&
-        track.albumArt != null &&
-        track.artist != 'Unknown Artist') {
-      return;
-    }
-
-    final cleanTitle = _sanitizeMetadataText(
-      track.title
-          .replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '')
-          .replaceAll(
-              RegExp(r'\b(official|video|audio|lyrics|hd|hq|320kbps|flac)\b',
-                  caseSensitive: false),
-              '')
-          .replaceAll('_', ' '),
-    ).trim();
-    if (cleanTitle.isEmpty) return;
-
-    final hasValidArtist = track.artist.isNotEmpty &&
-        track.artist != 'Unknown Artist' &&
-        track.artist != 'Local Audio';
-    final primaryArtist = hasValidArtist
-        ? track.artist
-            .split(RegExp(r'[,&/;]|feat\.|ft\.', caseSensitive: false))
-            .first
-            .trim()
-        : '';
-
-    final query =
-        primaryArtist.isNotEmpty ? '$primaryArtist $cleanTitle' : cleanTitle;
-
-    try {
-      final uri = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&entity=song&limit=5',
+  }) =>
+      NamiMetadataService.enrichTrackOnlineIfMissing(
+        track,
+        thumbDir,
+        force: force,
+        onArtworkUpdated: () => _artworkTick.value++,
       );
-      final res = await http
-          .get(uri, headers: _httpHeaders)
-          .timeout(const Duration(seconds: 6));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final results = (data['results'] as List?) ?? [];
-        if (results.isNotEmpty) {
-          Map<String, dynamic> bestHit =
-              Map<String, dynamic>.from(results.first);
-          for (final rawHit in results) {
-            if (rawHit is Map) {
-              final tNorm = _normName((rawHit['trackName'] ?? '').toString());
-              final aNorm = _normName((rawHit['artistName'] ?? '').toString());
-              if (_namesMatchLoosely(tNorm, _normName(cleanTitle)) &&
-                  (primaryArtist.isEmpty ||
-                      _artistNamesMatch(aNorm, _normName(primaryArtist)))) {
-                bestHit = Map<String, dynamic>.from(rawHit);
-                break;
-              }
-            }
-          }
 
-          final apiTitle = (bestHit['trackName'] ?? '').toString().trim();
-          final apiArtist = (bestHit['artistName'] ?? '').toString().trim();
-          final apiAlbum = (bestHit['collectionName'] ?? '').toString().trim();
-          final apiGenre =
-              (bestHit['primaryGenreName'] ?? '').toString().trim();
+  Future<void> _extractAudioMetadataUniversal(
+    AudioTrack track,
+    Directory thumbDir,
+  ) =>
+      NamiMetadataService.extractAudioMetadataUniversal(
+        track,
+        thumbDir,
+        onArtworkUpdated: () => _artworkTick.value++,
+      );
 
-          if (!hasValidArtist && apiArtist.isNotEmpty) {
-            track.artist = apiArtist;
-          }
-          if (track.title.contains(' - ') && apiTitle.isNotEmpty) {
-            track.title = apiTitle;
-          }
-          if ((track.album == track.title ||
-                  track.album == 'Unknown Album' ||
-                  track.album == 'Music' ||
-                  track.album == 'Download') &&
-              apiAlbum.isNotEmpty) {
-            track.album = apiAlbum;
-          }
-          if (apiGenre.isNotEmpty) {
-            track.genre = apiGenre;
-          }
+  String _sanitizeMetadataText(String input) =>
+      NamiMetadataService.sanitizeMetadataText(input);
 
-          final artUrl = bestHit['artworkUrl100']
-              ?.toString()
-              .replaceAll('100x100bb', '600x600bb')
-              .replaceAll('100x100', '600x600');
-          if (artUrl != null &&
-              artUrl.isNotEmpty &&
-              (track.albumArt == null || force)) {
-            final imgRes = await http
-                .get(Uri.parse(artUrl), headers: _httpHeaders)
-                .timeout(const Duration(seconds: 6));
-            if (imgRes.statusCode == 200 &&
-                _looksLikeImage(imgRes.bodyBytes)) {
-              track.albumArt = imgRes.bodyBytes;
-              final tf = File(
-                  '${thumbDir.path}/${_deterministicPathHash(track.path)}.jpg');
-              await tf.writeAsBytes(track.albumArt!);
-              track.thumbPath = tf.path;
-              _artworkTick.value++;
-            }
-          }
-          track.isOnlineEnriched = true;
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Universal Metadata & Cover Art Extractor:
-  // Scans ID3v2 (UTF-16/UTF-8/Latin1), FLAC (anywhere in first 64KB), Base64 METADATA_BLOCK_PICTURE, M4A atoms, folder covers & raw JPEG/PNG fallback.
-  Future<void> _extractAudioMetadataUniversal(AudioTrack track, Directory thumbDir) async {
-    RandomAccessFile? raf;
-    try {
-      final file = File(track.path);
-      track.fileSize = await file.length();
-      if (track.fileSize < 128) return;
-
-      raf = await file.open(mode: FileMode.read);
-      final head12 = await raf.read(12);
-      if (head12.length < 12) return;
-
-      int id3EndOffset = 0;
-
-      // Step A: Parse ID3v2 if present at byte 0
-      if (head12[0] == 0x49 && head12[1] == 0x44 && head12[2] == 0x33) {
-        int version = head12[3];
-        int flags = head12[5];
-        int tagSize = ((head12[6] & 0x7F) << 21) | ((head12[7] & 0x7F) << 14) | ((head12[8] & 0x7F) << 7) | (head12[9] & 0x7F);
-        int footerSize = ((flags & 0x10) != 0) ? 10 : 0;
-        id3EndOffset = 10 + tagSize + footerSize;
-
-        int readCap = math.min(10 + tagSize, math.min(track.fileSize, 8 * 1024 * 1024));
-        await raf.setPosition(0);
-        final id3Data = await raf.read(readCap);
-
-        int offset = 10;
-        if ((flags & 0x40) != 0 && offset + 4 <= id3Data.length) {
-          int extSize = (version == 4)
-              ? (((id3Data[offset] & 0x7F) << 21) | ((id3Data[offset + 1] & 0x7F) << 14) | ((id3Data[offset + 2] & 0x7F) << 7) | (id3Data[offset + 3] & 0x7F))
-              : ((id3Data[offset] << 24) | (id3Data[offset + 1] << 16) | (id3Data[offset + 2] << 8) | id3Data[offset + 3]);
-          offset += (version == 4) ? extSize : (extSize + 4);
-        }
-
-        String? id3Artist;
-        while (offset + 10 < id3Data.length) {
-          String frameId = String.fromCharCodes(id3Data.sublist(offset, offset + 4));
-          if (!RegExp(r'^[A-Z0-9]{4}$').hasMatch(frameId)) break;
-          int frameSize = (version == 4)
-              ? (((id3Data[offset + 4] & 0x7F) << 21) | ((id3Data[offset + 5] & 0x7F) << 14) | ((id3Data[offset + 6] & 0x7F) << 7) | (id3Data[offset + 7] & 0x7F))
-              : ((id3Data[offset + 4] << 24) | (id3Data[offset + 5] << 16) | (id3Data[offset + 6] << 8) | id3Data[offset + 7]);
-          offset += 10;
-          if (frameSize <= 0 || offset + frameSize > id3Data.length) break;
-
-          final payload = id3Data.sublist(offset, offset + frameSize);
-          if (frameId == 'TIT2') {
-            final t = _decodeId3TextProper(payload);
-            if (t.isNotEmpty) track.title = t;
-          } else if (frameId == 'TPE1' || frameId == 'TPE2') {
-            final a = _decodeId3TextProper(payload);
-            if (a.isNotEmpty) {
-              if (id3Artist == null) {
-                id3Artist = a;
-              } else if (!id3Artist.contains(a)) {
-                id3Artist = '$id3Artist, $a';
-              }
-            }
-          } else if (frameId == 'TALB') {
-            final al = _decodeId3TextProper(payload);
-            if (al.isNotEmpty) track.album = al;
-          } else if (frameId == 'TCON') {
-            final g = _decodeId3TextProper(payload);
-            if (g.isNotEmpty) track.genre = g;
-          } else if ((frameId == 'TYER' || frameId == 'TDRC') && payload.isNotEmpty) {
-            final y = _decodeId3TextProper(payload);
-            if (y.isNotEmpty) track.year = y;
-          } else if (frameId == 'USLT' && payload.length > 4) {
-            final lyr = _decodeId3TextProper(Uint8List.fromList([payload[0], ...payload.sublist(4)]));
-            if (lyr.isNotEmpty) {
-              track.rawLyrics = lyr;
-              track.parsedLyrics = _parseLrc(lyr);
-            }
-          } else if (frameId == 'APIC' && track.albumArt == null) {
-            track.albumArt = _extractApicImageProper(payload);
-          }
-          offset += frameSize;
-        }
-        if (id3Artist != null && id3Artist.isNotEmpty) {
-          track.artist = id3Artist;
-        }
-        if (track.path.toLowerCase().endsWith('.mp3')) {
-          track.bitrateKbps = 320;
-          track.bitDepth = 16;
-        }
-      }
-
-      // Step B: Search for 'fLaC' magic marker around id3EndOffset (handles prepended ID3 + padding bytes!)
-      int flacMagicPos = -1;
-      if (head12[0] == 0x66 && head12[1] == 0x4C && head12[2] == 0x61 && head12[3] == 0x43) {
-        flacMagicPos = 0;
-      } else if (id3EndOffset < track.fileSize - 4) {
-        final probeLen = math.min(65536, track.fileSize - id3EndOffset);
-        await raf.setPosition(id3EndOffset);
-        final probe = await raf.read(probeLen);
-        for (int i = 0; i < probe.length - 4; i++) {
-          if (probe[i] == 0x66 && probe[i + 1] == 0x4C && probe[i + 2] == 0x61 && probe[i + 3] == 0x43) {
-            flacMagicPos = id3EndOffset + i;
-            break;
-          }
-        }
-      }
-
-      if (flacMagicPos >= 0) {
-        int pos = flacMagicPos + 4;
-        while (pos + 4 < track.fileSize) {
-          await raf.setPosition(pos);
-          final hdr = await raf.read(4);
-          if (hdr.length < 4) break;
-          bool isLast = (hdr[0] & 0x80) != 0;
-          int blockType = hdr[0] & 0x7F;
-          int length = (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
-          pos += 4;
-          if (length < 0 || pos + length > track.fileSize) break;
-
-          if (blockType == 0 && length >= 18) {
-            final data = await raf.read(18);
-            int sr = (data[10] << 12) | (data[11] << 4) | ((data[12] & 0xF0) >> 4);
-            int bps = (((data[12] & 0x01) << 4) | ((data[13] & 0xF0) >> 4)) + 1;
-            int totalSamples = ((data[13] & 0x0F) << 32) | (data[14] << 24) | (data[15] << 16) | (data[16] << 8) | data[17];
-            if (sr > 0) {
-              track.sampleRateHz = sr;
-              if (totalSamples > 0) {
-                final secs = totalSamples ~/ sr;
-                if (secs > 0) {
-                  track.duration = Duration(seconds: secs);
-                  track.bitrateKbps = ((track.fileSize * 8) ~/ 1000) ~/ secs;
-                }
-              }
-            }
-            if (bps >= 16) track.bitDepth = bps;
-          } else if (blockType == 4 && length <= 4 * 1024 * 1024) {
-            final data = await raf.read(length);
-            int p = 0;
-            if (p + 4 <= data.length) {
-              int vendorLen = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
-              p += 4 + vendorLen;
-              if (p + 4 <= data.length) {
-                int commentCount = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
-                p += 4;
-                String? parsedArtist;
-                for (int c = 0; c < commentCount && p + 4 <= data.length; c++) {
-                  int cLen = data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24);
-                  p += 4;
-                  if (cLen < 0 || p + cLen > data.length) break;
-                  final commentStr = utf8.decode(data.sublist(p, p + cLen), allowMalformed: true);
-                  p += cLen;
-                  final eqIdx = commentStr.indexOf('=');
-                  if (eqIdx > 0) {
-                    final key = commentStr.substring(0, eqIdx).trim().toUpperCase();
-                    final rawVal = commentStr.substring(eqIdx + 1);
-                    if (key == 'METADATA_BLOCK_PICTURE' && track.albumArt == null) {
-                      try {
-                        final picBytes = base64Decode(rawVal.trim());
-                        track.albumArt = _parseFlacPictureBlock(picBytes);
-                      } catch (_) {}
-                      continue;
-                    }
-                    final val = _sanitizeMetadataText(rawVal);
-                    if (val.isNotEmpty) {
-                      if (key == 'TITLE') {
-                        track.title = val;
-                      } else if (key == 'ARTIST' || key == 'ALBUMARTIST' || key == 'PERFORMER') {
-                        if (parsedArtist == null) {
-                          parsedArtist = val;
-                        } else if (!parsedArtist.contains(val)) {
-                          parsedArtist = '$parsedArtist, $val';
-                        }
-                      } else if (key == 'ALBUM') {
-                        track.album = val;
-                      } else if (key == 'GENRE') {
-                        track.genre = val;
-                      } else if (key == 'DATE' || key == 'YEAR') {
-                        track.year = val;
-                      } else if (key == 'TRACKNUMBER') {
-                        track.trackNumber = val;
-                      } else if (key == 'LYRICS' || key == 'UNSYNCEDLYRICS') {
-                        track.rawLyrics = val;
-                        track.parsedLyrics = _parseLrc(val);
-                      }
-                    }
-                  }
-                }
-                if (parsedArtist != null && parsedArtist.isNotEmpty) {
-                  track.artist = parsedArtist;
-                }
-              }
-            }
-          } else if (blockType == 6 && length > 32 && length <= 15 * 1024 * 1024 && track.albumArt == null) {
-            await raf.setPosition(pos);
-            final picBlock = await raf.read(length);
-            track.albumArt = _parseFlacPictureBlock(picBlock);
-          }
-
-          pos += length;
-          if (isLast) break;
-        }
-      }
-
-      // Step C: M4A / MP4 ('ftyp' at byte 4) Atom Parser
-      if (head12[4] == 0x66 && head12[5] == 0x74 && head12[6] == 0x79 && head12[7] == 0x70) {
-        await _parseMp4Atoms(raf, track);
-      }
-
-      // Step D: Raw JPEG/PNG Header Scan Fallback (catches embedded covers in Ogg/Opus/WAV/non-standard tags)
-      if (track.albumArt == null) {
-        final scanCap = math.min(track.fileSize, 2500 * 1024);
-        await raf.setPosition(0);
-        final rawBuf = await raf.read(scanCap);
-        track.albumArt = _extractEmbeddedImageBytes(rawBuf, 0, rawBuf.length);
-      }
-
-      // Step E: Folder Cover Image Fallback (cover.jpg / folder.jpg / front.jpg)
-      if (track.albumArt == null) {
-        try {
-          final parentDir = file.parent;
-          if (await parentDir.exists()) {
-            const coverNames = {'cover.jpg', 'cover.png', 'cover.jpeg', 'folder.jpg', 'folder.png', 'front.jpg', 'album.jpg'};
-            for (var entity in parentDir.listSync(followLinks: false)) {
-              if (entity is File) {
-                final name = entity.uri.pathSegments.last.toLowerCase();
-                if (coverNames.contains(name)) {
-                  track.albumArt = await entity.readAsBytes();
-                  break;
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // Step F: Fallback filename "Artist - Title" parser if tags had no artist
-      if (track.artist == 'Unknown Artist' || track.artist.trim().isEmpty) {
-        final fileName = track.path.split('/').last;
-        final dotIdx = fileName.lastIndexOf('.');
-        final base = (dotIdx > 0 ? fileName.substring(0, dotIdx) : fileName)
-            .replaceAll('_', ' ')
-            .trim();
-        final dashParts = base.split(RegExp(r'\s+[-–—]\s+'));
-        if (dashParts.length >= 2) {
-          final candidateArtist = _sanitizeMetadataText(dashParts.first);
-          final candidateTitle =
-              _sanitizeMetadataText(dashParts.sublist(1).join(' - '));
-          if (candidateArtist.isNotEmpty && candidateTitle.isNotEmpty) {
-            track.artist = candidateArtist;
-            if (track.title == base || track.title.contains(' - ')) {
-              track.title = candidateTitle;
-            }
-          }
-        }
-      }
-
-      final tf =
-          File('${thumbDir.path}/${_deterministicPathHash(track.path)}.jpg');
-      if (track.albumArt != null && _looksLikeImage(track.albumArt!)) {
-        if (!await tf.exists()) {
-          await tf.writeAsBytes(track.albumArt!);
-        }
-        track.thumbPath = tf.path;
-        _artworkTick.value++;
-      } else if (await tf.exists()) {
-        final diskBytes = await tf.readAsBytes();
-        if (_looksLikeImage(diskBytes)) {
-          track.albumArt = diskBytes;
-          track.thumbPath = tf.path;
-        }
-      }
-    } catch (_) {
-    } finally {
-      try {
-        await raf?.close();
-      } catch (_) {}
-    }
-    track.isMetadataLoaded = true;
-  }
-
-  Uint8List? _extractEmbeddedImageBytes(Uint8List buf, int start, int end) {
-    final limit = math.min(buf.length, end);
-    for (int i = math.max(0, start); i < limit - 16; i++) {
-      // JPEG magic header: FF D8 FF E0 / E1 / DB
-      if (buf[i] == 0xFF &&
-          buf[i + 1] == 0xD8 &&
-          buf[i + 2] == 0xFF &&
-          (buf[i + 3] == 0xE0 || buf[i + 3] == 0xE1 || buf[i + 3] == 0xDB)) {
-        for (int j = i + 256; j < limit - 1; j++) {
-          if (buf[j] == 0xFF && buf[j + 1] == 0xD9) {
-            final candidate = buf.sublist(i, j + 2);
-            if (_looksLikeImage(candidate)) return candidate;
-            break;
-          }
-        }
-      }
-      // PNG magic header: 89 50 4E 47
-      if (buf[i] == 0x89 &&
-          buf[i + 1] == 0x50 &&
-          buf[i + 2] == 0x4E &&
-          buf[i + 3] == 0x47) {
-        for (int j = i + 256; j < limit - 8; j++) {
-          if (buf[j] == 0x49 &&
-              buf[j + 1] == 0x45 &&
-              buf[j + 2] == 0x4E &&
-              buf[j + 3] == 0x44) {
-            final endIdx = math.min(limit, j + 8);
-            final candidate = buf.sublist(i, endIdx);
-            if (_looksLikeImage(candidate)) return candidate;
-            break;
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  Uint8List? _parseFlacPictureBlock(Uint8List picBlock) {
-    if (picBlock.length < 32) return null;
-    int mimeLen = (picBlock[4] << 24) | (picBlock[5] << 16) | (picBlock[6] << 8) | picBlock[7];
-    int descLenPos = 8 + mimeLen;
-    if (descLenPos + 4 > picBlock.length) return null;
-    int descLen = (picBlock[descLenPos] << 24) | (picBlock[descLenPos + 1] << 16) | (picBlock[descLenPos + 2] << 8) | picBlock[descLenPos + 3];
-    int dataLenPos = descLenPos + 4 + descLen + 16;
-    if (dataLenPos + 4 > picBlock.length) return null;
-    int dataLen = (picBlock[dataLenPos] << 24) | (picBlock[dataLenPos + 1] << 16) | (picBlock[dataLenPos + 2] << 8) | picBlock[dataLenPos + 3];
-    int imgStart = dataLenPos + 4;
-    if (dataLen > 256 && imgStart + dataLen <= picBlock.length) {
-      return picBlock.sublist(imgStart, imgStart + dataLen);
-    }
-    return null;
-  }
-
-  Future<void> _parseMp4Atoms(RandomAccessFile raf, AudioTrack track) async {
-    int pos = 0;
-    while (pos + 8 < track.fileSize) {
-      await raf.setPosition(pos);
-      final hdr = await raf.read(8);
-      if (hdr.length < 8) break;
-      int size = (hdr[0] << 24) | (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
-      String type = latin1.decode(hdr.sublist(4, 8), allowInvalid: true);
-      if (size < 8 || pos + size > track.fileSize) break;
-
-      if (type == 'moov' && size <= 8 * 1024 * 1024) {
-        final moovData = await raf.read(size - 8);
-        _scanMp4MetadataContainer(moovData, 0, moovData.length, track);
-        track.bitrateKbps = 256;
-        track.bitDepth = 16;
-        break;
-      }
-      pos += size;
-    }
-  }
-
-  void _scanMp4MetadataContainer(Uint8List buf, int start, int end, AudioTrack track) {
-    int p = start;
-    while (p + 8 <= end) {
-      int size = (buf[p] << 24) | (buf[p + 1] << 16) | (buf[p + 2] << 8) | buf[p + 3];
-      String type = latin1.decode(buf.sublist(p + 4, p + 8), allowInvalid: true);
-      if (size < 8 || p + size > end) break;
-
-      if (type == 'udta' || type == 'ilst') {
-        _scanMp4MetadataContainer(buf, p + 8, p + size, track);
-      } else if (type == 'meta' && p + 12 <= p + size) {
-        _scanMp4MetadataContainer(buf, p + 12, p + size, track);
-      } else if (type == '\xA9nam' || type == '\xA9ART' || type == 'aART' || type == '\xA9alb' || type == '\xA9gen' || type == '\xA9day' || type == 'covr') {
-        int inner = p + 8;
-        while (inner + 16 <= p + size) {
-          int dSize = (buf[inner] << 24) | (buf[inner + 1] << 16) | (buf[inner + 2] << 8) | buf[inner + 3];
-          String dType = latin1.decode(buf.sublist(inner + 4, inner + 8), allowInvalid: true);
-          if (dSize < 16 || inner + dSize > p + size) break;
-          if (dType == 'data') {
-            final valBytes = buf.sublist(inner + 16, inner + dSize);
-            if (type == 'covr' && track.albumArt == null && valBytes.length > 256) {
-              track.albumArt = valBytes;
-            } else {
-              final str = _sanitizeMetadataText(utf8.decode(valBytes, allowMalformed: true));
-              if (str.isNotEmpty) {
-                if (type == '\xA9nam') track.title = str;
-                if (type == '\xA9ART' || (type == 'aART' && track.artist == 'Unknown Artist')) track.artist = str;
-                if (type == '\xA9alb') track.album = str;
-                if (type == '\xA9gen') track.genre = str;
-                if (type == '\xA9day') track.year = str;
-              }
-            }
-          }
-          inner += dSize;
-        }
-      }
-      p += size;
-    }
-  }
-
-  String _sanitizeMetadataText(String input) {
-    return input.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
-  }
-
-  String _decodeId3TextProper(Uint8List bytes) {
-    if (bytes.isEmpty) return '';
-    int encoding = bytes[0];
-    Uint8List content = bytes.sublist(1);
-    if (content.isEmpty) return '';
-
-    if (encoding == 0) {
-      final nullIdx = content.indexOf(0);
-      if (nullIdx >= 0) content = content.sublist(0, nullIdx);
-      return _sanitizeMetadataText(latin1.decode(content, allowInvalid: true));
-    } else if (encoding == 3) {
-      final nullIdx = content.indexOf(0);
-      if (nullIdx >= 0) content = content.sublist(0, nullIdx);
-      return _sanitizeMetadataText(utf8.decode(content, allowMalformed: true));
-    } else if (encoding == 1 || encoding == 2) {
-      bool littleEndian = false;
-      int start = 0;
-      if (encoding == 1 && content.length >= 2) {
-        if (content[0] == 0xFF && content[1] == 0xFE) {
-          littleEndian = true;
-          start = 2;
-        } else if (content[0] == 0xFE && content[1] == 0xFF) {
-          littleEndian = false;
-          start = 2;
-        }
-      }
-      final units = <int>[];
-      for (int i = start; i + 1 < content.length; i += 2) {
-        int code = littleEndian ? (content[i] | (content[i + 1] << 8)) : ((content[i] << 8) | content[i + 1]);
-        if (code == 0) break;
-        units.add(code);
-      }
-      return _sanitizeMetadataText(String.fromCharCodes(units));
-    }
-    return _sanitizeMetadataText(utf8.decode(content, allowMalformed: true));
-  }
-
-  Uint8List? _extractApicImageProper(Uint8List payload) {
-    if (payload.length < 16) return null;
-    int encoding = payload[0];
-    int p = 1;
-    while (p < payload.length && payload[p] != 0) {
-      p++;
-    }
-    p++;
-    if (p >= payload.length) return null;
-    p++;
-
-    if (encoding == 1 || encoding == 2) {
-      while (p + 1 < payload.length && !(payload[p] == 0 && payload[p + 1] == 0)) {
-        p += 2;
-      }
-      p += 2;
-    } else {
-      while (p < payload.length && payload[p] != 0) {
-        p++;
-      }
-      p += 1;
-    }
-    if (p < payload.length && payload.length - p > 256) {
-      return payload.sublist(p);
-    }
-    return null;
-  }
-
-  List<LyricLine> _parseLrc(String raw) {
-    final lines = raw.split('\n');
-    final List<LyricLine> result = [];
-    final lineRegExp = RegExp(r'\[(\d{1,2}):(\d{2})(?:[\.:](\d{1,3}))?\](.*)');
-    final syllableRegExp = RegExp(r'<(\d{1,2}):(\d{2})(?:[\.:](\d{1,3}))?>([^<]+)');
-
-    for (var line in lines) {
-      final match = lineRegExp.firstMatch(line.trim());
-      if (match != null) {
-        final min = int.tryParse(match.group(1)!) ?? 0;
-        final sec = int.tryParse(match.group(2)!) ?? 0;
-        final msStr = match.group(3) ?? '0';
-        final ms = int.tryParse(msStr.padRight(3, '0').substring(0, 3)) ?? 0;
-        final rawBody = match.group(4)!.trim();
-
-        final List<SyllableToken> syllables = [];
-        for (final sm in syllableRegExp.allMatches(rawBody)) {
-          final sMin = int.tryParse(sm.group(1)!) ?? 0;
-          final sSec = int.tryParse(sm.group(2)!) ?? 0;
-          final sMsStr = sm.group(3) ?? '0';
-          final sMs = int.tryParse(sMsStr.padRight(3, '0').substring(0, 3)) ?? 0;
-          syllables.add(SyllableToken(
-            timestamp: Duration(minutes: sMin, seconds: sSec, milliseconds: sMs),
-            text: sm.group(4) ?? '',
-          ));
-        }
-
-        final cleanText = rawBody.replaceAll(RegExp(r'<\d{1,2}:\d{2}(?:[\.:]\d{1,3})?>'), '').trim();
-        if (cleanText.isNotEmpty) {
-          result.add(LyricLine(
-            timestamp: Duration(minutes: min, seconds: sec, milliseconds: ms),
-            text: cleanText,
-            syllables: syllables,
-          ));
-        }
-      }
-    }
-    result.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    return result;
-  }
+  List<LyricLine> _parseLrc(String raw) => NamiMetadataService.parseLrc(raw);
 
   Future<void> _fetchLyricsOnline(AudioTrack song) async {
     if (song.isLyricsFetched && song.parsedLyrics.isNotEmpty) return;
@@ -4110,38 +2990,71 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     final accent = Theme.of(context).colorScheme.primary;
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
     final recentlyAdded = List<AudioTrack>.from(_songs)..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
+    final favSongs = _songs.where((s) => s.isFavorite).toList();
+    final hiResSongs = _songs.where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000 || s.path.toLowerCase().endsWith('.flac')).toList();
     final flacCount = _songs.where((s) => s.path.toLowerCase().endsWith('.flac')).length;
     final hiResCount = _songs.where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000).length;
 
+    final Map<String, List<AudioTrack>> albumsMap = {};
+    for (var s in _songs) {
+      if (s.album.isNotEmpty && s.album != 'Unknown Album') {
+        albumsMap.putIfAbsent(s.album, () => []).add(s);
+      }
+    }
+    final topAlbums = albumsMap.entries.toList()
+      ..sort((a, b) => b.value.length.compareTo(a.value.length));
+
+    final spotlightTrack = _currentSong ??
+        (mostPlayed.isNotEmpty && mostPlayed.first.playCount > 0
+            ? mostPlayed.first
+            : (_songs.isNotEmpty ? _songs[DateTime.now().day % _songs.length] : null));
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 110),
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 110),
       children: [
+        // 1. Audiophile Hero Greeting & Live DAC Status Card
         Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(15),
           decoration: BoxDecoration(
-            color: const Color(0xFF0E0E15),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white10),
+            gradient: LinearGradient(
+              colors: [accent.withOpacity(0.24), const Color(0xFF101018)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: accent.withOpacity(0.32)),
           ),
           child: Row(
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor: accent.withOpacity(0.18),
+                backgroundColor: accent.withOpacity(0.22),
                 child: Icon(Icons.headphones_rounded, color: accent, size: 24),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Welcome, $_userName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text(
-                      'DAC: $_connectedDacName • ${_songs.length} Tracks • ${_totalListenSeconds ~/ 60}m listened',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                    Text('Welcome, $_userName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(color: Colors.amber.withOpacity(0.18), borderRadius: BorderRadius.circular(6)),
+                          child: Text('DAC: $_connectedDacName', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber)),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${_songs.length} tracks • ${_totalListenSeconds ~/ 60}m played',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -4154,30 +3067,149 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+
+        // 2. Quick-Action Bento Shortcuts
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 3.1,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          children: [
+            _buildHomeSmartTile(
+              icon: Icons.shuffle_rounded,
+              title: 'Quick Shuffle',
+              subtitle: '${_songs.length} tracks',
+              color: Colors.greenAccent,
+              onTap: _shufflePlay,
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.favorite_rounded,
+              title: 'Liked Songs',
+              subtitle: '${favSongs.length} favorites',
+              color: accent,
+              onTap: () => _showFilteredListScreen('Liked Songs', favSongs),
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.high_quality_rounded,
+              title: 'Hi-Res Lossless',
+              subtitle: '${hiResSongs.length} FLAC/24-bit',
+              color: Colors.amberAccent,
+              onTap: () => _showFilteredListScreen('Hi-Res Lossless Vault', hiResSongs),
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.folder_open_rounded,
+              title: 'Folder Browser',
+              subtitle: 'Direct storage',
+              color: Colors.cyanAccent,
+              onTap: _showFolderExplorerModal,
+            ),
+          ],
+        ),
+
+        // 3. Daily Spotlight / Continue Listening Card
+        if (spotlightTrack != null) ...[
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () => _playSong(spotlightTrack),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E0E16),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Row(
+                children: [
+                  _buildCoverArt(spotlightTrack, 64, 12),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _currentSong != null ? 'NOW ACTIVE' : 'DAILY SPOTLIGHT',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: accent),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(spotlightTrack.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                        Text('${spotlightTrack.artist} • ${spotlightTrack.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: accent,
+                    child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 24),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
         if (_historyTracks.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildHomeSectionHeader('History', () => _showFilteredListScreen('Play History', _historyTracks)),
+          const SizedBox(height: 18),
+          _buildHomeSectionHeader('Jump Back In', () => _showFilteredListScreen('Play History', _historyTracks)),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(_historyTracks.take(15).toList()),
         ],
         if (_songs.isNotEmpty) ...[
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           _buildHomeSectionHeader('Most Played', () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList())),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(mostPlayed.take(15).toList(), showPlayBadge: true),
         ],
         if (_songs.isNotEmpty) ...[
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           _buildHomeSectionHeader('Recently Added', () => _showFilteredListScreen('Recently Added', recentlyAdded.take(50).toList())),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(recentlyAdded.take(15).toList()),
         ],
-        if (uniqueArtists.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildHomeSectionHeader('Artists', () => setState(() => _selectedIndex = 2)),
+        if (topAlbums.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          _buildHomeSectionHeader('Featured Albums', () => _showAlbumDetailScreen(topAlbums.first.key, topAlbums.first.value)),
           const SizedBox(height: 8),
           SizedBox(
-            height: 112,
+            height: 150,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: math.min(topAlbums.length, 15),
+              itemBuilder: (ctx, idx) {
+                final entry = topAlbums[idx];
+                final artTrack = entry.value.firstWhere(
+                  (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                  orElse: () => entry.value.first,
+                );
+                return GestureDetector(
+                  onTap: () => _showAlbumDetailScreen(entry.key, entry.value),
+                  child: Container(
+                    width: 108,
+                    margin: const EdgeInsets.only(right: 11),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCoverArt(artTrack, 104, 14),
+                        const SizedBox(height: 5),
+                        Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        if (uniqueArtists.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          _buildHomeSectionHeader('Artists (${uniqueArtists.length})', () => setState(() => _selectedIndex = 2)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 106,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: math.min(uniqueArtists.length, 15),
@@ -4190,12 +3222,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 return GestureDetector(
                   onTap: () => _showArtistDetailScreen(aName, aTracks),
                   child: Container(
-                    width: 82,
-                    margin: const EdgeInsets.only(right: 10),
+                    width: 78,
+                    margin: const EdgeInsets.only(right: 8),
                     child: Column(
                       children: [
-                        _buildRoundArtistAvatar(firstArtTrack, 34),
-                        const SizedBox(height: 6),
+                        _buildRoundArtistAvatar(firstArtTrack, 32),
+                        const SizedBox(height: 5),
                         Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                         Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
                       ],
@@ -4206,7 +3238,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             ),
           ),
         ],
-        const SizedBox(height: 18),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -4245,7 +3277,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       _artistDiskChecked.add(primary);
       final thumbDir = await _ensureThumbDir();
       final f = File(
-          '${thumbDir.path}/artist_${_deterministicPathHash(primary.toLowerCase())}.jpg');
+          '${thumbDir.path}/artist_${namiDeterministicPathHash(primary.toLowerCase())}.jpg');
       if (await f.exists()) {
         _artistImagePaths[primary] = f.path;
         _artworkTick.value++;
@@ -4270,7 +3302,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       final uri = Uri.parse(
           'https://api.deezer.com/search/artist?q=${Uri.encodeComponent(artistName)}&limit=1');
       final res = await http
-          .get(uri, headers: _httpHeaders)
+          .get(uri, headers: namiHttpHeaders)
           .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -4282,13 +3314,13 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               .toString();
           if (picUrl.isNotEmpty) {
             final imgRes = await http
-                .get(Uri.parse(picUrl), headers: _httpHeaders)
+                .get(Uri.parse(picUrl), headers: namiHttpHeaders)
                 .timeout(const Duration(seconds: 6));
             if (imgRes.statusCode == 200 &&
-                _looksLikeImage(imgRes.bodyBytes)) {
+                namiLooksLikeImage(imgRes.bodyBytes)) {
               final thumbDir = await _ensureThumbDir();
               final f = File(
-                  '${thumbDir.path}/artist_${_deterministicPathHash(artistName.toLowerCase())}.jpg');
+                  '${thumbDir.path}/artist_${namiDeterministicPathHash(artistName.toLowerCase())}.jpg');
               await f.writeAsBytes(imgRes.bodyBytes);
               _artistImagePaths[artistName] = f.path;
               _artworkTick.value++;
@@ -4472,9 +3504,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   Widget _buildTracksPageBody() {
-    if (!_hasPermission) {
+    if (!_hasPermission && _songs.isEmpty) {
       return Center(
-        child: ElevatedButton(onPressed: _requestPermissionsAndInitBackground, child: const Text('Grant Storage Permission')),
+        child: ElevatedButton(
+          onPressed: () => _requestPermissionsAndInitBackground(userTriggered: true),
+          child: const Text('Grant Storage Permission'),
+        ),
       );
     }
     if (_isScanning) {
@@ -4486,20 +3521,31 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+              padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
               child: Row(
                 children: [
-                  IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
                   IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.shuffle_rounded, size: 20),
+                    onPressed: _shufflePlay,
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
                     icon: const Icon(Icons.play_arrow_rounded, size: 22),
                     onPressed: () {
                       if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first);
                     },
                   ),
+                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
-                    child: Text('${_songs.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: Text('${_songs.length} tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                   const Spacer(),
                   IconButton(
@@ -4580,14 +3626,21 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 2, 12, 6),
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
           child: Row(
             children: [
               IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(),
                 icon: const Icon(Icons.shuffle_rounded, size: 20),
                 onPressed: _shufflePlay,
               ),
+              const SizedBox(width: 4),
               IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(),
                 icon: const Icon(Icons.play_arrow_rounded, size: 22),
                 onPressed: () {
                   if (uniqueArtists.isNotEmpty) {
@@ -4595,10 +3648,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   }
                 },
               ),
+              const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
-                child: Text('${uniqueArtists.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                child: Text('${uniqueArtists.length} artists', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               ),
               const Spacer(),
               IconButton(
@@ -4626,12 +3680,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             child: _artistGridMode
                 ? GridView.builder(
                     controller: _artistListScrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 95),
+                    padding: const EdgeInsets.fromLTRB(10, 4, 10, 95),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
-                      childAspectRatio: 0.8,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 10,
+                      childAspectRatio: 0.92,
+                      crossAxisSpacing: 4,
+                      mainAxisSpacing: 6,
                     ),
                     itemCount: uniqueArtists.length,
                     itemBuilder: (context, index) {
@@ -4748,7 +3802,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(_formatDurationPadded(song.duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                    Text(namiFormatDurationPadded(song.duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
                     const SizedBox(height: 3),
                     GestureDetector(
                       onTap: () {
@@ -4986,7 +4040,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       albumsMap.putIfAbsent(s.album, () => []).add(s);
       totalSeconds += s.duration.inSeconds;
     }
-    final formattedTotal = _formatTotalDurationHoursMins(Duration(seconds: totalSeconds));
+    final formattedTotal = namiFormatTotalDurationHoursMins(Duration(seconds: totalSeconds));
 
     Navigator.push(
       context,
@@ -5094,7 +4148,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       orElse: () => firstTrack,
     );
     final totalSecs = albumTracks.fold<int>(0, (sum, s) => sum + s.duration.inSeconds);
-    final totalDurText = _formatTotalDurationHoursMins(Duration(seconds: totalSecs));
+    final totalDurText = namiFormatTotalDurationHoursMins(Duration(seconds: totalSecs));
     final accent = Theme.of(context).colorScheme.primary;
 
     Navigator.push(
@@ -5530,1166 +4584,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           NavigationDestination(icon: Icon(Icons.extension_outlined), selectedIcon: Icon(Icons.extension_rounded), label: 'Mornye'),
         ],
       ),
-    );
-  }
-}
-
-class MainSettingsScreen extends StatefulWidget {
-  final bool usbDacExclusive;
-  final bool gaplessPlayback;
-  final bool mediaNotificationEnabled;
-  final bool usePitchBlack;
-  final bool autoColoring;
-  final bool ambientGlow;
-  final bool syllableLyricsEnabled;
-  final bool preferEmbeddedLyrics;
-  final bool autoFetchOnlineMetadata;
-  final bool splitMultiArtists;
-  final List<String> artistSeparators;
-  final bool forceMiniColor;
-  final bool replayGain;
-  final String connectedDacName;
-  final VoidCallback onOpenExtensionRepo;
-  final VoidCallback onOpenFolderExplorer;
-  final VoidCallback onExportBackup;
-  final VoidCallback onImportBackup;
-  final ValueChanged<bool> onUsbDacChanged;
-  final ValueChanged<bool> onGaplessChanged;
-  final ValueChanged<bool> onNotificationChanged;
-  final ValueChanged<bool> onPitchBlackChanged;
-  final ValueChanged<bool> onAutoColoringChanged;
-  final ValueChanged<bool> onAmbientGlowChanged;
-  final ValueChanged<bool> onSyllableLyricsChanged;
-  final ValueChanged<bool> onPreferEmbeddedChanged;
-  final ValueChanged<bool> onAutoFetchOnlineChanged;
-  final ValueChanged<bool> onSplitArtistsChanged;
-  final ValueChanged<List<String>> onArtistSeparatorsChanged;
-  final ValueChanged<bool> onForceMiniColorChanged;
-  final ValueChanged<bool> onReplayGainChanged;
-  final VoidCallback onRescan;
-
-  const MainSettingsScreen({
-    super.key,
-    required this.usbDacExclusive,
-    required this.gaplessPlayback,
-    required this.mediaNotificationEnabled,
-    required this.usePitchBlack,
-    required this.autoColoring,
-    required this.ambientGlow,
-    required this.syllableLyricsEnabled,
-    required this.preferEmbeddedLyrics,
-    required this.autoFetchOnlineMetadata,
-    required this.splitMultiArtists,
-    required this.artistSeparators,
-    required this.forceMiniColor,
-    required this.replayGain,
-    required this.connectedDacName,
-    required this.onOpenExtensionRepo,
-    required this.onOpenFolderExplorer,
-    required this.onExportBackup,
-    required this.onImportBackup,
-    required this.onUsbDacChanged,
-    required this.onGaplessChanged,
-    required this.onNotificationChanged,
-    required this.onPitchBlackChanged,
-    required this.onAutoColoringChanged,
-    required this.onAmbientGlowChanged,
-    required this.onSyllableLyricsChanged,
-    required this.onPreferEmbeddedChanged,
-    required this.onAutoFetchOnlineChanged,
-    required this.onSplitArtistsChanged,
-    required this.onArtistSeparatorsChanged,
-    required this.onForceMiniColorChanged,
-    required this.onReplayGainChanged,
-    required this.onRescan,
-  });
-
-  @override
-  State<MainSettingsScreen> createState() => _MainSettingsScreenState();
-}
-
-class _MainSettingsScreenState extends State<MainSettingsScreen> {
-  late bool _usbDac;
-  late bool _gapless;
-  late bool _mediaNotif;
-  late bool _pitchBlack;
-  late bool _autoColor;
-  late bool _ambientGlow;
-  late bool _syllableLyrics;
-  late bool _preferEmbedded;
-  late bool _autoFetchOnline;
-  late bool _splitArtists;
-  late List<String> _separators;
-  late bool _forceMini;
-  late bool _replayGain;
-  double _hueValue = 0.0;
-
-  final List<Color> _swatches = [
-    const Color(0xFFE53935),
-    const Color(0xFFFF9800),
-    const Color(0xFFFFEB3B),
-    const Color(0xFF00E676),
-    const Color(0xFF00E5FF),
-    const Color(0xFF2979FF),
-    const Color(0xFF7C4DFF),
-    const Color(0xFFFF4081),
-    const Color(0xFFFFFFFF),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _usbDac = widget.usbDacExclusive;
-    _gapless = widget.gaplessPlayback;
-    _mediaNotif = widget.mediaNotificationEnabled;
-    _pitchBlack = widget.usePitchBlack;
-    _autoColor = widget.autoColoring;
-    _ambientGlow = widget.ambientGlow;
-    _syllableLyrics = widget.syllableLyricsEnabled;
-    _preferEmbedded = widget.preferEmbeddedLyrics;
-    _autoFetchOnline = widget.autoFetchOnlineMetadata;
-    _splitArtists = widget.splitMultiArtists;
-    _separators = List<String>.from(widget.artistSeparators);
-    _forceMini = widget.forceMiniColor;
-    _replayGain = widget.replayGain;
-  }
-
-  void _showAddSeparatorDialog() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF14141F),
-        title: const Text('Add Artist Separator'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. ; or vs. or x'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary),
-            onPressed: () {
-              final token = ctrl.text.trim();
-              if (token.isNotEmpty && !_separators.contains(token)) {
-                setState(() => _separators.add(token));
-                widget.onArtistSeparatorsChanged(_separators);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showColorPicker() {
-    final currentAccent = Theme.of(context).colorScheme.primary;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141F),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const Text(
-                'Pick UI Accent Color',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-              ),
-              const SizedBox(height: 14),
-              HuePaletteCanvas(
-                initialColor: currentAccent,
-                onColorChanged: (color) {
-                  NamiApp.of(context).updateTheme(newAccent: color);
-                },
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Preset Swatches',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: _swatches
-                    .map((color) => GestureDetector(
-                          onTap: () {
-                            NamiApp.of(context).updateTheme(newAccent: color);
-                            Navigator.pop(context);
-                          },
-                          child: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: Colors.white24, width: 2),
-                            ),
-                          ),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title, IconData icon) {
-    final accent = Theme.of(context).colorScheme.primary;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: accent),
-          const SizedBox(width: 8),
-          Text(
-            title.toUpperCase(),
-            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: accent),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSettingsCard(List<Widget> children) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E0E15),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(children: children),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final themeColor = Theme.of(context).colorScheme.primary;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Settings & Customize', style: TextStyle(fontWeight: FontWeight.w800)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 32),
-        children: [
-          _buildSectionHeader('Customize & Appearance', Icons.palette_outlined),
-          _buildSettingsCard([
-            ListTile(
-              leading: CircleAvatar(
-                radius: 16,
-                backgroundColor: themeColor.withOpacity(0.18),
-                child: Icon(Icons.color_lens_rounded, color: themeColor, size: 18),
-              ),
-              title: const Text('Accent Color & Hue Palette', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text('Tap to customize accent swatches or fine-tune hue', style: TextStyle(fontSize: 11.5, color: Colors.white54)),
-              trailing: Container(width: 24, height: 24, decoration: BoxDecoration(color: themeColor, shape: BoxShape.circle, border: Border.all(color: Colors.white38))),
-              onTap: _showColorPicker,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: _swatches
-                    .take(7)
-                    .map((c) => GestureDetector(
-                          onTap: () => NamiApp.of(context).updateTheme(newAccent: c),
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: c,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: themeColor == c ? Colors.white : Colors.white24, width: themeColor == c ? 2.5 : 1),
-                            ),
-                          ),
-                        ))
-                    .toList(),
-              ),
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            SwitchListTile(
-              title: const Text('Auto-Coloring From Artwork', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Adapt UI accent dynamically to active album cover', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _autoColor,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _autoColor = v);
-                widget.onAutoColoringChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('Ambient Glow Behind Cover Art', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _ambientGlow,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _ambientGlow = v);
-                widget.onAmbientGlowChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('Tint Mini-Player With Accent Color', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _forceMini,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _forceMini = v);
-                widget.onForceMiniColorChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('Pitch Black AMOLED Mode', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _pitchBlack,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _pitchBlack = v);
-                widget.onPitchBlackChanged(v);
-              },
-            ),
-          ]),
-          _buildSectionHeader('Library & Artist Separators', Icons.people_outline_rounded),
-          _buildSettingsCard([
-            SwitchListTile(
-              title: const Text('Auto-Fetch Missing Covers & Artist Info', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Fetch high-res artwork online when files lack embedded tags', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _autoFetchOnline,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _autoFetchOnline = v);
-                widget.onAutoFetchOnlineChanged(v);
-              },
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            SwitchListTile(
-              title: const Text('Split Multi-Artist Tags', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Separate collaborating artists into individual profiles', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _splitArtists,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _splitArtists = v);
-                widget.onSplitArtistsChanged(v);
-              },
-            ),
-            if (_splitArtists)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Active Artist Separators', style: TextStyle(fontSize: 11.5, color: Colors.white60, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        ..._separators.map((sep) => Chip(
-                              label: Text('"$sep"', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                              backgroundColor: const Color(0xFF181822),
-                              deleteIcon: const Icon(Icons.close_rounded, size: 15),
-                              onDeleted: _separators.length > 1
-                                  ? () {
-                                      setState(() => _separators.remove(sep));
-                                      widget.onArtistSeparatorsChanged(_separators);
-                                    }
-                                  : null,
-                            )),
-                        ActionChip(
-                          avatar: Icon(Icons.add_rounded, size: 16, color: themeColor),
-                          label: const Text('Add', style: TextStyle(fontSize: 12)),
-                          backgroundColor: themeColor.withOpacity(0.16),
-                          onPressed: _showAddSeparatorDialog,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-          ]),
-          _buildSectionHeader('Lyrics Engine', Icons.lyrics_outlined),
-          _buildSettingsCard([
-            SwitchListTile(
-              title: const Text('Syllable-by-Syllable Karaoke Sweep', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Highlight center lyric line progressively as sung', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _syllableLyrics,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _syllableLyrics = v);
-                widget.onSyllableLyricsChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('Prefer Embedded Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _preferEmbedded,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _preferEmbedded = v);
-                widget.onPreferEmbeddedChanged(v);
-              },
-            ),
-          ]),
-          _buildSectionHeader('Audio Engine & USB DAC', Icons.graphic_eq_rounded),
-          _buildSettingsCard([
-            SwitchListTile(
-              title: const Text('USB DAC Exclusive Routing', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: Text('Active Output: ${widget.connectedDacName}', style: TextStyle(fontSize: 11.5, color: themeColor, fontWeight: FontWeight.w600)),
-              value: _usbDac,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _usbDac = v);
-                widget.onUsbDacChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('Gapless Playback', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _gapless,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _gapless = v);
-                widget.onGaplessChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('Media Session & Notification Controls', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _mediaNotif,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _mediaNotif = v);
-                widget.onNotificationChanged(v);
-              },
-            ),
-            SwitchListTile(
-              title: const Text('ReplayGain Normalization', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _replayGain,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _replayGain = v);
-                widget.onReplayGainChanged(v);
-              },
-            ),
-          ]),
-          _buildSectionHeader('Storage & Backup', Icons.storage_rounded),
-          _buildSettingsCard([
-            ListTile(
-              leading: Icon(Icons.folder_open_rounded, color: themeColor),
-              title: const Text('Storage Folder Explorer', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-              onTap: () {
-                Navigator.pop(context);
-                widget.onOpenFolderExplorer();
-              },
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: Icon(Icons.extension_rounded, color: themeColor),
-              title: const Text('Mornye Extension Repository (.sflx)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-              onTap: widget.onOpenExtensionRepo,
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: Icon(Icons.backup_rounded, color: themeColor),
-              title: const Text('Backup Library & Playlists', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Export JSON to /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              onTap: widget.onExportBackup,
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: Icon(Icons.restore_rounded, color: themeColor),
-              title: const Text('Restore Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Import /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              onTap: widget.onImportBackup,
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: Icon(Icons.refresh_rounded, color: themeColor),
-              title: const Text('Force Full Metadata & Cover Rescan', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Re-extract FLAC/ID3/M4A tags & fetch missing covers', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              onTap: () {
-                widget.onRescan();
-                Navigator.pop(context);
-              },
-            ),
-          ]),
-        ],
-      ),
-    );
-  }
-}
-
-class NowPlayingModal extends StatefulWidget {
-  final AudioPlayer audioPlayer;
-  final ValueNotifier<AudioTrack?> currentSongNotifier;
-  final List<AudioTrack> allSongs;
-  final List<AudioTrack> playNextQueue;
-  final bool ambientGlow;
-  final bool syllableLyricsEnabled;
-  final VoidCallback onShowPath,
-      onShowEqualizer,
-      onShowSleepTimer,
-      onOpenLyricsManager,
-      onToggleFavorite,
-      onRefreshLyrics,
-      onNext,
-      onPrevious,
-      onOpenQueue,
-      onOpenMoreMenu;
-
-  const NowPlayingModal({
-    super.key,
-    required this.audioPlayer,
-    required this.currentSongNotifier,
-    required this.allSongs,
-    required this.playNextQueue,
-    required this.ambientGlow,
-    required this.syllableLyricsEnabled,
-    required this.onShowPath,
-    required this.onShowEqualizer,
-    required this.onShowSleepTimer,
-    required this.onOpenLyricsManager,
-    required this.onToggleFavorite,
-    required this.onRefreshLyrics,
-    required this.onNext,
-    required this.onPrevious,
-    required this.onOpenQueue,
-    required this.onOpenMoreMenu,
-  });
-
-  @override
-  State<NowPlayingModal> createState() => _NowPlayingModalState();
-}
-
-class _NowPlayingModalState extends State<NowPlayingModal> {
-  int _viewMode = 0;
-  bool _isLooping = false;
-  Duration? _loopA;
-  Duration? _loopB;
-  final ScrollController _lyricsScrollCtrl = ScrollController();
-  int _lastScrolledLyricIndex = -1;
-
-  static const double _lyricLineExtent = 36.0;
-
-  double _getWaveformBarHeight(int index, String seedTitle) {
-    final hash = seedTitle.codeUnits.fold(0, (prev, elem) => prev + elem);
-    final wave1 = math.sin((index + hash) * 0.42).abs();
-    final wave2 = math.cos((index * 0.85) + (hash * 0.1)).abs();
-    return ((10.0 + (wave1 * 20.0) + (wave2 * 14.0))).clamp(6.0, 40.0);
-  }
-
-  void _autoScrollToActiveLyric(int activeIdx) {
-    if (activeIdx == _lastScrolledLyricIndex) return;
-    _lastScrolledLyricIndex = activeIdx;
-    if (_lyricsScrollCtrl.hasClients) {
-      final target = (activeIdx * _lyricLineExtent).clamp(0.0, _lyricsScrollCtrl.position.maxScrollExtent);
-      _lyricsScrollCtrl.animateTo(
-        target,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  double _computeLineSyllableProgress(List<LyricLine> lyrics, int activeIdx, Duration pos) {
-    final currentLine = lyrics[activeIdx];
-    if (currentLine.syllables.isNotEmpty) {
-      int passed = 0;
-      for (int i = 0; i < currentLine.syllables.length; i++) {
-        if (pos >= currentLine.syllables[i].timestamp) {
-          passed = i + 1;
-        }
-      }
-      return (passed / currentLine.syllables.length).clamp(0.0, 1.0);
-    }
-    final startMs = currentLine.timestamp.inMilliseconds;
-    final endMs = (activeIdx + 1 < lyrics.length)
-        ? lyrics[activeIdx + 1].timestamp.inMilliseconds
-        : (startMs + 3500);
-    final span = math.max(400, endMs - startMs);
-    return ((pos.inMilliseconds - startMs) / span).clamp(0.0, 1.0);
-  }
-
-  void _seekRelative(int seconds) {
-    final cur = widget.audioPlayer.position;
-    final target = cur + Duration(seconds: seconds);
-    widget.audioPlayer.seek(target < Duration.zero ? Duration.zero : target);
-  }
-
-  void _showMoreAndLoopSheet(AudioTrack? song) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF101016),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.repeat_one_on_rounded),
-                title: Text(_loopA == null ? 'Set A-B Loop Start (Point A)' : (_loopB == null ? 'Set A-B Loop End (Point B)' : 'Clear A-B Loop')),
-                onTap: () {
-                  setState(() {
-                    if (_loopA == null) {
-                      _loopA = widget.audioPlayer.position;
-                    } else if (_loopB == null) {
-                      _loopB = widget.audioPlayer.position;
-                    } else {
-                      _loopA = null;
-                      _loopB = null;
-                    }
-                  });
-                  Navigator.pop(ctx);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.lyrics_outlined),
-                title: const Text('Lyrics Metadata & Editor'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  widget.onOpenLyricsManager();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.bedtime_outlined),
-                title: const Text('Sleep Timer'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  widget.onShowSleepTimer();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.more_horiz_rounded),
-                title: const Text('Track Options & Tag Editor'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  widget.onOpenMoreMenu();
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _lyricsScrollCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
-    return ValueListenableBuilder<AudioTrack?>(
-      valueListenable: widget.currentSongNotifier,
-      builder: (context, song, _) {
-        final ext = (song?.path.split('.').last ?? 'FLAC').toUpperCase();
-        final bitrate = song?.bitrateKbps ?? 1645;
-        final kHz = ((song?.sampleRateHz ?? 48000) / 1000.0).toStringAsFixed(1);
-        final screenWidth = MediaQuery.of(context).size.width;
-        final artSize = screenWidth * 0.89;
-        final glowColor = _extractDominantColor(song?.albumArt, accent);
-        final dynamicIdx = (song != null && widget.allSongs.contains(song)) ? (widget.allSongs.indexOf(song) + 1) : 1;
-        final totalCount = widget.allSongs.length;
-
-        Widget artWidget;
-        if (song?.albumArt != null && song!.albumArt!.isNotEmpty) {
-          artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover);
-        } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
-          artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover);
-        } else {
-          artWidget = Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24));
-        }
-
-        final meshColor1 = glowColor.withOpacity(0.26);
-        final meshColor2 =
-            glowColor.withRed((glowColor.red * 0.8).toInt()).withOpacity(0.16);
-        final meshColor3 = glowColor
-            .withBlue((glowColor.blue * 1.2).clamp(0, 255).toInt())
-            .withOpacity(0.20);
-
-        return Scaffold(
-          backgroundColor: const Color(0xFF050508),
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: BoxDecoration(
-              color: const Color(0xFF050508),
-              gradient: widget.ambientGlow
-                  ? RadialGradient(
-                      center: const Alignment(-0.5, -0.5),
-                      radius: 1.5,
-                      colors: [meshColor1, const Color(0xFF050508)],
-                    )
-                  : null,
-            ),
-            child: Stack(
-              children: [
-                if (widget.ambientGlow)
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: const Alignment(0.8, 0.2),
-                          radius: 1.2,
-                          colors: [meshColor2, Colors.transparent],
-                        ),
-                      ),
-                    ),
-                  ),
-                if (widget.ambientGlow)
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: const Alignment(0.0, 0.8),
-                          radius: 1.0,
-                          colors: [meshColor3, Colors.transparent],
-                        ),
-                      ),
-                    ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
-                  child: SafeArea(
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 28),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                            Expanded(
-                              child: Column(
-                                children: [
-                                  Text(
-                                    'PLAYING $dynamicIdx/$totalCount',
-                                    style: const TextStyle(fontSize: 10, color: Colors.white54, fontWeight: FontWeight.w800, letterSpacing: 1.3),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text((song?.album ?? 'ALBUM'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
-                                ],
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => _showMoreAndLoopSheet(song),
-                              child: Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
-                                child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const Spacer(flex: 2),
-
-                        Center(
-                          child: _viewMode == 0
-                              ? GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onDoubleTap: () => _seekRelative(-5),
-                                  child: Hero(
-                                    tag: song != null ? 'album_art_${song.path}' : 'album_art_empty',
-                                    child: Container(
-                                      width: artSize,
-                                      height: artSize,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(24),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: glowColor.withOpacity(0.32),
-                                            blurRadius: 40,
-                                            spreadRadius: 2,
-                                            offset: const Offset(0, 14),
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(24),
-                                        child: artWidget,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                        : SizedBox(
-                            width: artSize,
-                            height: artSize,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton.icon(
-                                    style: TextButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
-                                      foregroundColor: Colors.white70,
-                                      backgroundColor: Colors.white.withOpacity(0.07),
-                                    ),
-                                    icon: const Icon(Icons.edit_note_rounded, size: 16),
-                                    label: const Text('Edit LRC', style: TextStyle(fontSize: 11)),
-                                    onPressed: widget.onOpenLyricsManager,
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: _lyricLineExtent * 9,
-                                  child: StreamBuilder<Duration>(
-                                    stream: widget.audioPlayer.positionStream,
-                                    builder: (context, snapshot) {
-                                      final pos = snapshot.data ?? Duration.zero;
-                                      if (_loopB != null && _loopA != null && pos >= _loopB!) {
-                                        widget.audioPlayer.seek(_loopA!);
-                                      }
-                                      final lyrics = song?.parsedLyrics ?? [];
-                                      if (lyrics.isEmpty) {
-                                        return Center(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Text("No synced lyrics found.", style: TextStyle(color: Colors.white60)),
-                                              const SizedBox(height: 8),
-                                              OutlinedButton(
-                                                onPressed: widget.onOpenLyricsManager,
-                                                child: const Text('Search or Add Lyrics'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }
-                                      int activeIdx = lyrics.lastIndexWhere((l) => l.timestamp <= pos);
-                                      if (activeIdx < 0) activeIdx = 0;
-                                      WidgetsBinding.instance.addPostFrameCallback((_) => _autoScrollToActiveLyric(activeIdx));
-                                      final sweepProgress = _computeLineSyllableProgress(lyrics, activeIdx, pos);
-
-                                      return ListView.builder(
-                                        controller: _lyricsScrollCtrl,
-                                        itemExtent: _lyricLineExtent,
-                                        padding: const EdgeInsets.symmetric(vertical: _lyricLineExtent * 4),
-                                        itemCount: lyrics.length,
-                                        itemBuilder: (context, idx) {
-                                          final isCenter5th = idx == activeIdx;
-                                          final distance = (idx - activeIdx).abs();
-                                          final lineText = lyrics[idx].text;
-
-                                          if (isCenter5th && widget.syllableLyricsEnabled) {
-                                            return GestureDetector(
-                                              onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-                                              child: Container(
-                                                alignment: Alignment.center,
-                                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                child: ShaderMask(
-                                                  blendMode: BlendMode.srcIn,
-                                                  shaderCallback: (bounds) => LinearGradient(
-                                                    colors: const [Colors.white, Colors.white, Colors.white38, Colors.white38],
-                                                    stops: [0.0, sweepProgress, (sweepProgress + 0.06).clamp(0.0, 1.0), 1.0],
-                                                  ).createShader(bounds),
-                                                  child: Text(
-                                                    lineText,
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    textAlign: TextAlign.center,
-                                                    style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800),
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          return GestureDetector(
-                                            onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-                                            child: Container(
-                                              alignment: Alignment.center,
-                                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                                              child: Text(
-                                                lineText,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontSize: isCenter5th ? 16.5 : (distance == 1 ? 14.0 : 12.5),
-                                                  fontWeight: isCenter5th ? FontWeight.w800 : FontWeight.w500,
-                                                  color: isCenter5th
-                                                      ? Colors.white
-                                                      : (distance == 1 ? Colors.white54 : (distance <= 3 ? Colors.white30 : Colors.white12)),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                  ),
-
-                  const Spacer(flex: 3),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(song?.title ?? 'Aankhon Ne Maara', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
-                              const SizedBox(height: 4),
-                              Text(song?.artist ?? 'Farhan Khan, Mr Doss', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white70)),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon((song?.isFavorite ?? false) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: (song?.isFavorite ?? false) ? accent : Colors.white60, size: 25),
-                          onPressed: () {
-                            widget.onToggleFavorite();
-                            setState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Spacer(flex: 2),
-
-                  StreamBuilder<Duration>(
-                    stream: widget.audioPlayer.positionStream,
-                    builder: (context, posSnap) {
-                      final pos = posSnap.data ?? Duration.zero;
-                      if (_loopB != null && _loopA != null && pos >= _loopB!) {
-                        widget.audioPlayer.seek(_loopA!);
-                      }
-                      return StreamBuilder<Duration?>(
-                        stream: widget.audioPlayer.durationStream,
-                        builder: (context, durSnap) {
-                          final dur = durSnap.data ?? song?.duration ?? const Duration(minutes: 3, seconds: 32);
-                          double maxMs = dur.inMilliseconds.toDouble();
-                          if (maxMs <= 0) maxMs = 1.0;
-                          double curMs = pos.inMilliseconds.toDouble().clamp(0.0, maxMs);
-                          final prog = curMs / maxMs;
-                          return LayoutBuilder(
-                            builder: (ctx, constraints) => GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTapDown: (d) => widget.audioPlayer.seek(Duration(milliseconds: ((d.localPosition.dx / constraints.maxWidth) * maxMs).toInt())),
-                              onHorizontalDragUpdate: (d) {
-                                final ratio = (d.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0);
-                                widget.audioPlayer.seek(Duration(milliseconds: (ratio * maxMs).toInt()));
-                              },
-                              child: SizedBox(
-                                height: 38,
-                                width: double.infinity,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: List.generate(
-                                    78,
-                                    (i) => Container(
-                                      width: 2.2,
-                                      height: _getWaveformBarHeight(i, song?.title ?? 'Aankhon Ne Maara'),
-                                      decoration: BoxDecoration(color: (i / 78) <= prog ? Colors.white : Colors.white24, borderRadius: BorderRadius.circular(1.5)),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-
-                  const Spacer(flex: 2),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        StreamBuilder<Duration>(
-                          stream: widget.audioPlayer.positionStream,
-                          builder: (ctx, snap) => Text(
-                            _formatDurationPadded(snap.data ?? Duration.zero),
-                            style: const TextStyle(color: Colors.white70, fontSize: 11.5),
-                          ),
-                        ),
-                        StreamBuilder<PlayerState>(
-                          stream: widget.audioPlayer.playerStateStream,
-                          builder: (ctx, stateSnap) {
-                            final playing = stateSnap.data?.playing ?? widget.audioPlayer.playing;
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: widget.onPrevious),
-                                const SizedBox(width: 16),
-                                GestureDetector(
-                                  onTap: () => playing ? widget.audioPlayer.pause() : widget.audioPlayer.play(),
-                                  child: Container(
-                                    width: 58,
-                                    height: 58,
-                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
-                                    child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32, color: Colors.white),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: widget.onNext),
-                              ],
-                            );
-                          },
-                        ),
-                        StreamBuilder<Duration?>(
-                          stream: widget.audioPlayer.durationStream,
-                          builder: (ctx, snap) => Text(
-                            _formatDurationPadded(snap.data ?? song?.duration ?? const Duration(minutes: 3, seconds: 32)),
-                            style: const TextStyle(color: Colors.white70, fontSize: 11.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Spacer(flex: 2),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: widget.onShowPath,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
-                                  child: const Icon(Icons.headphones_outlined, size: 14, color: Colors.white70),
-                                ),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    RichText(
-                                      text: TextSpan(
-                                        children: [
-                                          const TextSpan(text: 'Audio ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white)),
-                                          TextSpan(text: '• $ext • $bitrate kb/s • $kHz kHz', style: const TextStyle(fontSize: 10, color: Colors.white70)),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    const Text('24-bit Hi-Res Lossless', style: TextStyle(fontSize: 9, color: Colors.white38)),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              icon: Icon(_isLooping ? Icons.repeat_one_rounded : Icons.repeat_rounded, size: 20, color: _isLooping ? accent : Colors.white70),
-                              onPressed: () {
-                                setState(() => _isLooping = !_isLooping);
-                                widget.audioPlayer.setLoopMode(_isLooping ? LoopMode.one : LoopMode.off);
-                              },
-                            ),
-                            const SizedBox(width: 12),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              icon: const Icon(Icons.tune_rounded, size: 20, color: Colors.white70),
-                              onPressed: widget.onShowEqualizer,
-                            ),
-                            const SizedBox(width: 12),
-                            GestureDetector(
-                              onLongPress: widget.onOpenLyricsManager,
-                              child: IconButton(
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: Icon(Icons.lyrics_outlined, size: 20, color: _viewMode == 1 ? accent : Colors.white70),
-                                onPressed: () {
-                                  setState(() {
-                                    _viewMode = _viewMode == 1 ? 0 : 1;
-                                    _lastScrolledLyricIndex = -1;
-                                  });
-                                  if (_viewMode == 1) widget.onRefreshLyrics();
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              icon: const Icon(Icons.queue_music_rounded, size: 20, color: Colors.white70),
-                              onPressed: widget.onOpenQueue,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
