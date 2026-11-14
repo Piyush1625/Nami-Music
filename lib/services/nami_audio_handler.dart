@@ -7,16 +7,6 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AudioPlayer _player;
   VoidCallback? onSkipNext;
   VoidCallback? onSkipPrevious;
-  VoidCallback? onSkipNext;
-  VoidCallback? onSkipPrevious;
-  VoidCallback? onSkipNext;
-  VoidCallback? onSkipPrevious;
-  VoidCallback? onSkipNext;
-  VoidCallback? onSkipPrevious;
-  VoidCallback? onSkipNext;
-  VoidCallback? onSkipPrevious;
-  VoidCallback? onSkipNext;
-  VoidCallback? onSkipPrevious;
 
   NamiAudioHandler(this._player) {
     _initPlaybackStateStream();
