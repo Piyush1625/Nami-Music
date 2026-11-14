@@ -1,9 +1,12 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/nami_models.dart';
 
 class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AudioPlayer _player;
+  VoidCallback? onSkipNext;
+  VoidCallback? onSkipPrevious;
 
   NamiAudioHandler(this._player) {
     _initPlaybackStateStream();
@@ -65,10 +68,22 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> skipToNext() => _player.seekToNext();
+  Future<void> skipToNext() async {
+    if (onSkipNext != null) {
+      onSkipNext!();
+    } else {
+      await _player.seekToNext();
+    }
+  }
 
   @override
-  Future<void> skipToPrevious() => _player.seekToPrevious();
+  Future<void> skipToPrevious() async {
+    if (onSkipPrevious != null) {
+      onSkipPrevious!();
+    } else {
+      await _player.seekToPrevious();
+    }
+  }
 
   @override
   Future<void> stop() async {
