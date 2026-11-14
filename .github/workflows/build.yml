@@ -64,6 +64,13 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
+      - name: Add audio_service implementation to build.gradle.kts
+        run: |
+          if [ -f "android/app/build.gradle.kts" ]; then
+            echo "" >> android/app/build.gradle.kts
+            echo "dependencies { implementation(project(":audio_service")) }" >> android/app/build.gradle.kts
+          fi
+
       - name: Inject Permissions, AudioServiceActivity & Background Service
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
