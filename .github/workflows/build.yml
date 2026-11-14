@@ -64,50 +64,63 @@ jobs:
 
       - name: Install Flutter Dependencies
         run: flutter pub get
+
       - name: Generate Isar Database Schema
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Inject Permissions and Background Audio Service into AndroidManifest
+      - name: Inject Permissions, AudioServiceActivity & Background Service
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q "READ_MEDIA_AUDIO" "$MANIFEST"; then
             sed -i '/<application/i \
-            <uses-permission android:name="android.permission.INTERNET"/>\n\
-            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n\
-            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>\n\
-            <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n\
-            <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n\
-            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>\n\
-            <uses-permission android:name="android.permission.WAKE_LOCK"/>' "$MANIFEST"
+              <uses-permission android:name="android.permission.INTERNET"/>\n\
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n\
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>\n\
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n\
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n\
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n\
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>\n\
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>' "$MANIFEST"
           fi
-          
+
           if ! grep -q "AudioService" "$MANIFEST"; then
-            sed -i '/<activity/i \
-            <service android:name="com.ryanheise.audioservice.AudioService" android:foregroundServiceType="mediaPlayback" android:exported="true">\n\
+            sed -i '/<\/activity>/i \
+              <service android:name="com.ryanheise.audioservice.AudioService" android:foregroundServiceType="mediaPlayback" android:exported="true">\n\
                 <intent-filter>\n\
-                    <action android:name="android.media.browse.MediaBrowserService" />\n\
+                  <action android:name="android.media.browse.MediaBrowserService" />\n\
                 </intent-filter>\n\
-            </service>\n\
-            <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true">\n\
+              </service>\n\
+              <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true">\n\
                 <intent-filter>\n\
-                    <action android:name="android.intent.action.MEDIA_BUTTON" />\n\
+                  <action android:name="android.intent.action.MEDIA_BUTTON" />\n\
                 </intent-filter>\n\
-            </receiver>' "$MANIFEST"
+              </receiver>' "$MANIFEST"
+          fi
+
+          MAIN_KT=$(find android/app/src/main/kotlin -name "MainActivity.kt" | head -n 1)
+          if [ -n "$MAIN_KT" ]; then
+            cat << 'KT_EOF' > "$MAIN_KT"
+          package com.piyush.nami.nami
+
+          import com.ryanheise.audioservice.AudioServiceActivity
+
+          class MainActivity: AudioServiceActivity()
+          KT_EOF
           fi
 
       - name: Force compileSdk 36 in App & All Plugins
         run: |
           if [ -f "android/app/build.gradle.kts" ]; then
             sed -i 's/compileSdk = .*/compileSdk = 36/g' android/app/build.gradle.kts
-            sed -i 's/targetSdk = .*/targetSdk = 35/g' android/app/build.gradle.kts
+            sed -i 's/targetSdk = .*/targetSdk = 36/g' android/app/build.gradle.kts
             sed -i 's/minSdk = .*/minSdk = 24/g' android/app/build.gradle.kts
           fi
 
           find / -name "build.gradle*" -path "*pub-cache*" 2>/dev/null | while read -r gradle_file; do
             if [[ "$gradle_file" == *.kts ]]; then
-              sed -i -E 's/^[[:space:]]*compileSdk(Version)?[[:space:]=(].*/    compileSdk = 36/g' "$gradle_file"
+              sed -i -E 's/^[[:space:]]*compileSdk(Version)?[[:space:]]*=[[:space:]]*.*/    compileSdk = 36/g' "$gradle_file"
             else
-              sed -i -E 's/^[[:space:]]*compileSdk(Version)?[[:space:]=(].*/        compileSdkVersion 36/g' "$gradle_file"
+              sed -i -E 's/^[[:space:]]*compileSdk(Version)?[[:space:]]*[:=]?[[:space:]]*.*/    compileSdkVersion 36/g' "$gradle_file"
             fi
           done
 
