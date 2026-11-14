@@ -49,7 +49,7 @@ jobs:
       - name: Generate Android Platform Files
         run: |
           rm -rf android
-          flutter create --platforms=android --org com.piyush.nami --project-name nami .
+          flutter create --platforms=android --org com.piyush --project-name nami .
 
       - name: Inject Speed Optimizations into gradle.properties
         run: |
@@ -64,9 +64,6 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
-      - name: Generate Isar Database Schema
-        run: dart run build_runner build --delete-conflicting-outputs
-
       - name: Inject Permissions, AudioServiceActivity & Background Service
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
@@ -76,6 +73,7 @@ jobs:
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n\
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>\n\
               <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n\
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n\
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n\
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n\
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>\n\

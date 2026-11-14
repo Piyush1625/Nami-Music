@@ -1,5 +1,3 @@
-import 'package:nami/ui/widgets/namida_fast_scroller.dart';
-import 'package:nami/utils/nami_helpers.dart';
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
@@ -537,8 +535,21 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       if (await backupFile.exists()) {
         final map = jsonDecode(await backupFile.readAsString());
         final favPaths = Set<String>.from(map['favorites'] ?? []);
+        final pathLookup = {for (var s in _songs) s.path: s};
         for (var s in _songs) {
           if (favPaths.contains(s.path)) s.isFavorite = true;
+        }
+        final rawPlaylists = map['playlists'] as List?;
+        if (rawPlaylists != null) {
+          _customPlaylists.clear();
+          for (final pl in rawPlaylists) {
+            if (pl is Map) {
+              final pName = (pl['name'] ?? 'Playlist').toString();
+              final pPaths = List<String>.from(pl['paths'] ?? []);
+              final pTracks = pPaths.map((p) => pathLookup[p]).whereType<AudioTrack>().toList();
+              _customPlaylists.add(CustomPlaylist(name: pName, tracks: pTracks));
+            }
+          }
         }
         setState(() {});
         _saveStateCache();
