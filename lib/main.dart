@@ -1,3 +1,4 @@
+import 'package:nami/ui/widgets/namida_fast_scroller.dart';
 import 'package:nami/utils/nami_helpers.dart';
 import 'dart:io';
 import 'dart:async';

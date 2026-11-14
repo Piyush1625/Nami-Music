@@ -26,3 +26,17 @@ Color namiExtractDominantColor(Uint8List? artworkBytes, Color fallbackAccent) {
   }
   return fallbackAccent;
 }
+
+// --- New network and image helpers ---
+const Map<String, String> namiHttpHeaders = {
+  'User-Agent': 'NamiMusic/1.0',
+};
+
+bool namiLooksLikeImage(List<int> bytes) {
+  if (bytes.isEmpty) return false;
+  return true;
+}
+
+String namiDeterministicPathHash(String input) {
+  return input.hashCode.toString();
+}
