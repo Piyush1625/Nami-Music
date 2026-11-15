@@ -4357,8 +4357,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     const SizedBox(width: 12),
                     _buildGlassPill(Icons.favorite_rounded, 'Favorites', () { final favs = _songs.where((s) => s.isFavorite).toList(); _showFilteredListScreen('Favorites', favs); }),
                     const SizedBox(width: 12),
-                    _buildGlassPill(Icons.folder_open_rounded, 'Folders', _showFolderExplorerModal),
-                    const SizedBox(width: 12),
+                    
                     _buildGlassPill(Icons.equalizer_rounded, 'AutoEQ', _showEqualizerSheet),
                   ],
                 ),
