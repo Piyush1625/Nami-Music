@@ -4329,12 +4329,40 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Welcome, $_userName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    // Dynamic Time-Aware Greeting
+                Builder(builder: (context) {
+                  final hour = DateTime.now().hour;
+                  String greeting = 'Late Night Lossless Sessions';
+                  if (hour >= 5 && hour < 12) greeting = 'Morning Fidelity';
+                  else if (hour >= 12 && hour < 17) greeting = 'Afternoon Acoustics';
+                  else if (hour >= 17 && hour < 22) greeting = 'Evening Soundscapes';
+                  
+                  return Text(greeting, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: Colors.white));
+                }),
                     const SizedBox(height: 2),
                     Text(
                       'DAC: $_connectedDacName • ${_songs.length} Tracks • ${_totalListenSeconds ~/ 60}m listened',
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 24),
+              // Glassmorphic Quick-Action Pill Bar
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  children: [
+                    _buildGlassPill(Icons.history_rounded, 'History', () => _showFilteredListScreen('Play History', _historyTracks)),
+                    const SizedBox(width: 12),
+                    _buildGlassPill(Icons.favorite_rounded, 'Favorites', () { final favs = _songs.where((s) => s.isFavorite).toList(); _showFilteredListScreen('Favorites', favs); }),
+                    const SizedBox(width: 12),
+                    _buildGlassPill(Icons.folder_open_rounded, 'Folders', _showFolderExplorerModal),
+                    const SizedBox(width: 12),
+                    _buildGlassPill(Icons.equalizer_rounded, 'AutoEQ', _showEqualizerSheet),
+                  ],
+                ),
+              
                       style: const TextStyle(fontSize: 11.5, color: Colors.white60),
                     ),
                   ],
