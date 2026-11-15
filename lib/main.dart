@@ -2411,37 +2411,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   void _showTagEditorDialog(AudioTrack song) {
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(8)),
-                      child: Text('Track #${song.trackNumber.isNotEmpty ? song.trackNumber : "1"}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        icon: const Icon(Icons.image_search_rounded, size: 17),
-                        label: const Text('Pick Gallery / Fetch Online Cover', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                        onPressed: () => _showArtworkSelectorSheet(context, song, (bytes, savedPath) {
-                          setState(() {
-                            song.albumArt = bytes;
-                            song.thumbPath = savedPath;
-                          });
-                          _artworkTick.value++;
-                        }),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
     final titleCtrl = TextEditingController(text: song.title);
     final artistCtrl = TextEditingController(text: song.artist);
     final albumCtrl = TextEditingController(text: song.album);
@@ -2497,6 +2466,37 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 ],
               ),
               const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(8)),
+                      child: Text('Track #${song.trackNumber.isNotEmpty ? song.trackNumber : "1"}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.image_search_rounded, size: 17),
+                        label: const Text('Pick Gallery / Fetch Online Cover', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        onPressed: () => _showArtworkSelectorSheet(context, song, (bytes, savedPath) {
+                          setState(() {
+                            song.albumArt = bytes;
+                            song.thumbPath = savedPath;
+                          });
+                          _artworkTick.value++;
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               _buildRichInputField(titleCtrl, 'Title'),
               const SizedBox(height: 10),
               _buildRichInputField(artistCtrl, 'Artist'),
