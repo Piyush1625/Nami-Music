@@ -115,6 +115,7 @@ class NamiApp extends StatefulWidget {
 }
 
 class _NamiAppState extends State<NamiApp> {
+  bool _isCheckingPerms = true;
   bool pitchBlack = true;
   Color accentColor = const Color(0xFFE53935);
 
