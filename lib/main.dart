@@ -134,6 +134,12 @@ class _NamiAppState extends State<NamiApp> {
       });
       return const Scaffold(backgroundColor: Color(0xFF050508), body: Center(child: CircularProgressIndicator(color: Colors.white24)));
     }
+    if (_isCheckingPerms) {
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted) setState(() => _isCheckingPerms = false);
+      });
+      return const Scaffold(backgroundColor: Color(0xFF050508), body: Center(child: CircularProgressIndicator(color: Colors.white24)));
+    }
     final bgColor =
         pitchBlack ? const Color(0xFF000000) : const Color(0xFF09090E);
     final cardColor =
@@ -4707,12 +4713,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   final letter = t.title.isNotEmpty ? t.title[0].toUpperCase() : '#';
                   return '$letter • ${idx + 1}/${_filteredSongs.length}';
                 },
-                child: ListView.builder(
+                child: RefreshIndicator(color: Theme.of(context).colorScheme.primary, backgroundColor: const Color(0xFF14141E), onRefresh: () async { await Future.delayed(const Duration(milliseconds: 600)); setState((){}); }, child: ListView.builder(
                   controller: _trackListScrollController,
                   padding: const EdgeInsets.only(bottom: 95, right: 8),
                   itemCount: _filteredSongs.length,
                   itemBuilder: (context, index) => _buildNamidaTrackTile(_filteredSongs[index]),
-                ),
+                )),
               ),
             ),
           ],
