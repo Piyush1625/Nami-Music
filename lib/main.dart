@@ -5022,18 +5022,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       const SizedBox(height: 2),
-                      Row(
-                    children: [
-                      Expanded(child: Text(activeSong?.artist ?? 'Unknown Artist', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60))),
-                      if (activeSong != null)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: const Color(0xFFD4AF37).withOpacity(0.15), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.5), width: 0.5)),
-                          child: const Text('24-BIT', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFD4AF37), letterSpacing: 0.5)),
-                        ),
-                    ],
-                  ),
+                      Text(
+                        activeSong?.artist ?? '24-bit / Lossless Ready',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white60),
                       ),
                     ],
                   ),
