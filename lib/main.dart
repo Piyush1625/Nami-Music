@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
@@ -756,6 +757,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   int _enrichedCount = 0;
 
   List<AudioTrack> _songs = [];
+      _restoreLastPlayedTrack();
   List<AudioTrack> _filteredSongs = [];
   final List<AudioTrack> _playNextQueue = [];
   final List<AudioTrack> _historyTracks = [];
@@ -1247,7 +1249,33 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     }
   }
 
+  
+  Future<void> _saveLastPlayedTrack(AudioTrack track) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('nami_last_track_path', track.path);
+    } catch (_) {}
+  }
+
+  Future<void> _restoreLastPlayedTrack() async {
+    if (_currentSong != null || _songs.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPath = prefs.getString('nami_last_track_path');
+      if (savedPath != null && savedPath.isNotEmpty) {
+        final idx = _songs.indexWhere((t) => t.path == savedPath);
+        if (idx != -1 && mounted) {
+          setState(() {
+            _currentSong = _songs[idx];
+          });
+          await _player.setFilePath(_songs[idx].path);
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _playSong(AudioTrack song) async {
+    _saveLastPlayedTrack(song);
     if (song.path.isEmpty) return;
     _currentSong = song;
     _currentTrackSecondsListened = 0;
