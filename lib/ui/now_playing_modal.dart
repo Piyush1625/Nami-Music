@@ -226,8 +226,14 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
             .withBlue((glowColor.blue * 1.2).clamp(0, 255).toInt())
             .withOpacity(0.20);
 
-        return Scaffold(
-          backgroundColor: const Color(0xFF050508),
+        return GestureDetector(
+          onVerticalDragEnd: (details) {
+            if ((details.primaryVelocity ?? 0) > 350) {
+              Navigator.of(context).maybePop();
+            }
+          },
+          child: Scaffold(
+            backgroundColor: const Color(0xFF050508),
           body: Container(
             width: double.infinity,
             height: double.infinity,
@@ -684,6 +690,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                 ),
               ],
             ),
+          ),
           ),
         );
       },
