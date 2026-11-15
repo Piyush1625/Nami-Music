@@ -33,7 +33,7 @@ if os.path.exists(manifest_path):
     </application>"""
         content = content.replace("</application>", service_block)
 
-    content = content.replace('android:name=".MainActivity"', 'android:name="com.ryanheise.audioservice.AudioServiceActivity"')
+    content = content.replace('android:name="com.ryanheise.audioservice.AudioServiceActivity"', 'android:name=".MainActivity"')
 
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -43,24 +43,21 @@ for kt in glob.glob("android/app/src/main/**/MainActivity.kt", recursive=True):
     with open(kt, "r", encoding="utf-8") as f:
         kt_code = f.read()
     pkg_line = [l for l in kt_code.splitlines() if l.startswith("package ")][0]
-    fixed_kt = f"""{pkg_line}
+    standard_kt = f"""{pkg_line}
 
-import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.android.FlutterActivity
 
-class MainActivity: AudioServiceActivity()
+class MainActivity: FlutterActivity()
 """
     with open(kt, "w", encoding="utf-8") as f:
-        f.write(fixed_kt)
-    print("MainActivity.kt patched:", kt)
+        f.write(standard_kt)
+    print("MainActivity.kt reset to FlutterActivity:", kt)
 
 for gradle_kts in glob.glob("android/app/build.gradle.kts"):
     with open(gradle_kts, "r", encoding="utf-8") as f:
         g_code = f.read()
-    if "project(\":audio_service\")" not in g_code:
-        if "dependencies {" in g_code:
-            g_code = g_code.replace("dependencies {", "dependencies {\n    implementation(project(\":audio_service\"))")
-        else:
-            g_code += "\ndependencies {\n    implementation(project(\":audio_service\"))\n}\n"
+    if "audio_service" in g_code:
+        g_code = g_code.replace("implementation(project(\":audio_service\"))", "")
         with open(gradle_kts, "w", encoding="utf-8") as f:
             f.write(g_code)
-        print("Injected audio_service dependency into build.gradle.kts")
+        print("Cleaned build.gradle.kts")
