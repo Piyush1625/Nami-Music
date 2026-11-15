@@ -4701,7 +4701,40 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       );
     }
     if (_isScanning) {
-      return Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary));
+      return ListView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: 15,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        itemBuilder: (context, index) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Row(
+              children: [
+                // Skeleton Album Art
+                Container(
+                  width: 52, height: 52, 
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(10))
+                ),
+                const SizedBox(width: 16),
+                // Skeleton Text Lines
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(width: 200, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(4))),
+                      const SizedBox(height: 10),
+                      Container(width: 120, height: 10, decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(4))),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Skeleton trailing icon
+                Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), shape: BoxShape.circle)),
+              ],
+            ),
+          );
+        },
+      );
     }
 
     return Stack(
