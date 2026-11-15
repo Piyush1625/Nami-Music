@@ -315,6 +315,14 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           child: _viewMode == 0
                               ? GestureDetector(
                                   behavior: HitTestBehavior.opaque,
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity == null) return;
+                      if (details.primaryVelocity! > 300) {
+                        widget.onPrevious(); // Swipe Right -> Previous Track
+                      } else if (details.primaryVelocity! < -300) {
+                        widget.onNext(); // Swipe Left -> Next Track
+                      }
+                    },
                                   onDoubleTap: () => _seekRelative(-5),
                                   child: Hero(
                                     tag: song != null ? 'album_art_${song.path}' : 'album_art_empty',
@@ -517,6 +525,14 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           return LayoutBuilder(
                             builder: (ctx, constraints) => GestureDetector(
                               behavior: HitTestBehavior.opaque,
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity == null) return;
+                      if (details.primaryVelocity! > 300) {
+                        widget.onPrevious(); // Swipe Right -> Previous Track
+                      } else if (details.primaryVelocity! < -300) {
+                        widget.onNext(); // Swipe Left -> Next Track
+                      }
+                    },
                               onTapDown: (d) => widget.audioPlayer.seek(Duration(milliseconds: ((d.localPosition.dx / constraints.maxWidth) * maxMs).toInt())),
                               onHorizontalDragUpdate: (d) {
                                 final ratio = (d.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0);
