@@ -1,4 +1,3 @@
-bool _isCheckingPerms = true;
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
