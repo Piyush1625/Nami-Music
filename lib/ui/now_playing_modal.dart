@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import '../core/nami_helpers.dart';
 import '../models/nami_models.dart';
@@ -318,9 +319,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     onHorizontalDragEnd: (details) {
                       if (details.primaryVelocity == null) return;
                       if (details.primaryVelocity! > 300) {
-                        widget.onPrevious(); // Swipe Right -> Previous Track
+                        () { HapticFeedback.selectionClick(); widget.onPrevious(); }(); // Swipe Right -> Previous Track
                       } else if (details.primaryVelocity! < -300) {
-                        widget.onNext(); // Swipe Left -> Next Track
+                        () { HapticFeedback.selectionClick(); widget.onNext(); }(); // Swipe Left -> Next Track
                       }
                     },
                                   onDoubleTap: () => _seekRelative(-5),
@@ -413,6 +414,11 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                               onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
                                               child: AnimatedContainer(
                                                 duration: const Duration(milliseconds: 220),
+                            decoration: BoxDecoration(
+                              color: isCenter5th ? Colors.white.withOpacity(0.05) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: isCenter5th ? [BoxShadow(color: Colors.white.withOpacity(0.02), blurRadius: 8, spreadRadius: 2)] : [],
+                            ),
                                                 curve: Curves.easeOutCubic,
                                                 alignment: Alignment.center,
                                                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -528,9 +534,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     onHorizontalDragEnd: (details) {
                       if (details.primaryVelocity == null) return;
                       if (details.primaryVelocity! > 300) {
-                        widget.onPrevious(); // Swipe Right -> Previous Track
+                        () { HapticFeedback.selectionClick(); widget.onPrevious(); }(); // Swipe Right -> Previous Track
                       } else if (details.primaryVelocity! < -300) {
-                        widget.onNext(); // Swipe Left -> Next Track
+                        () { HapticFeedback.selectionClick(); widget.onNext(); }(); // Swipe Left -> Next Track
                       }
                     },
                               onTapDown: (d) => widget.audioPlayer.seek(Duration(milliseconds: ((d.localPosition.dx / constraints.maxWidth) * maxMs).toInt())),
@@ -581,10 +587,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: widget.onPrevious),
+                                IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: () { HapticFeedback.selectionClick(); widget.onPrevious(); }),
                                 const SizedBox(width: 16),
                                 GestureDetector(
-                                  onTap: () => playing ? widget.audioPlayer.pause() : widget.audioPlayer.play(),
+                                  onTap: () => { HapticFeedback.mediumImpact(); playing ? widget.audioPlayer.pause() : widget.audioPlayer.play(); },
                                   child: Container(
                                     width: 58,
                                     height: 58,
@@ -593,7 +599,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: widget.onNext),
+                                IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: () { HapticFeedback.selectionClick(); widget.onNext(); }),
                               ],
                             );
                           },
