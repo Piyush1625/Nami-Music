@@ -1,3 +1,4 @@
+bool _isCheckingPerms = true;
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
@@ -2044,7 +2045,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                             },
                           );
                         },
-                      ),
+                      )),
                     ),
                   Container(
                     padding: const EdgeInsets.all(12),
