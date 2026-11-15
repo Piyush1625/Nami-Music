@@ -4361,6 +4361,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     _buildGlassPill(Icons.equalizer_rounded, 'AutoEQ', _showEqualizerSheet),
                   ],
                 ),
+              ),
+              _buildSpotlightCard(),
               
                       style: const TextStyle(fontSize: 11.5, color: Colors.white60),
                     ),
