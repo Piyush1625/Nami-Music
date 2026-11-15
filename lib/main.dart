@@ -2411,6 +2411,37 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   void _showTagEditorDialog(AudioTrack song) {
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(8)),
+                      child: Text('Track #${song.trackNumber.isNotEmpty ? song.trackNumber : "1"}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.image_search_rounded, size: 17),
+                        label: const Text('Pick Gallery / Fetch Online Cover', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        onPressed: () => _showArtworkSelectorSheet(context, song, (bytes, savedPath) {
+                          setState(() {
+                            song.albumArt = bytes;
+                            song.thumbPath = savedPath;
+                          });
+                          _artworkTick.value++;
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
     final titleCtrl = TextEditingController(text: song.title);
     final artistCtrl = TextEditingController(text: song.artist);
     final albumCtrl = TextEditingController(text: song.album);
@@ -2464,69 +2495,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     },
                   ),
                 ],
-              ),
-              const SizedBox(height: 10),
-              StatefulBuilder(
-                builder: (ctx, setPreviewState) => Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => _showArtworkSelectorSheet(context, song, (bytes, savedPath) {
-                        setState(() {
-                          song.albumArt = bytes;
-                          song.thumbPath = savedPath;
-                        });
-                        _artworkTick.value++;
-                        setPreviewState(() {});
-                        coverPathCtrl.text = savedPath;
-                      }),
-                      child: Stack(
-                        children: [
-                          _buildCoverArt(song, 96, 14),
-                          Positioned(
-                            top: 5,
-                            left: 5,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.78), borderRadius: BorderRadius.circular(6)),
-                              child: Text('#${song.trackNumber.isNotEmpty ? song.trackNumber : "1"}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white)),
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 5,
-                            right: 5,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.78), borderRadius: BorderRadius.circular(6)),
-                              child: const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        icon: const Icon(Icons.image_search_rounded, size: 18),
-                        label: const Text('Gallery / Fetch Online', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        onPressed: () => _showArtworkSelectorSheet(context, song, (bytes, savedPath) {
-                          setState(() {
-                            song.albumArt = bytes;
-                            song.thumbPath = savedPath;
-                          });
-                          _artworkTick.value++;
-                          setPreviewState(() {});
-                          coverPathCtrl.text = savedPath;
-                        }),
-                      ),
-                    ),
-                  ],
-                ),
               ),
               const SizedBox(height: 10),
               _buildRichInputField(titleCtrl, 'Title'),
@@ -4699,9 +4667,799 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
               child: Row(
+                children: [
+                  IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
+                  IconButton(
+                    icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                    onPressed: () {
+                      if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first);
+                    },
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
+                    child: Text('${_songs.length} tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.sort_rounded, size: 20),
+                    tooltip: 'Reverse Order',
+                    onPressed: () {
+                      setState(() => _filteredSongs = _filteredSongs.reversed.toList());
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: NamidaFastScroller(
+                controller: _trackListScrollController,
+                itemCount: _filteredSongs.length,
+                labelBuilder: (idx) {
+                  final t = _filteredSongs[idx];
+                  final letter = t.title.isNotEmpty ? t.title[0].toUpperCase() : '#';
+                  return '$letter • ${idx + 1}/${_filteredSongs.length}';
+                },
+                child: ListView.builder(
+                  controller: _trackListScrollController,
+                  padding: const EdgeInsets.only(bottom: 95, right: 8),
+                  itemCount: _filteredSongs.length,
+                  itemBuilder: (context, index) => _buildNamidaTrackTile(_filteredSongs[index]),
+                ),
+              ),
+            ),
+          ],
+        ),
+        Positioned(
+          right: 20,
+          bottom: 92,
+          child: FloatingActionButton.small(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            onPressed: _locateActivePlayingTrack,
+            child: const Icon(Icons.my_location_rounded, color: Colors.white, size: 20),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<String> _buildArtistGroupsMap() {
+    artistGroups.clear();
+    final escaped = _artistSeparators.map((s) => RegExp.escape(s)).join('|');
+    final splitter = (_splitMultiArtists && escaped.isNotEmpty) ? RegExp(escaped, caseSensitive: false) : null;
+
+    for (var song in _songs) {
+      if (splitter != null) {
+        final parts = song.artist.split(splitter);
+        final seenForSong = <String>{};
+        for (var rawPart in parts) {
+          final clean = rawPart.trim();
+          if (clean.isNotEmpty && seenForSong.add(clean.toLowerCase())) {
+            artistGroups.putIfAbsent(clean, () => []).add(song);
+          }
+        }
+      } else {
+        artistGroups.putIfAbsent(song.artist, () => []).add(song);
+      }
+    }
+
+    final uniqueArtists = artistGroups.keys.toList();
+    if (_artistSortByCount) {
+      uniqueArtists.sort((a, b) => artistGroups[b]!.length.compareTo(artistGroups[a]!.length));
+    } else {
+      uniqueArtists.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    }
+    return uniqueArtists;
+  }
+
+  Widget _buildArtistsPageBody() {
+    final uniqueArtists = _buildArtistGroupsMap();
+    final accent = Theme.of(context).colorScheme.primary;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 2, 12, 6),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.shuffle_rounded, size: 20),
+                onPressed: _shufflePlay,
+              ),
+              IconButton(
+                icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                onPressed: () {
+                  if (uniqueArtists.isNotEmpty) {
+                    _playSong(artistGroups[uniqueArtists.first]!.first);
+                  }
+                },
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
+                child: Text('${uniqueArtists.length} artists', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: _artistGridMode ? 'Switch to List View' : 'Switch to 3-Column Grid',
+                icon: Icon(_artistGridMode ? Icons.view_list_rounded : Icons.grid_view_rounded, size: 20),
+                onPressed: () => setState(() => _artistGridMode = !_artistGridMode),
+              ),
+              IconButton(
+                tooltip: _artistSortByCount ? 'Sort Alphabetically (A-Z)' : 'Sort by Track Count',
+                icon: Icon(_artistSortByCount ? Icons.sort_by_alpha_rounded : Icons.sort_rounded, size: 20, color: _artistSortByCount ? accent : Colors.white),
+                onPressed: () => setState(() => _artistSortByCount = !_artistSortByCount),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: NamidaFastScroller(
+            controller: _artistListScrollController,
+            itemCount: uniqueArtists.length,
+            labelBuilder: (idx) {
+              final name = uniqueArtists[idx];
+              final letter = name.isNotEmpty ? name[0].toUpperCase() : '#';
+              return '$letter • ${idx + 1}/${uniqueArtists.length}';
+            },
+            child: _artistGridMode
+                ? GridView.builder(
+                    controller: _artistListScrollController,
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 95),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      childAspectRatio: 0.8,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 10,
+                    ),
+                    itemCount: uniqueArtists.length,
+                    itemBuilder: (context, index) {
+                      final aName = uniqueArtists[index];
+                      final aTracks = artistGroups[aName]!;
+                      final firstArtTrack = aTracks.firstWhere(
+                        (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                        orElse: () => aTracks.first,
+                      );
+                      return GestureDetector(
+                        onTap: () => _showArtistDetailScreen(aName, aTracks),
+                        child: Column(
+                          children: [
+                            Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 40)),
+                            const SizedBox(height: 6),
+                            Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                          ],
+                        ),
+                      );
+                    },
+                  )
+                : ListView.builder(
+                    controller: _artistListScrollController,
+                    padding: const EdgeInsets.fromLTRB(10, 4, 12, 95),
+                    itemCount: uniqueArtists.length,
+                    itemBuilder: (context, index) {
+                      final aName = uniqueArtists[index];
+                      final aTracks = artistGroups[aName]!;
+                      final albumCount = aTracks.map((s) => s.album).toSet().length;
+                      final firstArtTrack = aTracks.firstWhere(
+                        (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                        orElse: () => aTracks.first,
+                      );
+                      return ListTile(
+                        leading: _buildRoundArtistAvatar(firstArtTrack, 24),
+                        title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+                        trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                        onTap: () => _showArtistDetailScreen(aName, aTracks),
+                      );
+                    },
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNamidaTrackTile(AudioTrack song) {
+    final isCurrent = _currentSong?.path == song.path;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 1.5, 4, 1.5),
+      decoration: BoxDecoration(
+        color: isCurrent ? Theme.of(context).colorScheme.primary.withOpacity(0.12) : const Color(0xFF0C0C12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Dismissible(
+        key: Key('${song.path}_${song.hashCode}'),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(12)),
+          child: const Icon(Icons.playlist_add_rounded, color: Colors.white, size: 22),
+        ),
+        confirmDismiss: (direction) async {
+          setState(() => _playNextQueue.add(song));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queued "${song.title}" to play next')));
+          return false;
+        },
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _playSong(song),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+            child: Row(
+              children: [
+                _buildCoverArt(song, 48, 8),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: isCurrent ? Theme.of(context).colorScheme.primary : Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        song.artist,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.white70),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '${song.album} • Plays: ${song.playCount}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10.5, color: Colors.white38),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_formatDurationPadded(song.duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                    const SizedBox(height: 3),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() => song.isFavorite = !song.isFavorite);
+                        _saveStateCache();
+                      },
+                      child: Icon(
+                        song.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        color: song.isFavorite ? Theme.of(context).colorScheme.primary : Colors.white38,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 2),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 19),
+                  onPressed: () => _showTrackOptionsMenu(song),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReactiveMiniPlayer() {
+    final accent = Theme.of(context).colorScheme.primary;
+    return ValueListenableBuilder<AudioTrack?>(
+      valueListenable: _currentSongNotifier,
+      builder: (context, activeSong, _) {
+        return GestureDetector(
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity != null) {
+              if (details.primaryVelocity! < 0) {
+                _playNextTrack();
+              } else if (details.primaryVelocity! > 0) {
+                _playPrevTrack();
+              }
+            }
+          },
+          onTap: _showNowPlayingScreen,
+          child: Container(
+            height: 72,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: _forceMiniColor ? Color.alphaBlend(accent.withOpacity(0.22), const Color(0xFF12121A)) : const Color(0xFF12121A),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _forceMiniColor ? accent.withOpacity(0.45) : Colors.white12),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.85), blurRadius: 18, spreadRadius: 4)],
+            ),
+            child: Row(
+              children: [
+                if (activeSong != null)
+                  _buildCoverArt(activeSong, 48, 8)
+                else
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.album_rounded, size: 30, color: Colors.white54),
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        activeSong?.title ?? 'Tap any song to play',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        activeSong?.artist ?? '24-bit / Lossless Ready',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                      ),
+                    ],
+                  ),
+                ),
+                StreamBuilder<PlayerState>(
+                  stream: _audioPlayer.playerStateStream,
+                  builder: (ctx, snap) {
+                    final playing = snap.data?.playing ?? _audioPlayer.playing;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 24), onPressed: _playPrevTrack),
+                        IconButton(
+                          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 30),
+                          onPressed: () {
+                            if (playing) {
+                              _audioPlayer.pause();
+                            } else {
+                              if (_currentSong == null && _filteredSongs.isNotEmpty) {
+                                _playSong(_filteredSongs.first);
+                              } else {
+                                _audioPlayer.play();
+                              }
+                            }
+                          },
+                        ),
+                        IconButton(icon: const Icon(Icons.skip_next_rounded, size: 24), onPressed: _playNextTrack),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCoverArt(AudioTrack song, double size, double radius) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _artworkTick,
+      builder: (context, _, __) {
+        if (song.albumArt != null && song.albumArt!.isNotEmpty) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: Image.memory(
+              song.albumArt!,
+              width: size,
+              height: size,
+              fit: BoxFit.cover, gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => _defaultArt(size, radius),
+            ),
+          );
+        }
+        if (song.thumbPath != null) {
+          final f = File(song.thumbPath!);
+          if (f.existsSync()) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: Image.file(
+                f,
+                width: size,
+                height: size,
+                fit: BoxFit.cover, gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => _defaultArt(size, radius),
+              ),
+            );
+          }
+        }
+        return _defaultArt(size, radius);
+      },
+    );
+  }
+
+  Widget _defaultArt(double size, double radius) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(radius)),
+      child: Icon(Icons.album_rounded, size: size * 0.5, color: Colors.white38),
+    );
+  }
+
+  void _showNowPlayingScreen() {
+    if (_currentSong == null && _filteredSongs.isNotEmpty) {
+      _playSong(_filteredSongs.first);
+    } else if (_currentSong != null) {
+      _fetchLyricsOnline(_currentSong!);
+    }
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: true,
+        barrierColor: const Color(0xFF07070B),
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (context, animation, secondaryAnimation) => NowPlayingModal(
+          audioPlayer: _audioPlayer,
+          currentSongNotifier: _currentSongNotifier,
+          allSongs: _songs,
+          playNextQueue: _playNextQueue,
+          ambientGlow: _ambientGlow,
+          syllableLyricsEnabled: _syllableLyricsEnabled,
+          onShowPath: () {
+            if (_currentSong != null) _showAudioPathDetails(_currentSong!);
+          },
+          onShowEqualizer: _showEqualizerSheet,
+          onShowSleepTimer: _showSleepTimerDialog,
+          onOpenLyricsManager: () {
+            if (_currentSong != null) _showNamidaLyricsManagerSheet(_currentSong!);
+          },
+          onToggleFavorite: () {
+            if (_currentSong != null) {
+              setState(() => _currentSong!.isFavorite = !_currentSong!.isFavorite);
+              _saveStateCache();
+            }
+          },
+          onRefreshLyrics: () {
+            if (_currentSong != null) {
+              _currentSong!.isLyricsFetched = false;
+              _fetchLyricsOnline(_currentSong!);
+            }
+          },
+          onNext: _playNextTrack,
+          onPrevious: _playPrevTrack,
+          onOpenQueue: () => _showQueueBottomSheet(context),
+          onOpenMoreMenu: () {
+            if (_currentSong != null) _showTrackOptionsMenu(_currentSong!);
+          },
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final tween = Tween(begin: const Offset(0.0, 1.0), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic));
+          return SlideTransition(position: animation.drive(tween), child: child);
+        },
+      ),
+    );
+  }
+
+  void _showArtistDetailScreen(String artistName, List<AudioTrack> artistTracks) {
+    if (artistTracks.isEmpty) return;
+    final firstArtTrack = artistTracks.firstWhere(
+      (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+      orElse: () => artistTracks.first,
+    );
+    final Map<String, List<AudioTrack>> albumsMap = {};
+    int totalSeconds = 0;
+    for (var s in artistTracks) {
+      albumsMap.putIfAbsent(s.album, () => []).add(s);
+      totalSeconds += s.duration.inSeconds;
+    }
+    final formattedTotal = _formatTotalDurationHoursMins(Duration(seconds: totalSeconds));
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            actions: [
+              IconButton(
+                tooltip: 'Play Artist',
+                icon: const Icon(Icons.play_arrow_rounded),
+                onPressed: () => _playSong(artistTracks.first),
+              ),
+              IconButton(
+                tooltip: 'Shuffle Artist',
+                icon: const Icon(Icons.shuffle_rounded),
+                onPressed: () {
+                  final shuffled = List<AudioTrack>.from(artistTracks)..shuffle();
+                  if (shuffled.isNotEmpty) _playSong(shuffled.first);
+                },
+              ),
+            ],
+          ),
+          body: Stack(
+            children: [
+              ListView(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 140),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        _buildRoundArtistAvatar(firstArtTrack, 50),
+                        const SizedBox(width: 18),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(artistName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 4),
+                              Text('${artistTracks.length} Tracks • $formattedTotal', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('Albums (${albumsMap.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 140,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      children: albumsMap.entries.map((entry) {
+                        final albArtTrack = entry.value.firstWhere(
+                          (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                          orElse: () => entry.value.first,
+                        );
+                        return GestureDetector(
+                          onTap: () => _showAlbumDetailScreen(entry.key, entry.value),
+                          child: Container(
+                            width: 100,
+                            margin: const EdgeInsets.only(right: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildCoverArt(albArtTrack, 90, 8),
+                                const SizedBox(height: 4),
+                                Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('Songs (${artistTracks.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 10),
+                  ...artistTracks.map((song) => _buildNamidaTrackTile(song)),
+                ],
+              ),
+              Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
+    if (albumTracks.isEmpty) return;
+    final firstTrack = albumTracks.first;
+    final artTrack = albumTracks.firstWhere(
+      (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+      orElse: () => firstTrack,
+    );
+    final totalSecs = albumTracks.fold<int>(0, (sum, s) => sum + s.duration.inSeconds);
+    final totalDurText = _formatTotalDurationHoursMins(Duration(seconds: totalSecs));
+    final accent = Theme.of(context).colorScheme.primary;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            title: const Text('Album', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          body: Stack(
+            children: [
+              ListView(
+                padding: const EdgeInsets.fromLTRB(0, 8, 0, 140),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCoverArt(artTrack, 116, 16),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(albumName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 4),
+                              GestureDetector(
+                                onTap: () => _showArtistDetailScreen(
+                                  firstTrack.artist,
+                                  _songs.where((s) => s.artist.contains(firstTrack.artist)).toList(),
+                                ),
+                                child: Text(
+                                  firstTrack.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: accent),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${albumTracks.length} Tracks • $totalDurText • ${firstTrack.year}',
+                                style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: accent,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                    ),
+                                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                                    label: const Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                    onPressed: () => _playSong(albumTracks.first),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: const BorderSide(color: Colors.white24),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                                    ),
+                                    icon: const Icon(Icons.shuffle_rounded, size: 16),
+                                    label: const Text('Shuffle', style: TextStyle(fontSize: 12)),
+                                    onPressed: () {
+                                      final sh = List<AudioTrack>.from(albumTracks)..shuffle();
+                                      _playSong(sh.first);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 6),
+                  ...albumTracks.asMap().entries.map((entry) {
+                    final idx = entry.key + 1;
+                    final song = entry.value;
+                    final badge = song.trackNumber.isNotEmpty ? song.trackNumber.split('/').first : '$idx';
+                    return Stack(
+                      children: [
+                        _buildNamidaTrackTile(song),
+                        Positioned(
+                          top: 8,
+                          left: 16,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(color: Colors.black.withOpacity(0.78), borderRadius: BorderRadius.circular(5)),
+                            child: Text('#$badge', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
+                ],
+              ),
+              Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFilteredListScreen(String title, List<AudioTrack> tracks) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            title: Text(title),
+            actions: [
+              if (tracks.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.shuffle_rounded),
+                  onPressed: () {
+                    final sh = List<AudioTrack>.from(tracks)..shuffle();
+                    _playSong(sh.first);
+                  },
+                ),
+            ],
+          ),
+          body: Stack(
+            children: [
+              ListView.builder(
+                padding: const EdgeInsets.fromLTRB(0, 10, 0, 140),
+                itemCount: tracks.length,
+                itemBuilder: (ctx, i) => _buildNamidaTrackTile(tracks[i]),
+              ),
+              Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCreatePlaylistDialog() {
+    final nameCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF14141F),
+        title: const Text('New Playlist'),
+        content: TextField(controller: nameCtrl, autofocus: true, decoration: const InputDecoration(hintText: 'Playlist name...')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary),
+            onPressed: () {
+              if (nameCtrl.text.trim().isNotEmpty) {
+                setState(() => _customPlaylists.add(CustomPlaylist(name: nameCtrl.text.trim(), tracks: [])));
+                _saveStateCache();
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNamidaPlaylistsPage() {
+    final accent = Theme.of(context).colorScheme.primary;
+    final favSongs = _songs.where((s) => s.isFavorite).toList();
+    final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
+    final recentlyAdded = List<AudioTrack>.from(_songs)..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 110),
+      children: [
+        Row(
           children: [
+            
+
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
               child: Text('${_customPlaylists.length + 1} playlists', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
             ),
@@ -4750,20 +5508,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               color: Colors.orangeAccent,
               onTap: () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList()),
             ),
-            _buildHomeSmartTile(
-              icon: Icons.new_releases_rounded,
-              title: 'Recently Added',
-              subtitle: 'Latest imports',
-              color: Colors.cyanAccent,
-              onTap: () => _showFilteredListScreen('Recently Added', recentlyAdded.take(50).toList()),
-            ),
-            _buildHomeSmartTile(
-              icon: Icons.folder_open_rounded,
-              title: 'Folders',
-              subtitle: 'Browse storage',
-              color: Colors.amberAccent,
-              onTap: _showFolderExplorerModal,
-            ),
+
+
           ],
         ),
         const SizedBox(height: 20),
