@@ -52,6 +52,5 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async {
     await player.stop();
-    await super.stop();
   }
 }
