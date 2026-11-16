@@ -1516,13 +1516,13 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 icon: Icons.bolt_rounded,
                 title: _eqEnabled
                     ? 'AndroidEqualizer Pipeline ($_selectedEqPreset)'
-                    : '32-bit float',
+                    : 'Bit-perfect Direct',
                 subtitle: _eqEnabled ? '5-Band Hardware EQ Active' : null,
                 showConnectorDown: true,
               ),
               _buildAudioPathNode(
                 icon: Icons.settings_input_composite_rounded,
-                title: 'Android mixer',
+                title: 'USB direct access',
                 subtitle: '${song.bitDepth}-bit • $kHz kHz • DAC volume',
                 showConnectorDown: true,
               ),
@@ -1561,7 +1561,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               ),
               child: Icon(icon, size: 18, color: Colors.white70),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 8.0),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2678,7 +2678,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               ..._customPlaylists.map((pl) => ListTile(
                     leading: const Icon(Icons.queue_music_rounded),
                     title: Text(pl.name),
-                    subtitle: Text('${pl.tracks.length} tracks'),
+                    subtitle: Text('\${pl.tracks.length} Tracks'),
                     onTap: () {
                       if (!pl.tracks.contains(song)) {
                         setState(() => pl.tracks.add(song));
@@ -4391,7 +4391,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         _buildRoundArtistAvatar(firstArtTrack, 34),
                         const SizedBox(height: 6),
                         Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
+                        Text('\${aTracks.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
                       ],
                     ),
                   ),
@@ -4684,7 +4684,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   width: 52, height: 52, 
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(10))
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 8.0),
                 // Skeleton Text Lines
                 Expanded(
                   child: Column(
@@ -4697,7 +4697,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 8.0),
                 // Skeleton trailing icon
                 Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), shape: BoxShape.circle)),
               ],
@@ -4724,7 +4724,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
-                    child: Text('${_songs.length} tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: Text('\${_songs.length} Tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                   const Spacer(),
                   IconButton(
@@ -4873,7 +4873,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                             Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 40)),
                             const SizedBox(height: 6),
                             Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            Text('${aTracks.length} tracks', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                            Text('\${aTracks.length} Tracks', style: const TextStyle(fontSize: 10, color: Colors.grey)),
                           ],
                         ),
                       );
@@ -4961,7 +4961,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       ),
                       const SizedBox(height: 1),
                       Text(
-                        '${song.album} • ${song.year}',
+                        '${song.album} • ${formatReleaseDate(song.year)}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10.5, color: Colors.white38),
@@ -5291,7 +5291,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                                 _buildCoverArt(albArtTrack, 90, 8),
                                 const SizedBox(height: 4),
                                 Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                Text('${entry.value.length} tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
+                                Text('\${entry.value.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
                               ],
                             ),
                           ),
@@ -5346,7 +5346,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildCoverArt(artTrack, 116, 16),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 8.0),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -5537,7 +5537,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             _buildHomeSmartTile(
               icon: Icons.shuffle_rounded,
               title: 'Shuffle All',
-              subtitle: '${_songs.length} tracks',
+              subtitle: '\${_songs.length} Tracks',
               color: Colors.greenAccent,
               onTap: _shufflePlay,
             ),
@@ -5551,7 +5551,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             _buildHomeSmartTile(
               icon: Icons.favorite_rounded,
               title: 'Favorites',
-              subtitle: '${favSongs.length} tracks',
+              subtitle: '\${favSongs.length} Tracks',
               color: accent,
               onTap: () => _showFilteredListScreen('Favorites', favSongs),
             ),
@@ -5574,7 +5574,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         const SizedBox(height: 10),
         _buildPlaylistCardTile(
           title: 'Liked Songs',
-          subtitle: '${favSongs.length} tracks',
+          subtitle: '\${favSongs.length} Tracks',
           icon: Icons.favorite_rounded,
           coverTrack: favSongs.isNotEmpty ? favSongs.first : null,
           onTap: () => _showFilteredListScreen('Liked Songs', favSongs),
@@ -5584,7 +5584,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         ),
         ..._customPlaylists.map((p) => _buildPlaylistCardTile(
               title: p.name,
-              subtitle: '${p.tracks.length} tracks',
+              subtitle: '\${p.tracks.length} Tracks',
               icon: Icons.queue_music_rounded,
               coverTrack: p.tracks.isNotEmpty ? p.tracks.first : null,
               onTap: () => _showFilteredListScreen(p.name, p.tracks),
@@ -6544,7 +6544,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   ),
                                 ],
                               ),
-                              child: Padding(padding: const EdgeInsets.only(top: 48.0, left: 24.0, right: 24.0, bottom: 28.0), child: Hero(tag: 'nami_np_art_${song?.path ?? ""}', child: ClipRRect(
+                              child: Padding(padding: const EdgeInsets.only(top: 16.0, left: 8.0, right: 8.0, bottom: 32.0), child: Hero(tag: 'nami_np_art_${song?.path ?? ""}', child: ClipRRect(
                                 borderRadius: BorderRadius.circular(20),
                                 child: artWidget,
                               ))),
@@ -6760,7 +6760,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: widget.onPrevious),
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 8.0),
                                 GestureDetector(
                                   onTap: () => playing ? widget.audioPlayer.pause() : widget.audioPlayer.play(),
                                   child: Container(
@@ -6770,7 +6770,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                     child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32, color: Colors.white),
                                   ),
                                 ),
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 8.0),
                                 IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: widget.onNext),
                               ],
                             );
@@ -6910,7 +6910,7 @@ class YoutubeSkeletonLoader extends StatelessWidget {
         child: Row(
           children: [
             Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(8))),
-            const SizedBox(width: 16),
+            const SizedBox(width: 8.0),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -6926,6 +6926,24 @@ class YoutubeSkeletonLoader extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+
+
+String formatReleaseDate(String? rawDate) {
+  if (rawDate == null || rawDate.isEmpty) return '';
+  try {
+    final parts = rawDate.split('-');
+    if (parts.length >= 2) {
+      final year = parts[0];
+      final m = int.tryParse(parts[1]) ?? 1;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${months[m - 1]}.$year';
+    }
+    return rawDate;
+  } catch (e) {
+    return rawDate;
   }
 }
 
