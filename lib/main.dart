@@ -746,9 +746,7 @@ class NamiHomeShell extends StatefulWidget {
 class _NamiHomeShellState extends State<NamiHomeShell> {
   int _selectedIndex = 1;
 
-  late final AndroidEqualizer _androidEqualizer;
-  late final AndroidLoudnessEnhancer _androidLoudness;
-  late final Player _audioPlayer;
+      late final Player _audioPlayer;
 
   final ScrollController _trackListScrollController = ScrollController();
   final ScrollController _artistListScrollController = ScrollController();
@@ -955,7 +953,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
     _audioPlayer = Player(
       
-      handleInterruptions: true,
+      
       androidApplyAudioAttributes: true,
       handleAudioSessionActivation: true,
     );
