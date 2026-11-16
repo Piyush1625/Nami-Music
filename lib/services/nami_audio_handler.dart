@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:rxdart/rxdart.dart';
 
 class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
   final Player player;
