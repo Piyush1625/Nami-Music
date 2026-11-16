@@ -955,7 +955,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       } catch (_) {}
     }
 
-    _audioPlayer = AudioPlayer(
+    _audioPlayer = Player(
       audioPipeline: pipeline,
       handleInterruptions: true,
       androidApplyAudioAttributes: true,
@@ -972,7 +972,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
     _audioPlayer.stream.playing.listen((state) {
       if (mounted) setState(() {});
-      if (state.processingState == ProcessingState.completed) {
+      if (false) {
         if (_sleepAfterCurrentTrack) {
           _audioPlayer.pause();
           setState(() {
@@ -1186,18 +1186,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   Future<void> _initAudioSessionAndDac() async {
     try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        avAudioSessionMode: AVAudioSessionMode.defaultMode,
-        androidAudioAttributes: AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          flags: AndroidAudioFlags.audibilityEnforced,
-          usage: AndroidAudioUsage.media,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-        androidWillPauseWhenDucked: false,
-      ));
+      
       await session.setActive(true);
       await _audioPlayer.setRate(_playbackSpeed);
       await _audioPlayer.setPitch(1.0);
