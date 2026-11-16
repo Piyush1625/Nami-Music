@@ -970,7 +970,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       await _requestPermissionsAndInitBackground();
     });
 
-    _audioPlayer.playerStateStream.listen((state) {
+    _audioPlayer.stream.playing.listen((state) {
       if (mounted) setState(() {});
       if (state.processingState == ProcessingState.completed) {
         if (_sleepAfterCurrentTrack) {
@@ -994,7 +994,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     });
 
     _telemetryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_audioPlayer.playing) {
+      if (_audioPlayer.state.playing) {
         _totalListenSeconds++;
         _currentTrackSecondsListened++;
         if (_currentTrackSecondsListened == 25 && _currentSong != null) {
@@ -2951,9 +2951,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                           ),
                         ),
                         StreamBuilder<PlayerState>(
-                          stream: _audioPlayer.playerStateStream,
+                          stream: _audioPlayer.stream.playing,
                           builder: (ctx, snap) {
-                            final playing = snap.data?.playing ?? _audioPlayer.playing;
+                            final playing = snap.data?.playing ?? _audioPlayer.state.playing;
                             return GestureDetector(
                               onTap: () => playing ? _audioPlayer.pause() : _audioPlayer.play(),
                               child: Container(
@@ -5073,9 +5073,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   ),
                 ),
                 StreamBuilder<PlayerState>(
-                  stream: _audioPlayer.playerStateStream,
+                  stream: _audioPlayer.stream.playing,
                   builder: (ctx, snap) {
-                    final playing = snap.data?.playing ?? _audioPlayer.playing;
+                    final playing = snap.data?.playing ?? _audioPlayer.state.playing;
                     return Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -6755,9 +6755,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           ),
                         ),
                         StreamBuilder<PlayerState>(
-                          stream: widget.audioPlayer.playerStateStream,
+                          stream: widget.audioPlayer.stream.playing,
                           builder: (ctx, stateSnap) {
-                            final playing = stateSnap.data?.playing ?? widget.audioPlayer.playing;
+                            final playing = stateSnap.data?.playing ?? widget.audioPlayer.state.playing;
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -6839,7 +6839,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               icon: Icon(_isLooping ? Icons.repeat_one_rounded : Icons.repeat_rounded, size: 20, color: _isLooping ? accent : Colors.white70),
                               onPressed: () {
                                 setState(() => _isLooping = !_isLooping);
-                                widget.audioPlayer.setLoopMode(_isLooping ? LoopMode.one : LoopMode.off);
+                                widget.audioPlayer.setPlaylistMode(_isLooping ? PlaylistMode.single : PlaylistMode.none);
                               },
                             ),
                             const SizedBox(width: 12),
