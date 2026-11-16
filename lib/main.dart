@@ -418,6 +418,17 @@ class LyricLine {
 }
 
 class AudioTrack {
+  String get cleanArtist {
+    if (artist.isEmpty) return 'Unknown Artist';
+    final parts = artist.split(RegExp(r',\s*')).map((s) => s.trim()).toList();
+    final seen = <String>{};
+    final unique = <String>[];
+    for (var part in parts) {
+      if (part.isNotEmpty && seen.add(part.toLowerCase())) unique.add(part);
+    }
+    return unique.join(', ');
+  }
+
   String title;
   String artist;
   String album;
@@ -4956,14 +4967,14 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        song.artist,
+                        song.cleanArtist,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.white70),
                       ),
                       const SizedBox(height: 1),
                       Text(
-                        '${song.album} • Plays: ${song.playCount}',
+                        '${song.album} • ${song.year}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10.5, color: Colors.white38),
@@ -5034,7 +5045,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             child: Row(
               children: [
                 if (activeSong != null)
-                  _buildCoverArt(activeSong, 48, 8)
+                  Hero(tag: 'nami_np_art_${activeSong.path}', child: _buildCoverArt(activeSong, 48, 8))
                 else
                   Container(
                     width: 48,
@@ -5059,7 +5070,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                           children: [
                             Expanded(
                               child: Text(
-                                activeSong?.artist ?? 'Unknown Artist',
+                                activeSong?.cleanArtist ?? 'Unknown Artist',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11.5, color: Colors.white60),
@@ -6365,7 +6376,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
       final target = (activeIdx * _lyricLineExtent).clamp(0.0, _lyricsScrollCtrl.position.maxScrollExtent);
       _lyricsScrollCtrl.animateTo(
         target,
-        duration: const Duration(milliseconds: 280),
+        duration: const Duration(milliseconds: 750),
         curve: Curves.easeOutCubic,
       );
     }
@@ -6409,7 +6420,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
             children: [
               ListTile(
                 leading: const Icon(Icons.repeat_one_on_rounded),
-                title: Text(_loopA == null ? 'Set A-B Loop Start (Point A)' : (_loopB == null ? 'Set A-B Loop End (Point B)' : 'Clear A-B Loop')),
+                title: Text(_loopA == null ? 'A-B Loop Removed' : (_loopB == null ? 'Set A-B Loop End (Point B)' : 'Clear A-B Loop')),
                 onTap: () {
                   setState(() {
                     if (_loopA == null) {
@@ -6831,7 +6842,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       ),
                                     ),
                                     const SizedBox(height: 1),
-                                    const Text('24-bit Hi-Res Lossless', style: TextStyle(fontSize: 9, color: Colors.white38)),
+                                    const SizedBox.shrink(),
                                   ],
                                 ),
                               ],
