@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PlaybackHistoryService {
@@ -15,7 +16,7 @@ class PlaybackHistoryService {
   /// Increment play count for a specific track
   static Future<void> incrementPlayCount(String songId) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = '$_keyPlayCountPrefix$songId';
+    final key = '${_keyPlayCountPrefix}${songId}';
     final currentCount = prefs.getInt(key) ?? 0;
     await prefs.setInt(key, currentCount + 1);
   }
@@ -23,7 +24,7 @@ class PlaybackHistoryService {
   /// Get play count for a track
   static Future<int> getPlayCount(String songId) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('$_keyPlayCountPrefix$songId') ?? 0;
+    return prefs.getInt('${_keyPlayCountPrefix}${songId}') ?? 0;
   }
 
   /// Retrieve last saved playback state
