@@ -7,17 +7,21 @@ environment:
   sdk: '>=3.2.0 <4.0.0'
 
 dependencies:
+  media_kit: ^1.1.11+1
+  media_kit_video: ^1.2.4
+  media_kit_libs_android_audio: ^1.0.4
   shared_preferences: ^2.3.2
   flutter:
     sdk: flutter
-  just_audio: ^0.9.40
-  audio_session: ^0.1.21
   permission_handler: ^11.3.1
   path_provider: ^2.1.4
   http: ^1.2.2
   archive: ^3.6.1
 
 dev_dependencies:
+  media_kit: ^1.1.11+1
+  media_kit_video: ^1.2.4
+  media_kit_libs_android_audio: ^1.0.4
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
