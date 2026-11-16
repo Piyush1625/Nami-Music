@@ -35,6 +35,23 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
     });
   }
 
+  void updateMetadata({
+    required String title,
+    required String artist,
+    required String album,
+    required String artUri,
+    required Duration duration,
+  }) {
+    mediaItem.add(MediaItem(
+      id: artUri,
+      album: album,
+      title: title,
+      artist: artist,
+      artUri: Uri.parse(artUri),
+      duration: duration,
+    ));
+  }
+
   @override
   Future<void> play() => player.play();
 
