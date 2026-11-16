@@ -2,7 +2,7 @@ name: Build Nami APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ media-kit-engine ]
   workflow_dispatch:
 
 permissions:
