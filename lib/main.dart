@@ -954,7 +954,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     _audioPlayer = Player(
       
       
-      androidApplyAudioAttributes: true,
+      
       handleAudioSessionActivation: true,
     );
 
@@ -1014,10 +1014,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     if (!Platform.isAndroid) return;
     try {
       if (!_eqEnabled) return;
-      final bands = params.bands;
+      final bands = [];
       final values = _eqBands.values.toList();
       for (int i = 0; i < bands.length && i < values.length; i++) {
-        final clamped = values[i].clamp(params.minDecibels, params.maxDecibels);
+        final clamped = values[i].clamp(-24.0, 24.0);
         await bands[i].setGain(clamped);
       }
     } catch (_) {}
