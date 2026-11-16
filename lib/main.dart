@@ -955,7 +955,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       
       
       
-      handleAudioSessionActivation: true,
+      
     );
 
     _initHardwareDsp();
