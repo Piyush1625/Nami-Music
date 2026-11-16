@@ -4705,7 +4705,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
-                    child: Text('\${_songs.length} Tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: Text('${_songs.length} Tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                   const Spacer(),
                   IconButton(
@@ -5518,7 +5518,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             _buildHomeSmartTile(
               icon: Icons.shuffle_rounded,
               title: 'Shuffle All',
-              subtitle: '\${_songs.length} Tracks',
+              subtitle: '${_songs.length} Tracks',
               color: Colors.greenAccent,
               onTap: _shufflePlay,
             ),
@@ -6928,3 +6928,9 @@ String formatReleaseDate(String? rawDate) {
   }
 }
 
+
+Future<void> requestNotificationPermission() async {
+  if (await Permission.notification.isDenied) {
+    await Permission.notification.request();
+  }
+}
