@@ -1516,13 +1516,13 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 icon: Icons.bolt_rounded,
                 title: _eqEnabled
                     ? 'AndroidEqualizer Pipeline ($_selectedEqPreset)'
-                    : 'Bit-perfect Direct',
+                    : '32-bit float',
                 subtitle: _eqEnabled ? '5-Band Hardware EQ Active' : null,
                 showConnectorDown: true,
               ),
               _buildAudioPathNode(
                 icon: Icons.settings_input_composite_rounded,
-                title: 'USB direct access',
+                title: 'Android mixer',
                 subtitle: '${song.bitDepth}-bit • $kHz kHz • DAC volume',
                 showConnectorDown: true,
               ),
@@ -5064,16 +5064,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                               ),
                             ),
                             if (activeSong != null)
-                              Container(
-                                margin: const EdgeInsets.only(left: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFD4AF37).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.5), width: 0.5),
-                                ),
-                                child: const Text('24-BIT', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFD4AF37), letterSpacing: 0.5)),
-                              ),
+                              const SizedBox.shrink(),
                           ],
                         ),
                     ],
@@ -6553,10 +6544,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   ),
                                 ],
                               ),
-                              child: Hero(tag: 'nami_np_art_${song?.path ?? ""}', child: ClipRRect(
+                              child: Padding(padding: const EdgeInsets.only(top: 48.0, left: 24.0, right: 24.0, bottom: 28.0), child: Hero(tag: 'nami_np_art_${song?.path ?? ""}', child: ClipRRect(
                                 borderRadius: BorderRadius.circular(20),
                                 child: artWidget,
-                              )),
+                              ))),
                             ),
                           )
                         : SizedBox(
