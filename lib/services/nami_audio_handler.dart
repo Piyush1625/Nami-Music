@@ -1,12 +1,14 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:nami/services/playback_history_service.dart';
 
 class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
   final Player player;
   
   // Internal list to keep track of MediaItems corresponding to playlist tracks
   final List<MediaItem> _playlistItems = [];
+  String? _currentSongId;
 
   NamiAudioHandler(this.player) {
     _initStreams();
@@ -34,18 +36,27 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
       ));
     });
 
-    // Listen to position updates
+    // Listen to position updates and persist playback state
     player.stream.position.listen((position) {
       playbackState.add(playbackState.value.copyWith(
         updatePosition: position,
       ));
+
+      if (_currentSongId != null) {
+        PlaybackHistoryService.savePlaybackState(_currentSongId!, position);
+      }
     });
 
     // Listen to active playlist index changes in media_kit
     player.stream.playlist.listen((playlist) {
       final index = playlist.index;
       if (_playlistItems.isNotEmpty && index >= 0 && index < _playlistItems.length) {
-        mediaItem.add(_playlistItems[index]);
+        final item = _playlistItems[index];
+        _currentSongId = item.id;
+        mediaItem.add(item);
+        
+        // Increment play count for this track
+        PlaybackHistoryService.incrementPlayCount(item.id);
       }
     });
   }
@@ -63,7 +74,9 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
     );
 
     if (items.isNotEmpty) {
+      _currentSongId = items[initialIndex].id;
       mediaItem.add(items[initialIndex]);
+      PlaybackHistoryService.incrementPlayCount(_currentSongId!);
     }
   }
 
@@ -97,14 +110,16 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
     required String artUri,
     required Duration duration,
   }) {
-    mediaItem.add(MediaItem(
+    final item = MediaItem(
       id: artUri,
       album: album,
       title: title,
       artist: artist,
       artUri: Uri.parse(artUri),
       duration: duration,
-    ));
+    );
+    _currentSongId = item.id;
+    mediaItem.add(item);
   }
 
   @override
