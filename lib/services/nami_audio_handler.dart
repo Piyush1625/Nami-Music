@@ -41,8 +41,9 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
       ));
     });
 
-    // Listen to active track index changes in media_kit playlist
-    player.stream.index.listen((index) {
+    // Listen to active playlist index changes in media_kit
+    player.stream.playlist.listen((playlist) {
+      final index = playlist.index;
       if (_playlistItems.isNotEmpty && index >= 0 && index < _playlistItems.length) {
         mediaItem.add(_playlistItems[index]);
       }
