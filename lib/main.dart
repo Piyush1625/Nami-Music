@@ -1199,7 +1199,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         androidWillPauseWhenDucked: false,
       ));
       await session.setActive(true);
-      await _audioPlayer.setSpeed(_playbackSpeed);
+      await _audioPlayer.setRate(_playbackSpeed);
       await _audioPlayer.setPitch(1.0);
       await _audioPlayer.setSkipSilenceEnabled(false);
 
@@ -1281,9 +1281,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       await _audioPlayer.stop();
       await _audioPlayer.setFilePath(song.path);
       await _audioPlayer.play();
-      if (_audioPlayer.duration != null &&
-          _audioPlayer.duration!.inSeconds > 0) {
-        song.duration = _audioPlayer.duration!;
+      if (_audioPlayer.state.duration != null &&
+          _audioPlayer.state.duration!.inSeconds > 0) {
+        song.duration = _audioPlayer.state.duration!;
         if (song.fileSize > 0) {
           song.bitrateKbps =
               ((song.fileSize * 8) ~/ 1000) ~/ song.duration.inSeconds;
@@ -1770,7 +1770,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     activeColor: Theme.of(context).colorScheme.primary,
                     onChanged: (v) {
                       setEqState(() => _playbackSpeed = v);
-                      _audioPlayer.setSpeed(v);
+                      _audioPlayer.setRate(v);
                       setState(() {});
                     },
                   ),
@@ -2953,7 +2953,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         StreamBuilder<bool>(
                           stream: _audioPlayer.stream.playing,
                           builder: (ctx, snap) {
-                            final playing = snap.data?.playing ?? _audioPlayer.state.playing;
+                            final playing = snap.data ?? _audioPlayer.state.playing;
                             return GestureDetector(
                               onTap: () => playing ? _audioPlayer.pause() : _audioPlayer.play(),
                               child: Container(
@@ -5075,7 +5075,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 StreamBuilder<bool>(
                   stream: _audioPlayer.stream.playing,
                   builder: (ctx, snap) {
-                    final playing = snap.data?.playing ?? _audioPlayer.state.playing;
+                    final playing = snap.data ?? _audioPlayer.state.playing;
                     return Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -6757,7 +6757,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                         StreamBuilder<bool>(
                           stream: widget.audioPlayer.stream.playing,
                           builder: (ctx, stateSnap) {
-                            final playing = stateSnap.data?.playing ?? widget.audioPlayer.state.playing;
+                            final playing = stateSnap.data ?? widget.audioPlayer.state.playing;
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
