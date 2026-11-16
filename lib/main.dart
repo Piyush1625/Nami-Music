@@ -130,13 +130,13 @@ class _NamiAppState extends State<NamiApp> {
   @override
   Widget build(BuildContext context) {
     if (_isCheckingPerms) {
-      Future.delayed(const Duration(milliseconds: 1200), () {
+      Future.microtask(() {
         if (mounted) setState(() => _isCheckingPerms = false);
       });
       return const Scaffold(backgroundColor: Color(0xFF050508), body: Center(child: CircularProgressIndicator(color: Colors.white24)));
     }
     if (_isCheckingPerms) {
-      Future.delayed(const Duration(milliseconds: 1200), () {
+      Future.microtask(() {
         if (mounted) setState(() => _isCheckingPerms = false);
       });
       return const Scaffold(backgroundColor: Color(0xFF050508), body: Center(child: CircularProgressIndicator(color: Colors.white24)));
@@ -2715,7 +2715,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        Text('${song.artist} • ${song.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                        Text('${cleanArtistStr(song.artist)} • ${song.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
                       ],
                     ),
                   ),
@@ -2777,7 +2777,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       ? song.artist.split(RegExp(_artistSeparators.map(RegExp.escape).join('|'), caseSensitive: false)).first.trim()
                       : song.artist;
                   final tracks = artistGroups[primary] ?? _songs.where((s) => s.artist.toLowerCase().contains(primary.toLowerCase())).toList();
-                  _showArtistDetailScreen(primary.isNotEmpty ? primary : song.artist, tracks);
+                  _showArtistDetailScreen(primary.isNotEmpty ? primary : cleanArtistStr(song.artist), tracks);
                 },
               ),
               ListTile(
@@ -2944,7 +2944,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                             children: [
                               Text(_currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.white)),
                               const SizedBox(height: 2),
-                              Text(_currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                              Text(cleanArtistStr(_currentSong!.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
                             ],
                           ),
                         ),
@@ -3188,7 +3188,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    song.artist,
+                    cleanArtistStr(song.artist),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, color: Colors.white70),
@@ -4655,7 +4655,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   ),
                   const SizedBox(height: 5),
                   Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                  Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                  Text(cleanArtistStr(track.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.white54)),
                 ],
               ),
             ),
@@ -4667,9 +4667,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   Widget _buildTracksPageBody() {
     if (!_hasPermission) {
-      return Center(
-        child: ElevatedButton(onPressed: _requestPermissionsAndInitBackground, child: const Text('Grant Storage Permission')),
-      );
+      return GestureDetector(onTap: () async { await Permission.storage.request(); await Permission.audio.request(); }, child: const Scaffold(backgroundColor: Color(0xFF07070B), body: SafeArea(child: YoutubeSkeletonLoader())));
     }
     if (_isScanning) {
       return ListView.builder(
@@ -4787,7 +4785,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           }
         }
       } else {
-        artistGroups.putIfAbsent(song.artist, () => []).add(song);
+        artistGroups.putIfAbsent(cleanArtistStr(song.artist), () => []).add(song);
       }
     }
 
@@ -4956,14 +4954,14 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        song.artist,
+                        cleanArtistStr(song.artist),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.white70),
                       ),
                       const SizedBox(height: 1),
                       Text(
-                        '${song.album} • Plays: ${song.playCount}',
+                        '${song.album} • ${song.year}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10.5, color: Colors.white38),
@@ -5034,7 +5032,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             child: Row(
               children: [
                 if (activeSong != null)
-                  _buildCoverArt(activeSong, 48, 8)
+                  Hero(tag: 'nami_np_art_${activeSong.path}', child: _buildCoverArt(activeSong, 48, 8))
                 else
                   Container(
                     width: 48,
@@ -5059,7 +5057,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                           children: [
                             Expanded(
                               child: Text(
-                                activeSong?.artist ?? 'Unknown Artist',
+                                cleanArtistStr(activeSong?.artist),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11.5, color: Colors.white60),
@@ -5366,11 +5364,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                               const SizedBox(height: 4),
                               GestureDetector(
                                 onTap: () => _showArtistDetailScreen(
-                                  firstTrack.artist,
+                                  cleanArtistStr(firstTrack.artist),
                                   _songs.where((s) => s.artist.contains(firstTrack.artist)).toList(),
                                 ),
                                 child: Text(
-                                  firstTrack.artist,
+                                  cleanArtistStr(firstTrack.artist),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: accent),
@@ -6365,7 +6363,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
       final target = (activeIdx * _lyricLineExtent).clamp(0.0, _lyricsScrollCtrl.position.maxScrollExtent);
       _lyricsScrollCtrl.animateTo(
         target,
-        duration: const Duration(milliseconds: 280),
+        duration: const Duration(milliseconds: 750),
         curve: Curves.easeOutCubic,
       );
     }
@@ -6407,7 +6405,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
+              if (false) ListTile(
                 leading: const Icon(Icons.repeat_one_on_rounded),
                 title: Text(_loopA == null ? 'Set A-B Loop Start (Point A)' : (_loopB == null ? 'Set A-B Loop End (Point B)' : 'Clear A-B Loop')),
                 onTap: () {
@@ -6555,10 +6553,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   ),
                                 ],
                               ),
-                              child: ClipRRect(
+                              child: Hero(tag: 'nami_np_art_${song?.path ?? ""}', child: ClipRRect(
                                 borderRadius: BorderRadius.circular(20),
                                 child: artWidget,
-                              ),
+                              )),
                             ),
                           )
                         : SizedBox(
@@ -6687,7 +6685,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             children: [
                               Text(song?.title ?? 'Aankhon Ne Maara', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                               const SizedBox(height: 4),
-                              Text(song?.artist ?? 'Farhan Khan, Mr Doss', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white70)),
+                              Text(cleanArtistStr(song?.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white70)),
                             ],
                           ),
                         ),
@@ -6831,7 +6829,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       ),
                                     ),
                                     const SizedBox(height: 1),
-                                    const Text('24-bit Hi-Res Lossless', style: TextStyle(fontSize: 9, color: Colors.white38)),
+                                    const SizedBox.shrink(),
                                   ],
                                 ),
                               ],
@@ -6898,3 +6896,45 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
     );
   }
 }
+
+String cleanArtistStr(String? raw) {
+  if (raw == null || raw.isEmpty) return 'Unknown Artist';
+  final parts = raw.split(RegExp(r',\s*')).map((x) => x.trim()).toList();
+  final unique = <String>[];
+  for (var p in parts) {
+    if (!unique.map((e) => e.toLowerCase()).contains(p.toLowerCase())) unique.add(p);
+  }
+  return unique.join(', ');
+}
+
+class YoutubeSkeletonLoader extends StatelessWidget {
+  const YoutubeSkeletonLoader({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 15,
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Row(
+          children: [
+            Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(8))),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(4))),
+                  const SizedBox(height: 10),
+                  Container(width: 140, height: 12, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(4))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
