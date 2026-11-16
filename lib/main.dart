@@ -943,15 +943,13 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
-    _androidEqualizer = AndroidEqualizer();
-    _androidLoudness = AndroidLoudnessEnhancer();
+    _androidEqualizer = 
+    _androidLoudness = 
 
     AudioPipeline? pipeline;
     if (Platform.isAndroid) {
       try {
-        pipeline = AudioPipeline(
-          androidAudioEffects: [_androidLoudness, _androidEqualizer],
-        );
+        pipeline = 
       } catch (_) {}
     }
 
@@ -1187,16 +1185,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   Future<void> _initAudioSessionAndDac() async {
     try {
       
-      await session.setActive(true);
+      
       await _audioPlayer.setRate(_playbackSpeed);
       await _audioPlayer.setPitch(1.0);
 
       _deviceSub?.cancel();
-      _deviceSub = session.devicesStream.listen((devices) {
-        _checkConnectedAudioHardware(devices);
+      
       });
 
-      final initialDevices = await session.getDevices();
+      
       _checkConnectedAudioHardware(initialDevices, isInitial: true);
     } catch (_) {}
   }
