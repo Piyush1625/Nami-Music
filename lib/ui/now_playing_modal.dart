@@ -133,7 +133,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
   void _seekRelative(int seconds) {
     final cur = widget.audioPlayer.position;
     final target = cur + Duration(seconds: seconds);
-    widget.audioPlayer.seek(target < Duration.zero ? Duration.zero : target);
+    audioHandler.seek(target < Duration.zero ? Duration.zero : target);
   }
 
   void _showMoreAndLoopSheet(AudioTrack? song) {
@@ -374,7 +374,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                     builder: (context, snapshot) {
                                       final pos = snapshot.data ?? Duration.zero;
                                       if (_loopB != null && _loopA != null && pos >= _loopB!) {
-                                        widget.audioPlayer.seek(_loopA!);
+                                        audioHandler.seek(_loopA!);
                                       }
                                       final lyrics = song?.parsedLyrics ?? [];
                                       if (lyrics.isEmpty) {
@@ -411,7 +411,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                             final featherStart = (sweepProgress - 0.04).clamp(0.0, 1.0);
                                             final featherEnd = (sweepProgress + 0.14).clamp(0.0, 1.0);
                                             return GestureDetector(
-                                              onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
+                                              onTap: () => audioHandler.seek(lyrics[idx].timestamp),
                                               child: AnimatedContainer(
                                                 duration: const Duration(milliseconds: 220),
                             decoration: BoxDecoration(
@@ -454,7 +454,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                           }
 
                                           return GestureDetector(
-                                            onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
+                                            onTap: () => audioHandler.seek(lyrics[idx].timestamp),
                                             child: Container(
                                               alignment: Alignment.center,
                                               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -518,7 +518,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     builder: (context, posSnap) {
                       final pos = posSnap.data ?? Duration.zero;
                       if (_loopB != null && _loopA != null && pos >= _loopB!) {
-                        widget.audioPlayer.seek(_loopA!);
+                        audioHandler.seek(_loopA!);
                       }
                       return StreamBuilder<Duration?>(
                         stream: widget.audioPlayer.durationStream,
@@ -539,10 +539,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                         () { HapticFeedback.selectionClick(); widget.onNext(); }(); // Swipe Left -> Next Track
                       }
                     },
-                              onTapDown: (d) => widget.audioPlayer.seek(Duration(milliseconds: ((d.localPosition.dx / constraints.maxWidth) * maxMs).toInt())),
+                              onTapDown: (d) => audioHandler.seek(Duration(milliseconds: ((d.localPosition.dx / constraints.maxWidth) * maxMs).toInt())),
                               onHorizontalDragUpdate: (d) {
                                 final ratio = (d.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0);
-                                widget.audioPlayer.seek(Duration(milliseconds: (ratio * maxMs).toInt()));
+                                audioHandler.seek(Duration(milliseconds: (ratio * maxMs).toInt()));
                               },
                               child: SizedBox(
                                 height: 38,
@@ -590,7 +590,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: () { HapticFeedback.selectionClick(); widget.onPrevious(); }),
                                 const SizedBox(width: 16),
                                 GestureDetector(
-                                  onTap: () => { HapticFeedback.mediumImpact(); playing ? widget.audioPlayer.pause() : widget.audioPlayer.play(); },
+                                  onTap: () => { HapticFeedback.mediumImpact(); playing ? audioHandler.pause() : audioHandler.play(); },
                                   child: Container(
                                     width: 58,
                                     height: 58,
