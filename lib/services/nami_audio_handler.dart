@@ -4,12 +4,16 @@ import 'package:rxdart/rxdart.dart';
 
 class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
   final Player player;
+  
+  // Internal list to keep track of MediaItems corresponding to playlist tracks
+  final List<MediaItem> _playlistItems = [];
 
   NamiAudioHandler(this.player) {
     _initStreams();
   }
 
   void _initStreams() {
+    // Listen to playback state changes
     player.stream.playing.listen((playing) {
       playbackState.add(playbackState.value.copyWith(
         playing: playing,
@@ -23,16 +27,66 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
+          MediaAction.skipToNext,
+          MediaAction.skipToPrevious,
         },
         processingState: AudioProcessingState.ready,
       ));
     });
 
+    // Listen to position updates
     player.stream.position.listen((position) {
       playbackState.add(playbackState.value.copyWith(
         updatePosition: position,
       ));
     });
+
+    // Listen to active track index changes in media_kit playlist
+    player.stream.index.listen((index) {
+      if (_playlistItems.isNotEmpty && index >= 0 && index < _playlistItems.length) {
+        mediaItem.add(_playlistItems[index]);
+      }
+    });
+  }
+
+  // Set or replace the active queue and start playback
+  Future<void> setPlaylist(List<MediaItem> items, {int initialIndex = 0}) async {
+    _playlistItems.clear();
+    _playlistItems.addAll(items);
+    queue.add(_playlistItems);
+
+    final mediaKitTracks = items.map((item) => Media(item.id)).toList();
+    await player.open(
+      Playlist(mediaKitTracks, index: initialIndex),
+      play: true,
+    );
+
+    if (items.isNotEmpty) {
+      mediaItem.add(items[initialIndex]);
+    }
+  }
+
+  @override
+  Future<void> addQueueItem(MediaItem item) async {
+    _playlistItems.add(item);
+    queue.add(_playlistItems);
+    await player.add(Media(item.id));
+  }
+
+  @override
+  Future<void> removeQueueItemAt(int index) async {
+    if (index >= 0 && index < _playlistItems.length) {
+      _playlistItems.removeAt(index);
+      queue.add(_playlistItems);
+      await player.remove(index);
+    }
+  }
+
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    if (index >= 0 && index < _playlistItems.length) {
+      await player.jump(index);
+    }
   }
 
   void updateMetadata({
@@ -70,5 +124,29 @@ class NamiAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async {
     await player.stop();
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    final enabled = shuffleMode == AudioServiceShuffleMode.all;
+    playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
+    await player.setShuffle(enabled);
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+    switch (repeatMode) {
+      case AudioServiceRepeatMode.one:
+        await player.setPlaylistMode(PlaylistMode.single);
+        break;
+      case AudioServiceRepeatMode.all:
+        await player.setPlaylistMode(PlaylistMode.loop);
+        break;
+      case AudioServiceRepeatMode.none:
+      case AudioServiceRepeatMode.group:
+        await player.setPlaylistMode(PlaylistMode.none);
+        break;
+    }
   }
 }
