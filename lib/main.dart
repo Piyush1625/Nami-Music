@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:audio_session/audio_session.dart';
+import 'package:media_kit/media_kit.dart';
+
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 
@@ -748,7 +748,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   late final AndroidEqualizer _androidEqualizer;
   late final AndroidLoudnessEnhancer _androidLoudness;
-  late final AudioPlayer _audioPlayer;
+  late final Player _audioPlayer;
 
   final ScrollController _trackListScrollController = ScrollController();
   final ScrollController _artistListScrollController = ScrollController();
@@ -6291,7 +6291,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
 }
 
 class NowPlayingModal extends StatefulWidget {
-  final AudioPlayer audioPlayer;
+  final Player audioPlayer;
   final ValueNotifier<AudioTrack?> currentSongNotifier;
   final List<AudioTrack> allSongs;
   final List<AudioTrack> playNextQueue;
@@ -6574,7 +6574,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 SizedBox(
                                   height: _lyricLineExtent * 9,
                                   child: StreamBuilder<Duration>(
-                                    stream: widget.audioPlayer.positionStream,
+                                    stream: widget.audioPlayer.stream.position,
                                     builder: (context, snapshot) {
                                       final pos = snapshot.data ?? Duration.zero;
                                       if (_loopB != null && _loopA != null && pos >= _loopB!) {
@@ -6696,14 +6696,14 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                   const Spacer(flex: 2),
 
                   StreamBuilder<Duration>(
-                    stream: widget.audioPlayer.positionStream,
+                    stream: widget.audioPlayer.stream.position,
                     builder: (context, posSnap) {
                       final pos = posSnap.data ?? Duration.zero;
                       if (_loopB != null && _loopA != null && pos >= _loopB!) {
                         widget.audioPlayer.seek(_loopA!);
                       }
                       return StreamBuilder<Duration?>(
-                        stream: widget.audioPlayer.durationStream,
+                        stream: widget.audioPlayer.stream.duration,
                         builder: (context, durSnap) {
                           final dur = durSnap.data ?? song?.duration ?? const Duration(minutes: 3, seconds: 32);
                           double maxMs = dur.inMilliseconds.toDouble();
@@ -6748,7 +6748,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         StreamBuilder<Duration>(
-                          stream: widget.audioPlayer.positionStream,
+                          stream: widget.audioPlayer.stream.position,
                           builder: (ctx, snap) => Text(
                             _formatDurationPadded(snap.data ?? Duration.zero),
                             style: const TextStyle(color: Colors.white70, fontSize: 11.5),
@@ -6779,7 +6779,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           },
                         ),
                         StreamBuilder<Duration?>(
-                          stream: widget.audioPlayer.durationStream,
+                          stream: widget.audioPlayer.stream.duration,
                           builder: (ctx, snap) => Text(
                             _formatDurationPadded(snap.data ?? song?.duration ?? const Duration(minutes: 3, seconds: 32)),
                             style: const TextStyle(color: Colors.white70, fontSize: 11.5),
