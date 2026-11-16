@@ -1201,7 +1201,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       await session.setActive(true);
       await _audioPlayer.setRate(_playbackSpeed);
       await _audioPlayer.setPitch(1.0);
-      await _audioPlayer.setSkipSilenceEnabled(false);
 
       _deviceSub?.cancel();
       _deviceSub = session.devicesStream.listen((devices) {
@@ -1216,7 +1215,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   void _checkConnectedAudioHardware(Set<AudioDevice> devices,
       {bool isInitial = false}) {
     for (var d in devices) {
-      if (d.isOutput && d.name.isNotEmpty) {
+      if (d.name.isNotEmpty) {
         if (d.name != _lastKnownDac) {
           _lastKnownDac = d.name;
           _connectedDacName = d.name;
@@ -1279,7 +1278,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
     try {
       await _audioPlayer.stop();
-      await _audioPlayer.setFilePath(song.path);
+      await _audioPlayer.open(Media(song.path));
       await _audioPlayer.play();
       if (_audioPlayer.state.duration != null &&
           _audioPlayer.state.duration!.inSeconds > 0) {
