@@ -2950,7 +2950,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                             ],
                           ),
                         ),
-                        StreamBuilder<PlayerState>(
+                        StreamBuilder<bool>(
                           stream: _audioPlayer.stream.playing,
                           builder: (ctx, snap) {
                             final playing = snap.data?.playing ?? _audioPlayer.state.playing;
@@ -5072,7 +5072,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                     ],
                   ),
                 ),
-                StreamBuilder<PlayerState>(
+                StreamBuilder<bool>(
                   stream: _audioPlayer.stream.playing,
                   builder: (ctx, snap) {
                     final playing = snap.data?.playing ?? _audioPlayer.state.playing;
@@ -6382,7 +6382,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
   }
 
   void _seekRelative(int seconds) {
-    final cur = widget.audioPlayer.position;
+    final cur = widget.audioPlayer.state.position;
     final target = cur + Duration(seconds: seconds);
     widget.audioPlayer.seek(target < Duration.zero ? Duration.zero : target);
   }
@@ -6404,9 +6404,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                 onTap: () {
                   setState(() {
                     if (_loopA == null) {
-                      _loopA = widget.audioPlayer.position;
+                      _loopA = widget.audioPlayer.state.position;
                     } else if (_loopB == null) {
-                      _loopB = widget.audioPlayer.position;
+                      _loopB = widget.audioPlayer.state.position;
                     } else {
                       _loopA = null;
                       _loopB = null;
@@ -6754,7 +6754,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             style: const TextStyle(color: Colors.white70, fontSize: 11.5),
                           ),
                         ),
-                        StreamBuilder<PlayerState>(
+                        StreamBuilder<bool>(
                           stream: widget.audioPlayer.stream.playing,
                           builder: (ctx, stateSnap) {
                             final playing = stateSnap.data?.playing ?? widget.audioPlayer.state.playing;
