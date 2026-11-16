@@ -1004,9 +1004,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   Future<void> _initHardwareDsp() async {
     if (!Platform.isAndroid) return;
     try {
-      await _androidEqualizer.setEnabled(_eqEnabled);
-      await _androidLoudness.setEnabled(_preampGainDb > 0);
-      await _androidLoudness.setTargetGain(_preampGainDb);
       if (_eqEnabled) {
         await _applyHardwareEqGains();
       }
@@ -1016,9 +1013,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   Future<void> _applyHardwareEqGains() async {
     if (!Platform.isAndroid) return;
     try {
-      await _androidEqualizer.setEnabled(_eqEnabled);
       if (!_eqEnabled) return;
-      final params = await _androidEqualizer.parameters;
       final bands = params.bands;
       final values = _eqBands.values.toList();
       for (int i = 0; i < bands.length && i < values.length; i++) {
@@ -1734,8 +1729,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                       setEqState(() => _preampGainDb = v);
                       setState(() {});
                       try {
-                        await _androidLoudness.setEnabled(v > 0);
-                        await _androidLoudness.setTargetGain(v);
                       } catch (_) {}
                     },
                   ),
