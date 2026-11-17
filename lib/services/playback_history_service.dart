@@ -23,7 +23,7 @@ class PlaybackHistoryService {
     return prefs.getInt('${_keyPlayCountPrefix}${songId}') ?? 0;
   }
 
-  static Future?> getLastPlaybackState() async {
+  static Future<Map<String, dynamic>?> getLastPlaybackState() async {
     final prefs = await SharedPreferences.getInstance();
     final songId = prefs.getString(_keyLastSongId);
     final positionMs = prefs.getInt(_keyLastPosition) ?? 0;
