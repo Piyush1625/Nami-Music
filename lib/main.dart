@@ -4686,56 +4686,36 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         },
       );
     }
-    return Stack(
-      children: [
-        Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
-              child: Row(
-                children: [
-                  IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
-                  IconButton(
-                    icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                    onPressed: () {
-                      if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first);
-                    },
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
-                    child: Text('${_songs.length} Tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.sort_rounded, size: 20),
-                    tooltip: 'Reverse Order',
-                    onPressed: () {
-                      setState(() => _filteredSongs = _filteredSongs.reversed.toList());
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: NamidaFastScroller(
-                controller: _trackListScrollController,
-                itemCount: _filteredSongs.length,
-                labelBuilder: (idx) {
-                  final t = _filteredSongs[idx];
-                  final letter = t.title.isNotEmpty ? t.title[0].toUpperCase() : '#';
-                  return '$letter • ${idx + 1}/${_filteredSongs.length}';
-                },
-                child: RefreshIndicator(color: Theme.of(context).colorScheme.primary, backgroundColor: const Color(0xFF14141E), onRefresh: () async { await Future.delayed(const Duration(milliseconds: 600)); setState((){}); }, child: ListView.builder(
-                  controller: _trackListScrollController,
-                  padding: const EdgeInsets.only(bottom: 95, right: 8),
-                  itemCount: _filteredSongs.length,
-                  itemBuilder: (context, index) => _buildNamidaTrackTile(_filteredSongs[index]),
-                )),
-              ),
-            ),
-          ],
+    final tracksHeaderBar = Padding(
+      padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
+      child: Row(children: [
+        IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
+        IconButton(icon: const Icon(Icons.play_arrow_rounded, size: 22), onPressed: () { if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first); }),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text('${_songs.length} Tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+        const Spacer(),
+        IconButton(icon: const Icon(Icons.sort_rounded, size: 20), tooltip: 'Reverse Order', onPressed: () => setState(() => _filteredSongs = _filteredSongs.reversed.toList())),
+      ]),
+    );
+    return Stack(children: [
+      NamidaFastScroller(
+        controller: _trackListScrollController,
+        itemCount: _filteredSongs.length,
+        labelBuilder: (idx) {
+          final t = _filteredSongs[idx];
+          return '${t.title.isNotEmpty ? t.title[0].toUpperCase() : '#'} • ${idx + 1}/${_filteredSongs.length}';
+        },
+        child: RefreshIndicator(
+          color: Theme.of(context).colorScheme.primary,
+          backgroundColor: const Color(0xFF14141E),
+          onRefresh: () async { await Future.delayed(const Duration(milliseconds: 600)); setState(() {}); },
+          child: ListView.builder(
+            controller: _trackListScrollController,
+            padding: const EdgeInsets.only(bottom: 95, right: 8),
+            itemCount: _filteredSongs.length + 1,
+            itemBuilder: (context, index) => index == 0 ? tracksHeaderBar : _buildNamidaTrackTile(_filteredSongs[index - 1]),
+          ),
         ),
+      ),
         Positioned(
           right: 20,
           bottom: 92,
@@ -4912,34 +4892,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           borderRadius: BorderRadius.circular(12),
           onTap: () => _playSong(song),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
-            child: Row(
-              children: [
-                _buildCoverArt(song, 48, 8),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: isCurrent ? Theme.of(context).colorScheme.primary : Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        cleanArtistStr(song.artist),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.white70),
-                      ),
-                      const SizedBox(height: 1),
+            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+            child: Row(children: [
+              _buildCoverArt(song, 54, 10),
+              const SizedBox(width: 13),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: isCurrent ? Theme.of(context).colorScheme.primary : Colors.white)),
+                const SizedBox(height: 3),
+                Text(cleanArtistStr(song.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Colors.white70)),
+                const SizedBox(height: 2),
                       Text(
                         '${song.album} • ${formatReleaseDate(song.year)}',
                         maxLines: 1,
