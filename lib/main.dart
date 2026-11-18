@@ -5694,17 +5694,50 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF07070B),
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music_rounded), label: 'Tracks'),
-          NavigationDestination(icon: Icon(Icons.person_outline_rounded), selectedIcon: Icon(Icons.person_rounded), label: 'Artists'),
-          NavigationDestination(icon: Icon(Icons.playlist_play_rounded), selectedIcon: Icon(Icons.playlist_add_check_rounded), label: 'Playlists'),
-          NavigationDestination(icon: Icon(Icons.extension_outlined), selectedIcon: Icon(Icons.extension_rounded), label: 'Mornye'),
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          labelTextStyle: MaterialStateProperty.all(
+            const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
+          ),
+        ),
+        child: NavigationBar(
+          height: 64,
+          backgroundColor: const Color(0xFF07070B),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          indicatorColor: const Color(0xFF23232D),
+          indicatorShape: const StadiumBorder(),
+          labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (idx) => setState(() => _selectedIndex = idx),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.home_rounded, color: Colors.white, size: 23),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.library_music_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.library_music_rounded, color: Colors.white, size: 23),
+              label: 'Tracks',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.people_outline_rounded, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.people_rounded, color: Colors.white, size: 23),
+              label: 'Artists',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.queue_music_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.queue_music_rounded, color: Colors.white, size: 23),
+              label: 'Playlists',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.extension_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.extension_rounded, color: Colors.white, size: 23),
+              label: 'Mornye',
+            ),
+          ],
+        ),
       ),
     );
   }
