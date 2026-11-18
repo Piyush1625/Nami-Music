@@ -1486,34 +1486,25 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              _buildAudioPathNode(
-                icon: Icons.music_note_rounded,
-                title: 'Source • PCM',
-                subtitle:
-                    '${song.bitDepth}-bit • $kHz kHz • 2 ch • $pcmKbps kbps',
-                showConnectorDown: true,
-              ),
-              _buildAudioPathNode(
-                icon: Icons.bolt_rounded,
-                title: _eqEnabled
-                    ? 'AndroidEqualizer Pipeline ($_selectedEqPreset)'
-                    : 'Bit-perfect Direct',
-                subtitle: _eqEnabled ? '5-Band Hardware EQ Active' : null,
-                showConnectorDown: true,
-              ),
-              _buildAudioPathNode(
-                icon: Icons.settings_input_composite_rounded,
-                title: 'USB direct access',
-                subtitle: '${song.bitDepth}-bit • $kHz kHz • DAC volume',
-                showConnectorDown: true,
-              ),
-              _buildAudioPathNode(
-                icon: Icons.speaker_rounded,
-                title: _connectedDacName,
-                subtitle: null,
-                showConnectorDown: false,
-              ),
+              const SizedBox(height: 14),
+Row(children: [
+  Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('$kHz kHz', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('Sample Rate', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
+  const SizedBox(width: 8),
+  Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('${song.bitDepth}-Bit', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('Word Depth', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
+  const SizedBox(width: 8),
+  Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('$pcmKbps kbps', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('PCM Stream', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
+]),
+const SizedBox(height: 14),
+Container(
+  padding: const EdgeInsets.all(14),
+  decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
+  child: Column(children: [
+    _buildAudioPathNode(icon: Icons.music_note_rounded, title: 'Source • PCM', subtitle: '${song.bitDepth}-bit • $kHz kHz • 2 ch • $pcmKbps kbps', showConnectorDown: true),
+    _buildAudioPathNode(icon: Icons.bolt_rounded, title: _eqEnabled ? 'AndroidEqualizer Pipeline ($_selectedEqPreset)' : 'Bit-perfect Direct', subtitle: _eqEnabled ? '5-Band Hardware EQ Active' : 'Bypassing OS Resampler', showConnectorDown: true),
+    _buildAudioPathNode(icon: Icons.settings_input_composite_rounded, title: 'USB Direct Access', subtitle: '${song.bitDepth}-bit • $kHz kHz • Hardware DAC volume', showConnectorDown: true),
+    _buildAudioPathNode(icon: Icons.speaker_rounded, title: _connectedDacName, subtitle: 'Exclusive USB Audio Endpoint', showConnectorDown: false),
+  ]),
+),
             ],
           ),
         ),
@@ -1615,6 +1606,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 ],
               ),
               const SizedBox(height: 10),
+Container(
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: _eqEnabled ? Theme.of(context).colorScheme.primary.withOpacity(0.45) : Colors.white10)),
+  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+    Text(_eqEnabled ? 'Active Preset: $_selectedEqPreset' : 'Bit-Perfect Bypass (EQ Off)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+    Text('Preamp ${_preampGainDb >= 0 ? "+" : ""}${_preampGainDb.toStringAsFixed(1)} dB', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+  ]),
+),
+const SizedBox(height: 10),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -3039,32 +3039,29 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                                     setState(() {});
                                   },
                                   itemBuilder: (ctx, idx) {
-                                    final qTrack = _playNextQueue[idx];
-                                    return Container(
-                                      key: ValueKey('q_${qTrack.path}_$idx'),
-                                      child: _buildNamidaQueueRow(
-                                        song: qTrack,
-                                        index: idx,
-                                        isReorderable: true,
-                                        onTap: () {
-                                          _playSong(qTrack);
-                                          Navigator.pop(context);
-                                        },
-                                        onToggleFav: () {
-                                          setQueueState(() => qTrack.isFavorite = !qTrack.isFavorite);
-                                          setState(() {});
-                                          _saveStateCache();
-                                        },
-                                        onRemove: () {
-                                          setQueueState(() => _playNextQueue.removeAt(idx));
-                                          setState(() {});
-                                        },
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                        Container(
+  final qTrack = _playNextQueue[idx];
+  return Dismissible(
+    key: ValueKey('q_${qTrack.path}_$idx'),
+    direction: DismissDirection.endToStart,
+    background: Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      padding: const EdgeInsets.only(right: 20),
+      alignment: Alignment.centerRight,
+      decoration: BoxDecoration(color: Colors.redAccent.withOpacity(0.22), borderRadius: BorderRadius.circular(12)),
+      child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+    ),
+    onDismissed: (_) { setQueueState(() => _playNextQueue.removeAt(idx)); setState(() {}); },
+    child: _buildNamidaQueueRow(
+      song: qTrack, index: idx, isReorderable: true,
+      onTap: () { _playSong(qTrack); Navigator.pop(context); },
+      onToggleFav: () { setQueueState(() => qTrack.isFavorite = !qTrack.isFavorite); setState(() {}); _saveStateCache(); },
+      onRemove: () { setQueueState(() => _playNextQueue.removeAt(idx)); setState(() {}); },
+    ),
+  );
+},
+),
+),
+Container(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
                           decoration: const BoxDecoration(
                             color: Color(0xFF09090D),
@@ -3144,13 +3141,21 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }) {
     final isCurrent = _currentSong?.path == song.path;
     final accent = Theme.of(context).colorScheme.primary;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
-        child: Row(
-          children: [
-            _buildCoverArt(song, 46, 8),
+    return Container(
+  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2.5),
+  decoration: BoxDecoration(
+    color: isCurrent ? Color.alphaBlend(accent.withOpacity(0.14), const Color(0xFF14141E)) : Colors.transparent,
+    borderRadius: BorderRadius.circular(12),
+    border: isCurrent ? Border.all(color: accent.withOpacity(0.45)) : null,
+  ),
+  child: InkWell(
+    borderRadius: BorderRadius.circular(12),
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+      child: Row(children: [
+        if (isReorderable) ReorderableDragStartListener(index: index, child: const Padding(padding: EdgeInsets.only(right: 8), child: Icon(Icons.drag_indicator_rounded, color: Colors.white38, size: 20))),
+_buildCoverArt(song, 46, 8),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -4273,7 +4278,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           song.rawLyrics = (synced != null && synced.isNotEmpty) ? synced : plain!;
           song.parsedLyrics = _parseLrc(song.rawLyrics);
           song.isLyricsFetched = true;
-          if (mounted) setState(() {});
+          if (mounted) setState(() {}),
+);
           return;
         }
       }
@@ -5208,26 +5214,44 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               ListView(
                 padding: const EdgeInsets.fromLTRB(0, 8, 0, 140),
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      children: [
-                        _buildRoundArtistAvatar(firstArtTrack, 50),
-                        const SizedBox(width: 18),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(artistName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                              const SizedBox(height: 4),
-                              Text('${artistTracks.length} Tracks • $formattedTotal', style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                  Container(
+  margin: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+  padding: const EdgeInsets.all(16),
+  decoration: BoxDecoration(
+    color: const Color(0xFF14141E),
+    borderRadius: BorderRadius.circular(20),
+    border: Border.all(color: Colors.white10),
+    image: firstArtTrack.albumArt != null ? DecorationImage(image: MemoryImage(firstArtTrack.albumArt!), fit: BoxFit.cover, opacity: 0.16) : null,
+  ),
+  child: Column(children: [
+    Row(children: [
+      _buildRoundArtistAvatar(firstArtTrack, 46),
+      const SizedBox(width: 14),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(artistName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+        const SizedBox(height: 4),
+        Text('${artistTracks.length} Tracks • ${albumsMap.length} Albums • $formattedTotal', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ])),
+    ]),
+    const SizedBox(height: 14),
+    Row(children: [
+      Expanded(child: ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        onPressed: () => _playSong(artistTracks.first),
+        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+        label: const Text('Play All', style: TextStyle(fontWeight: FontWeight.w800)),
+      )),
+      const SizedBox(width: 10),
+      Expanded(child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        onPressed: () { final sh = List<AudioTrack>.from(artistTracks)..shuffle(); _playSong(sh.first); },
+        icon: const Icon(Icons.shuffle_rounded, size: 18),
+        label: const Text('Shuffle', style: TextStyle(fontWeight: FontWeight.w700)),
+      )),
+    ]),
+  ]),
+),
+const SizedBox(height: 20),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text('Albums (${albumsMap.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -5403,40 +5427,43 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   void _showFilteredListScreen(String title, List<AudioTrack> tracks) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: Text(title),
-            actions: [
-              if (tracks.isNotEmpty)
-                IconButton(
-                  icon: const Icon(Icons.shuffle_rounded),
-                  onPressed: () {
-                    final sh = List<AudioTrack>.from(tracks)..shuffle();
-                    _playSong(sh.first);
-                  },
-                ),
-            ],
-          ),
-          body: Stack(
-            children: [
-              ListView.builder(
-                padding: const EdgeInsets.fromLTRB(0, 10, 0, 140),
-                itemCount: tracks.length,
-                itemBuilder: (ctx, i) => _buildNamidaTrackTile(tracks[i]),
-              ),
-              Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
-            ],
-          ),
-        ),
+  final totalSec = tracks.fold<int>(0, (sum, t) => sum + t.duration.inSeconds);
+  final durText = _formatTotalDurationHoursMins(Duration(seconds: totalSec));
+  Navigator.push(context, MaterialPageRoute(builder: (context) => Scaffold(
+    appBar: AppBar(backgroundColor: Colors.transparent, title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800))),
+    body: Stack(children: [
+      ListView.builder(
+        padding: const EdgeInsets.fromLTRB(0, 6, 0, 140),
+        itemCount: tracks.length + 1,
+        itemBuilder: (ctx, i) {
+          if (i == 0) {
+            return Container(
+              margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${tracks.length} Tracks', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text('Total duration • $durText', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                ])),
+                if (tracks.isNotEmpty) ...[
+                  IconButton.filled(style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black), icon: const Icon(Icons.play_arrow_rounded), onPressed: () => _playSong(tracks.first)),
+                  const SizedBox(width: 6),
+                  IconButton.outlined(style: IconButton.styleFrom(side: const BorderSide(color: Colors.white24)), icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: () { final sh = List<AudioTrack>.from(tracks)..shuffle(); _playSong(sh.first); }),
+                ],
+              ]),
+            );
+          }
+          return _buildNamidaTrackTile(tracks[i - 1]);
+        },
       ),
-    );
-  }
+      Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+    ]),
+  )));
+}
 
-  void _showCreatePlaylistDialog() {
+void _showCreatePlaylistDialog() {
     final nameCtrl = TextEditingController();
     showDialog(
       context: context,
