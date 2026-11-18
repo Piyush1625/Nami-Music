@@ -832,7 +832,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   bool _autoFetchOnlineMetadata = true;
   bool _forceMiniColor = false;
   bool _replayGain = true;
-  String _connectedDacName = "KEFINE";
+  static const MethodChannel _audioDeviceChannel = MethodChannel('com.piyush.nami/audio_device');
+  String _connectedDacName = "Phone Speaker";
+  String _connectedDacType = "Built-in Speaker";
+  bool _isExternalAudioConnected = false;
   String _userName = "Piyush";
   String? _userPhotoPath;
 
@@ -1323,34 +1326,37 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     }
   }
 
+  Future<void> _refreshRealAudioOutputDevice() async {
+    try {
+      final res = await _audioDeviceChannel.invokeMethod('getActiveAudioDevice');
+      if (res is Map) {
+        final devName = (res['name']?.toString() ?? '').trim();
+        final devType = (res['type']?.toString() ?? 'Built-in Speaker').trim();
+        final isExt = res['isExternal'] == true;
+        if (devName.isNotEmpty) {
+          if (_pauseOnDisconnect && _isExternalAudioConnected && !isExt && _audioPlayer.state.playing) {
+            await _audioPlayer.pause();
+          }
+          final changed = devName != _connectedDacName || devType != _connectedDacType || isExt != _isExternalAudioConnected;
+          _connectedDacName = devName;
+          _connectedDacType = devType;
+          _isExternalAudioConnected = isExt;
+          _lastKnownDac = devName;
+          if (changed && mounted) setState(() {});
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _initAudioSessionAndDac() async {
     try {
-      
-      
       await _audioPlayer.setRate(_playbackSpeed);
       await _audioPlayer.setPitch(1.0);
-
+      await _refreshRealAudioOutputDevice();
       _deviceSub?.cancel();
-      try {
-        final dynStream = _audioPlayer.stream as dynamic;
-        _deviceSub = dynStream.audioDevices.listen((devices) {
-          if (devices is Iterable) {
-            for (final d in devices) {
-              final desc = (d.description?.toString() ?? '').trim();
-              final name = (d.name?.toString() ?? '').trim();
-              final label = desc.isNotEmpty ? desc : name;
-              if (label.isNotEmpty &&
-                  label.toLowerCase() != 'auto' &&
-                  label.toLowerCase() != 'null' &&
-                  label != _lastKnownDac) {
-                _lastKnownDac = label;
-                _connectedDacName = label;
-                if (mounted) setState(() {});
-              }
-            }
-          }
-        });
-      } catch (_) {}
+      _deviceSub = Stream.periodic(const Duration(seconds: 4)).listen((_) {
+        _refreshRealAudioOutputDevice();
+      });
     } catch (_) {}
   }
 
@@ -1625,6 +1631,7 @@ Future<void> _playSong(AudioTrack song) async {
   }
 
   Future<Map<String, String>> _queryLiveMpvTelemetry(AudioTrack song) async {
+    await _refreshRealAudioOutputDevice();
     int srcRate = song.sampleRateHz;
     int outRate = song.sampleRateHz;
     String srcFmt = '${song.bitDepth}-Bit';
@@ -1778,7 +1785,12 @@ Future<void> _playSong(AudioTrack song) async {
                         showConnectorDown: true,
                       ),
                       _buildAudioPathNode(icon: Icons.settings_input_composite_rounded, title: 'libmpv Hardware Out', subtitle: '$outFmt • $outKhz kHz • Exclusive=${_usbDacExclusive ? "ON" : "OFF"}', showConnectorDown: true),
-                      _buildAudioPathNode(icon: Icons.speaker_rounded, title: _connectedDacName, subtitle: 'Verified Live Audio Endpoint', showConnectorDown: false),
+                      _buildAudioPathNode(
+                        icon: _isExternalAudioConnected ? Icons.headphones_rounded : Icons.smartphone_rounded,
+                        title: _connectedDacName,
+                        subtitle: _isExternalAudioConnected ? '$_connectedDacType • Connected' : '$_connectedDacType • Android Device',
+                        showConnectorDown: false,
+                      ),
                     ]),
                   ),
                 ],
@@ -2756,10 +2768,11 @@ const SizedBox(height: 10),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        icon: const Icon(Icons.image_search_rounded, size: 17),
-                        label: const Text('Pick Gallery / Fetch Online Cover', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        icon: const Icon(Icons.image_search_rounded, size: 16),
+                        label: const Text('Pick Cover', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                         onPressed: () => _showArtworkSelectorSheet(context, song, (bytes, savedPath) {
                           setState(() {
                             song.albumArt = bytes;
@@ -2767,6 +2780,35 @@ const SizedBox(height: 10),
                           });
                           _artworkTick.value++;
                         }),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withOpacity(0.10),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.cloud_sync_rounded, size: 16),
+                        label: const Text('Auto-Fetch Info', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          final dir = await _ensureThumbDir();
+                          song.isOnlineEnriched = false;
+                          await _enrichTrackOnlineIfMissing(song, dir, force: true);
+                          titleCtrl.text = song.title;
+                          artistCtrl.text = song.artist;
+                          albumCtrl.text = song.album;
+                          genreCtrl.text = song.genre;
+                          if (mounted) {
+                            setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Fetched online cover & metadata!')),
+                            );
+                          }
+                          _saveStateCache();
+                        },
                       ),
                     ),
                   ],
@@ -2997,18 +3039,6 @@ const SizedBox(height: 10),
                 onTap: () {
                   Navigator.pop(context);
                   _showAddToPlaylistDialog(song);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.cloud_sync_rounded),
-                title: const Text('Fetch Cover & Metadata Online'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final dir = await _ensureThumbDir();
-                  song.isOnlineEnriched = false;
-                  await _enrichTrackOnlineIfMissing(song, dir, force: true);
-                  if (mounted) setState(() {});
-                  _saveStateCache();
                 },
               ),
               ListTile(
@@ -4960,7 +4990,7 @@ _buildCoverArt(song, 46, 8),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.usb_rounded, size: 12, color: accent),
+                                Icon(_isExternalAudioConnected ? Icons.usb_rounded : Icons.smartphone_rounded, size: 12, color: accent),
                                 const SizedBox(width: 4),
                                 Text(
                                   _connectedDacName,
@@ -8134,7 +8164,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             ),
             ListTile(
               leading: _settingsBadge(Icons.replay_10_rounded, themeColor),
-              title: const Text('Cover Art Double-Tap Seek', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              title: const Text('Timestamp Double-Tap Seek', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
               trailing: SegmentedButton<int>(
                 showSelectedIcon: false,
                 style: ButtonStyle(
@@ -8719,7 +8749,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     child: _viewMode == 0
                         ? GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onDoubleTap: () => _seekRelative(-widget.doubleTapSeekSec),
                             onHorizontalDragEnd: (details) {
                               final v = details.primaryVelocity ?? 0;
                               if (v < -220) {
@@ -8947,11 +8976,21 @@ return GestureDetector(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        StreamBuilder<Duration>(
-                          stream: widget.audioPlayer.stream.position,
-                          builder: (ctx, snap) => Text(
-                            _formatDurationPadded(snap.data ?? Duration.zero),
-                            style: const TextStyle(color: Colors.white70, fontSize: 11.5),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onDoubleTap: () {
+                            HapticFeedback.lightImpact();
+                            _seekRelative(-widget.doubleTapSeekSec);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                            child: StreamBuilder<Duration>(
+                              stream: widget.audioPlayer.stream.position,
+                              builder: (ctx, snap) => Text(
+                                _formatDurationPadded(snap.data ?? Duration.zero),
+                                style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                         ),
                         StreamBuilder<bool>(
@@ -9004,11 +9043,21 @@ return GestureDetector(
                             );
                           },
                         ),
-                        StreamBuilder<Duration?>(
-                          stream: widget.audioPlayer.stream.duration,
-                          builder: (ctx, snap) => Text(
-                            _formatDurationPadded(snap.data ?? song?.duration ?? const Duration(minutes: 3, seconds: 32)),
-                            style: const TextStyle(color: Colors.white70, fontSize: 11.5),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onDoubleTap: () {
+                            HapticFeedback.lightImpact();
+                            _seekRelative(widget.doubleTapSeekSec);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                            child: StreamBuilder<Duration?>(
+                              stream: widget.audioPlayer.stream.duration,
+                              builder: (ctx, snap) => Text(
+                                _formatDurationPadded(snap.data ?? song?.duration ?? const Duration(minutes: 3, seconds: 32)),
+                                style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                         ),
                       ],

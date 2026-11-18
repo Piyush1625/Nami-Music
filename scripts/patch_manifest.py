@@ -229,3 +229,75 @@ if _ks_b64:
         with open(_gpath, "w", encoding="utf-8") as _gf:
             _gf.write(_gtxt)
         print(f"Configured persistent release signing in {_gpath}!")
+
+
+# --- Nami Native Android Audio Output Device Detector (AudioManager + Build.MODEL) ---
+import glob as _glob2
+
+for _ma_path in _glob2.glob("android/app/src/main/kotlin/**/MainActivity.kt", recursive=True):
+    with open(_ma_path, "r", encoding="utf-8") as _mf:
+        _mtxt = _mf.read()
+    if "com.piyush.nami/audio_device" in _mtxt:
+        continue
+    _pkg_line = ""
+    for _line in _mtxt.splitlines():
+        if _line.strip().startswith("package "):
+            _pkg_line = _line.strip()
+            break
+    if not _pkg_line:
+        _pkg_line = "package com.piyush.nami"
+
+    _new_kt = f"""{_pkg_line}
+
+import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
+import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : AudioServiceActivity() {{
+    private val CHANNEL = "com.piyush.nami/audio_device"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {{
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler {{ call, result ->
+            if (call.method == "getActiveAudioDevice") {{
+                result.success(detectActiveAudioDevice())
+            }} else {{
+                result.notImplemented()
+            }}
+        }}
+    }}
+
+    private fun detectActiveAudioDevice(): Map<String, Any> {{
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val model = (Build.MANUFACTURER.replaceFirstChar {{ it.uppercase() }} + " " + Build.MODEL).trim()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {{
+            val outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            for (d in outputs) {{
+                if (d.type == AudioDeviceInfo.TYPE_USB_DEVICE || d.type == AudioDeviceInfo.TYPE_USB_HEADSET) {{
+                    val name = d.productName?.toString()?.trim().orEmpty().ifEmpty {{ "USB Audio DAC" }}
+                    return mapOf("name" to name, "type" to "USB DAC", "isExternal" to true)
+                }}
+            }}
+            for (d in outputs) {{
+                if (d.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || (Build.VERSION.SDK_INT >= 31 && d.type == AudioDeviceInfo.TYPE_BLE_HEADSET)) {{
+                    val name = d.productName?.toString()?.trim().orEmpty().ifEmpty {{ "Bluetooth Audio" }}
+                    return mapOf("name" to name, "type" to "Bluetooth", "isExternal" to true)
+                }}
+            }}
+            for (d in outputs) {{
+                if (d.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || d.type == AudioDeviceInfo.TYPE_WIRED_HEADSET) {{
+                    return mapOf("name" to "Wired Headphones", "type" to "3.5mm Audio", "isExternal" to true)
+                }}
+            }}
+        }}
+        return mapOf("name" to model, "type" to "Built-in Speaker", "isExternal" to false)
+    }}
+}}
+"""
+    with open(_ma_path, "w", encoding="utf-8") as _mf:
+        _mf.write(_new_kt)
+    print(f"Patched native AudioManager detector into {_ma_path}!")
