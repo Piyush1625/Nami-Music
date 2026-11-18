@@ -178,7 +178,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               widget.onReplayGainChanged(v);
             },
           ),
-          _sectionTitle('Appearance & Namida UI'),
+          _sectionTitle('Appearance & Nami UI'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Wrap(

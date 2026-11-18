@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-class NamidaFastScroller extends StatefulWidget {
+class NamiFastScroller extends StatefulWidget {
   final Widget child;
   final ScrollController? controller;
   final int? itemCount;
   final String Function(int)? labelBuilder;
 
-  const NamidaFastScroller({
+  const NamiFastScroller({
     super.key,
     required this.child,
     this.controller,
@@ -15,10 +15,10 @@ class NamidaFastScroller extends StatefulWidget {
   });
 
   @override
-  State<NamidaFastScroller> createState() => _NamidaFastScrollerState();
+  State<NamiFastScroller> createState() => _NamiFastScrollerState();
 }
 
-class _NamidaFastScrollerState extends State<NamidaFastScroller> {
+class _NamiFastScrollerState extends State<NamiFastScroller> {
   bool _isDragging = false;
   double _dragRatio = 0.0;
 

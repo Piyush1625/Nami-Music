@@ -590,13 +590,13 @@ class MornyeCatalogItem {
   });
 }
 
-class NamidaFastScroller extends StatefulWidget {
+class NamiFastScroller extends StatefulWidget {
   final ScrollController controller;
   final int itemCount;
   final String Function(int index) labelBuilder;
   final Widget child;
 
-  const NamidaFastScroller({
+  const NamiFastScroller({
     super.key,
     required this.controller,
     required this.itemCount,
@@ -605,10 +605,10 @@ class NamidaFastScroller extends StatefulWidget {
   });
 
   @override
-  State<NamidaFastScroller> createState() => _NamidaFastScrollerState();
+  State<NamiFastScroller> createState() => _NamiFastScrollerState();
 }
 
-class _NamidaFastScrollerState extends State<NamidaFastScroller> {
+class _NamiFastScrollerState extends State<NamiFastScroller> {
   double _scrollFraction = 0.0;
   bool _isDragging = false;
   int _activeIndex = 0;
@@ -620,7 +620,7 @@ class _NamidaFastScrollerState extends State<NamidaFastScroller> {
   }
 
   @override
-  void didUpdateWidget(covariant NamidaFastScroller oldWidget) {
+  void didUpdateWidget(covariant NamiFastScroller oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onScroll);
@@ -1925,7 +1925,7 @@ const SizedBox(height: 10),
     );
   }
 
-  void _showNamidaLyricsManagerSheet(AudioTrack song) {
+  void _showNamiLyricsManagerSheet(AudioTrack song) {
     final searchCtrl =
         TextEditingController(text: '${song.artist} - ${song.title}');
     final lyricsEditCtrl = TextEditingController(
@@ -2598,7 +2598,7 @@ const SizedBox(height: 10),
                             fontSize: 11.5, fontWeight: FontWeight.bold)),
                     onPressed: () {
                       Navigator.pop(context);
-                      _showNamidaLyricsManagerSheet(song);
+                      _showNamiLyricsManagerSheet(song);
                     },
                   ),
                 ],
@@ -2879,7 +2879,7 @@ const SizedBox(height: 10),
                 title: const Text('Lyrics Metadata & Editor'),
                 onTap: () {
                   Navigator.pop(context);
-                  _showNamidaLyricsManagerSheet(song);
+                  _showNamiLyricsManagerSheet(song);
                 },
               ),
               ListTile(
@@ -3154,7 +3154,7 @@ const SizedBox(height: 10),
                                   controller: scrollController,
                                   padding: const EdgeInsets.symmetric(vertical: 6),
                                   itemCount: _filteredSongs.length,
-                                  itemBuilder: (ctx, idx) => _buildNamidaQueueRow(
+                                  itemBuilder: (ctx, idx) => _buildNamiQueueRow(
                                     song: _filteredSongs[idx],
                                     index: idx,
                                     isReorderable: false,
@@ -3194,7 +3194,7 @@ const SizedBox(height: 10),
       child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
     ),
     onDismissed: (_) { setQueueState(() => _playNextQueue.removeAt(idx)); setState(() {}); },
-    child: _buildNamidaQueueRow(
+    child: _buildNamiQueueRow(
       song: qTrack, index: idx, isReorderable: true,
       onTap: () { _playSong(qTrack); Navigator.pop(context); },
       onToggleFav: () { setQueueState(() => qTrack.isFavorite = !qTrack.isFavorite); setState(() {}); _saveStateCache(); },
@@ -3274,7 +3274,7 @@ Container(
     );
   }
 
-  Widget _buildNamidaQueueRow({
+  Widget _buildNamiQueueRow({
     required AudioTrack song,
     required int index,
     required bool isReorderable,
@@ -3556,7 +3556,7 @@ _buildCoverArt(song, 46, 8),
               const SizedBox(height: 18),
               const Text('Most Played Tracks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              ...topPlayed.take(15).map((s) => _buildNamidaTrackTile(s)),
+              ...topPlayed.take(15).map((s) => _buildNamiTrackTile(s)),
             ],
           ),
         ),
@@ -4430,7 +4430,7 @@ _buildCoverArt(song, 46, 8),
     } catch (_) {}
   }
 
-  Widget _buildNamidaHomeScreen(List<String> uniqueArtists) {
+  Widget _buildNamiHomeScreen(List<String> uniqueArtists) {
     final accent = Theme.of(context).colorScheme.primary;
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
     final recentlyAdded = List<AudioTrack>.from(_songs)..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
@@ -4853,7 +4853,7 @@ _buildCoverArt(song, 46, 8),
       ]),
     );
     return Stack(children: [
-      NamidaFastScroller(
+      NamiFastScroller(
         controller: _trackListScrollController,
         itemCount: _filteredSongs.length,
         labelBuilder: (idx) {
@@ -4868,7 +4868,7 @@ _buildCoverArt(song, 46, 8),
             controller: _trackListScrollController,
             padding: const EdgeInsets.only(bottom: 95, right: 8),
             itemCount: _filteredSongs.length + 1,
-            itemBuilder: (context, index) => index == 0 ? tracksHeaderBar : _buildNamidaTrackTile(_filteredSongs[index - 1]),
+            itemBuilder: (context, index) => index == 0 ? tracksHeaderBar : _buildNamiTrackTile(_filteredSongs[index - 1]),
           ),
         ),
       ),
@@ -4956,7 +4956,7 @@ _buildCoverArt(song, 46, 8),
           ),
         ),
         Expanded(
-          child: NamidaFastScroller(
+          child: NamiFastScroller(
             controller: _artistListScrollController,
             itemCount: uniqueArtists.length,
             labelBuilder: (idx) {
@@ -5317,7 +5317,7 @@ _buildCoverArt(song, 46, 8),
     );
   }
 
-  Widget _buildNamidaTrackTile(AudioTrack song) {
+  Widget _buildNamiTrackTile(AudioTrack song) {
     final isCurrent = _currentSong?.path == song.path;
     final isSelected = _selectedTrackPaths.contains(song.path);
     final accent = Theme.of(context).colorScheme.primary;
@@ -5707,7 +5707,7 @@ _buildCoverArt(song, 46, 8),
           onShowEqualizer: _showEqualizerSheet,
           onShowSleepTimer: _showSleepTimerDialog,
           onOpenLyricsManager: () {
-            if (_currentSong != null) _showNamidaLyricsManagerSheet(_currentSong!);
+            if (_currentSong != null) _showNamiLyricsManagerSheet(_currentSong!);
           },
           onToggleFavorite: () {
             if (_currentSong != null) {
@@ -5855,7 +5855,7 @@ const SizedBox(height: 20),
                     child: Text('Songs (${artistTracks.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 10),
-                  ...artistTracks.map((song) => _buildNamidaTrackTile(song)),
+                  ...artistTracks.map((song) => _buildNamiTrackTile(song)),
                 ],
               ),
               Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
@@ -5966,7 +5966,7 @@ const SizedBox(height: 20),
                     final badge = song.trackNumber.isNotEmpty ? song.trackNumber.split('/').first : '$idx';
                     return Stack(
                       children: [
-                        _buildNamidaTrackTile(song),
+                        _buildNamiTrackTile(song),
                         Positioned(
                           top: 8,
                           left: 16,
@@ -6018,7 +6018,7 @@ const SizedBox(height: 20),
               ]),
             );
           }
-          return _buildNamidaTrackTile(tracks[i - 1]);
+          return _buildNamiTrackTile(tracks[i - 1]);
         },
       ),
       Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
@@ -6052,7 +6052,7 @@ void _showCreatePlaylistDialog() {
     );
   }
 
-  Widget _buildNamidaPlaylistsPage() {
+  Widget _buildNamiPlaylistsPage() {
     final accent = Theme.of(context).colorScheme.primary;
     final favSongs = _songs.where((s) => s.isFavorite).toList();
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
@@ -6199,10 +6199,10 @@ void _showCreatePlaylistDialog() {
     final List<String> tabTitles = ['Nami', 'Tracks', 'Artists', 'Playlists', 'Mornye'];
 
     final List<Widget> pages = [
-      _buildNamidaHomeScreen(uniqueArtistsForHome),
+      _buildNamiHomeScreen(uniqueArtistsForHome),
       _buildTracksPageBody(),
       _buildArtistsPageBody(),
-      _buildNamidaPlaylistsPage(),
+      _buildNamiPlaylistsPage(),
       ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
         children: [
