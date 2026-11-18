@@ -6496,6 +6496,8 @@ _buildCoverArt(song, 46, 8),
           allSongs: _songs,
           playNextQueue: _playNextQueue,
           ambientGlow: _ambientGlow,
+          blurredBackdrop: _blurredBackdrop,
+          doubleTapSeekSec: _doubleTapSeekSec,
           syllableLyricsEnabled: _syllableLyricsEnabled,
           shuffleEnabled: _shuffleEnabled,
           repeatMode: _repeatMode,
@@ -8454,6 +8456,8 @@ class NowPlayingModal extends StatefulWidget {
   final List<AudioTrack> allSongs;
   final List<AudioTrack> playNextQueue;
   final bool ambientGlow;
+  final bool blurredBackdrop;
+  final int doubleTapSeekSec;
   final bool syllableLyricsEnabled;
   final bool shuffleEnabled;
   final int repeatMode;
@@ -8477,6 +8481,8 @@ class NowPlayingModal extends StatefulWidget {
     required this.allSongs,
     required this.playNextQueue,
     required this.ambientGlow,
+    required this.blurredBackdrop,
+    required this.doubleTapSeekSec,
     required this.syllableLyricsEnabled,
     required this.shuffleEnabled,
     required this.repeatMode,
@@ -8614,7 +8620,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         final totalCount = widget.allSongs.length;
 
         Widget artWidget;
-        if (widget.blurredBackdrop && song?.albumArt != null && song!.albumArt!.isNotEmpty) {
+        if (song?.albumArt != null && song!.albumArt!.isNotEmpty) {
           artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
         } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
           artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover, width: double.infinity, height: double.infinity);
@@ -8626,7 +8632,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           backgroundColor: const Color(0xFF07070B),
           body: Stack(
             children: [
-              if (song?.albumArt != null && song!.albumArt!.isNotEmpty)
+              if (widget.blurredBackdrop && song?.albumArt != null && song!.albumArt!.isNotEmpty)
                 Positioned.fill(
                   child: Opacity(
                     opacity: 0.24,
