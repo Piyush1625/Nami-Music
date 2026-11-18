@@ -3173,14 +3173,6 @@ Container(
     required VoidCallback onTap,
     required VoidCallback onToggleFav,
     VoidCallback? onRemove,
- ),
-  );idget _buildNamidaQueueRow({
-    required AudioTrack song,
-    required int index,
-    required bool isReorderable,
-    required VoidCallback onTap,
-    required VoidCallback onToggleFav,
-    VoidCallback? onRemove,
   }) {
     final isCurrent = _currentSong?.path == song.path;
     final accent = Theme.of(context).colorScheme.primary;
@@ -4321,8 +4313,7 @@ _buildCoverArt(song, 46, 8),
           song.rawLyrics = (synced != null && synced.isNotEmpty) ? synced : plain!;
           song.parsedLyrics = _parseLrc(song.rawLyrics);
           song.isLyricsFetched = true;
-          if (mounted) setState(() {}),
-);
+          if (mounted) setState(() {});
           return;
         }
       }
