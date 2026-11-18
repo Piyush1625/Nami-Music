@@ -1272,6 +1272,7 @@ Future<void> _playSong(AudioTrack song) async {
     _currentTrackSecondsListened = 0;
     _historyTracks.remove(song);
     _historyTracks.insert(0, song);
+    _syncMediaNotification(song);
     if (_autoColoring && song.albumArt != null) {
       final dominant =
           _extractDominantColor(song.albumArt, const Color(0xFFE53935));
@@ -1289,6 +1290,7 @@ Future<void> _playSong(AudioTrack song) async {
         }
         if (mounted) setState(() {});
         _saveStateCache();
+        _syncMediaNotification(song);
       });
     }
 
@@ -1306,6 +1308,7 @@ Future<void> _playSong(AudioTrack song) async {
         if (mounted) setState(() {});
       }
       _saveStateCache();
+      _syncMediaNotification(song);
     } catch (_) {}
   }
 
@@ -3267,7 +3270,8 @@ _buildCoverArt(song, 46, 8),
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _openSettings() {
@@ -3512,6 +3516,7 @@ _buildCoverArt(song, 46, 8),
   }
 
   Future<void> _requestPermissionsAndInitBackground() async {
+    await requestNotificationPermission();
     PermissionStatus status = await Permission.audio.request();
     await Permission.photos.request();
     if (!status.isGranted) status = await Permission.storage.request();
