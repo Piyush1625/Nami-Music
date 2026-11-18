@@ -6607,27 +6607,41 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                           final lineText = lyrics[idx].text;
 
                                           if (isCenter5th && widget.syllableLyricsEnabled) {
-                                            return GestureDetector(
-                      onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-                      child: AnimatedScale(
-                        scale: isCenter5th ? 1.06 : (distance == 1 ? 0.96 : 0.90),
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        child: Container(
-                          alignment: Alignment.center,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Text(
-                            lineText, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: isCenter5th ? 18.0 : (distance == 1 ? 14.5 : 12.5),
-                              fontWeight: isCenter5th ? FontWeight.w800 : FontWeight.w500,
-                              color: isCenter5th ? Colors.white : (distance == 1 ? Colors.white60 : (distance <= 3 ? Colors.white30 : Colors.white12)),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                                        },
+  return GestureDetector(
+    onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
+    child: AnimatedScale(
+      scale: 1.06, duration: const Duration(milliseconds: 300),
+      child: Container(
+        alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => LinearGradient(
+            colors: const [Colors.white, Colors.white, Colors.white30, Colors.white30],
+            stops: [0.0, sweepProgress, (sweepProgress + 0.06).clamp(0.0, 1.0), 1.0],
+          ).createShader(bounds),
+          child: Text(lineText, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.w800)),
+        ),
+      ),
+    ),
+  );
+}
+return GestureDetector(
+  onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
+  child: AnimatedScale(
+    scale: isCenter5th ? 1.06 : (distance == 1 ? 0.96 : 0.90), duration: const Duration(milliseconds: 300),
+    child: Container(
+      alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Text(lineText, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: isCenter5th ? 18.0 : (distance == 1 ? 14.5 : 12.5),
+          fontWeight: isCenter5th ? FontWeight.w800 : FontWeight.w500,
+          color: isCenter5th ? Colors.white : (distance == 1 ? Colors.white60 : (distance <= 3 ? Colors.white30 : Colors.white12)),
+        )),
+    ),
+  ),
+);
+                  },
                                       );
                                     },
                                   ),
