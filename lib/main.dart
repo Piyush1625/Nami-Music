@@ -4293,7 +4293,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFF0E0E15),
+            color: const Color(0xFF14141E),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: Colors.white10),
           ),
@@ -4827,16 +4827,19 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         orElse: () => aTracks.first,
                       );
                       return GestureDetector(
-                        onTap: () => _showArtistDetailScreen(aName, aTracks),
-                        child: Column(
-                          children: [
-                            Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 40)),
-                            const SizedBox(height: 6),
-                            Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            Text('\${aTracks.length} Tracks', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                          ],
-                        ),
-                      );
+                      onTap: () => _showArtistDetailScreen(aName, aTracks),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
+                        child: Column(children: [
+                          Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 38)),
+                          const SizedBox(height: 6),
+                          Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                          const SizedBox(height: 1),
+                          Text('${aTracks.length} Tracks', style: const TextStyle(fontSize: 10, color: Colors.white60)),
+                        ]),
+                      ),
+                    );
                     },
                   )
                 : ListView.builder(
@@ -4851,13 +4854,18 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                         (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
                         orElse: () => aTracks.first,
                       );
-                      return ListTile(
+                      return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                         leading: _buildRoundArtistAvatar(firstArtTrack, 24),
-                        title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+                        title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
+                        subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
                         trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
                         onTap: () => _showArtistDetailScreen(aName, aTracks),
-                      );
+                      ),
+                    );
                     },
                   ),
           ),
@@ -4960,17 +4968,21 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               }
             }
           },
+          onVerticalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0) < -150) _showNowPlayingScreen();
+          },
           onTap: _showNowPlayingScreen,
           child: Container(
             height: 72,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: _forceMiniColor ? Color.alphaBlend(accent.withOpacity(0.22), const Color(0xFF12121A)) : const Color(0xFF12121A),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: _forceMiniColor ? accent.withOpacity(0.45) : Colors.white12),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.85), blurRadius: 18, spreadRadius: 4)],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.65), blurRadius: 18, spreadRadius: 4)],
             ),
-            child: Row(
+            child: Column(children: [
+              Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(
               children: [
                 if (activeSong != null)
                   Hero(tag: 'nami_np_art_${activeSong.path}', child: _buildCoverArt(activeSong, 48, 8))
@@ -5034,13 +5046,23 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                           },
                         ),
                         IconButton(icon: const Icon(Icons.skip_next_rounded, size: 24), onPressed: _playNextTrack),
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
+                ],
+              );
+            },
           ),
+        ],
+      ))),
+      StreamBuilder<Duration>(
+        stream: _audioPlayer.stream.position,
+        builder: (context, snap) {
+          final pos = snap.data ?? Duration.zero;
+          final dur = _audioPlayer.state.duration;
+          final ratio = dur.inMilliseconds > 0 ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0) : 0.0;
+          return LinearProgressIndicator(value: ratio, minHeight: 2.5, backgroundColor: Colors.white10, valueColor: AlwaysStoppedAnimation<Color>(accent));
+        },
+      ),
+    ]),
+  ),
         );
       },
     );
@@ -6328,8 +6350,8 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
       final target = (activeIdx * _lyricLineExtent).clamp(0.0, _lyricsScrollCtrl.position.maxScrollExtent);
       _lyricsScrollCtrl.animateTo(
         target,
-        duration: const Duration(milliseconds: 750),
-        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 680),
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -6458,12 +6480,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
               color: const Color(0xFF07070B),
               gradient: widget.ambientGlow
                   ? RadialGradient(
-                      center: const Alignment(0.0, -0.25),
-                      radius: 0.9,
-                      colors: [
-                        glowColor.withOpacity(0.18),
-                        const Color(0xFF07070B),
-                      ],
+                      center: const Alignment(0.0, -0.22),
+                      radius: 1.05,
+                      colors: [glowColor.withOpacity(0.32), glowColor.withOpacity(0.11), const Color(0xFF07070B)],
+                      stops: const [0.0, 0.52, 1.0],
                     )
                   : null,
             ),
@@ -6588,48 +6608,25 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
                                           if (isCenter5th && widget.syllableLyricsEnabled) {
                                             return GestureDetector(
-                                              onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-                                              child: Container(
-                                                alignment: Alignment.center,
-                                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                child: ShaderMask(
-                                                  blendMode: BlendMode.srcIn,
-                                                  shaderCallback: (bounds) => LinearGradient(
-                                                    colors: const [Colors.white, Colors.white, Colors.white38, Colors.white38],
-                                                    stops: [0.0, sweepProgress, (sweepProgress + 0.06).clamp(0.0, 1.0), 1.0],
-                                                  ).createShader(bounds),
-                                                  child: Text(
-                                                    lineText,
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    textAlign: TextAlign.center,
-                                                    style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800),
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          }
-
-                                          return GestureDetector(
-                                            onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-                                            child: Container(
-                                              alignment: Alignment.center,
-                                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                                              child: Text(
-                                                lineText,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontSize: isCenter5th ? 16.5 : (distance == 1 ? 14.0 : 12.5),
-                                                  fontWeight: isCenter5th ? FontWeight.w800 : FontWeight.w500,
-                                                  color: isCenter5th
-                                                      ? Colors.white
-                                                      : (distance == 1 ? Colors.white54 : (distance <= 3 ? Colors.white30 : Colors.white12)),
-                                                ),
-                                              ),
-                                            ),
-                                          );
+                      onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
+                      child: AnimatedScale(
+                        scale: isCenter5th ? 1.06 : (distance == 1 ? 0.96 : 0.90),
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        child: Container(
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            lineText, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: isCenter5th ? 18.0 : (distance == 1 ? 14.5 : 12.5),
+                              fontWeight: isCenter5th ? FontWeight.w800 : FontWeight.w500,
+                              color: isCenter5th ? Colors.white : (distance == 1 ? Colors.white60 : (distance <= 3 ? Colors.white30 : Colors.white12)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
                                         },
                                       );
                                     },
