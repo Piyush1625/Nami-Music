@@ -98,9 +98,22 @@ Color _extractDominantColor(Uint8List? bytes, Color fallback) {
   return fallback;
 }
 
+late final Player _globalMediaKitPlayer;
+late final AudioHandler audioHandler;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  _globalMediaKitPlayer = Player();
+  audioHandler = await AudioService.init(
+    builder: () => NamiAudioHandler(_globalMediaKitPlayer),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.piyush.nami.channel.audio',
+      androidNotificationChannelName: 'Nami Playback',
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: false,
+    ),
+  );
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Color(0xFF07070B),
@@ -952,12 +965,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       } catch (_) {}
     }
 
-    _audioPlayer = Player(
-      
-      
-      
-      
-    );
+    _audioPlayer = _globalMediaKitPlayer;
+    if (audioHandler is NamiAudioHandler) {
+      final h = audioHandler as NamiAudioHandler;
+      h.onNextCallback = _playNextTrack;
+      h.onPrevCallback = _playPrevTrack;
+    }
 
     _initHardwareDsp();
     _initAudioSessionAndDac();
@@ -1231,7 +1244,29 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   
-  Future<void> _playSong(AudioTrack song) async {
+  Future<void> _syncMediaNotification(AudioTrack song) async {
+  if (audioHandler is! NamiAudioHandler) return;
+  String? artPath;
+  try {
+    if (song.thumbPath != null && File(song.thumbPath!).existsSync()) {
+      artPath = song.thumbPath!;
+    } else if (song.albumArt != null && song.albumArt!.isNotEmpty) {
+      final f = File('${Directory.systemTemp.path}/nami_art_${song.path.hashCode}.jpg');
+      if (!f.existsSync()) await f.writeAsBytes(song.albumArt!, flush: true);
+      artPath = f.path;
+    }
+  } catch (_) {}
+  (audioHandler as NamiAudioHandler).updateMetadata(
+    id: song.path,
+    title: song.title,
+    artist: cleanArtistStr(song.artist),
+    album: song.album,
+    artUri: artPath,
+    duration: song.duration.inMilliseconds > 0 ? song.duration : null,
+  );
+}
+
+Future<void> _playSong(AudioTrack song) async {
     if (song.path.isEmpty) return;
     _currentSong = song;
     _currentTrackSecondsListened = 0;
@@ -3132,6 +3167,14 @@ Container(
   }
 
   Widget _buildNamidaQueueRow({
+    required AudioTrack song,
+    required int index,
+    required bool isReorderable,
+    required VoidCallback onTap,
+    required VoidCallback onToggleFav,
+    VoidCallback? onRemove,
+ ),
+  );idget _buildNamidaQueueRow({
     required AudioTrack song,
     required int index,
     required bool isReorderable,

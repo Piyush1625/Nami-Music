@@ -8,6 +8,8 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final List<MediaItem> _playlistItems = [];
   String? _currentSongId;
   Duration _lastSavedPos = Duration.zero;
+  void Function()? onNextCallback;
+  void Function()? onPrevCallback;
 
   NamiAudioHandler(this.player) {
     _initEmptyState();
@@ -204,12 +206,14 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> skipToNext() async {
+    if (onNextCallback != null) { onNextCallback!(); return; }
     await player.next();
     _broadcastState();
   }
 
   @override
   Future<void> skipToPrevious() async {
+    if (onPrevCallback != null) { onPrevCallback!(); return; }
     await player.previous();
     _broadcastState();
   }
