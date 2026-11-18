@@ -1,6 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'services/nami_audio_handler.dart';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -789,6 +790,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   bool _artistGridMode = true;
   bool _artistSortByCount = false;
   bool _splitMultiArtists = true;
+  bool _shuffleEnabled = false;
+  int _repeatMode = 1; // 0 = Off, 1 = Repeat All, 2 = Repeat One
+  bool _isSelectionMode = false;
+  final Set<String> _selectedTrackPaths = {};
   List<String> _artistSeparators = [',', '&', '/', ';', 'feat.', 'ft.'];
 
   Directory _currentFolder = Directory('/storage/emulated/0/Music');
@@ -982,23 +987,49 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
     _audioPlayer.stream.playing.listen((state) {
       if (mounted) setState(() {});
-      if (false) {
-        if (_sleepAfterCurrentTrack) {
-          _audioPlayer.pause();
+      if (!state && _currentSong != null) {
+        _saveStateCache();
+      }
+    });
+
+    _audioPlayer.stream.completed.listen((completed) {
+      if (!completed) return;
+      if (_sleepAfterCurrentTrack) {
+        _audioPlayer.pause();
+        if (mounted) {
           setState(() {
             _sleepAfterCurrentTrack = false;
             _sleepMinutesRemaining = 0;
           });
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Playback paused by Sleep Timer.')));
-          return;
         }
+        return;
+      }
 
-        if (_playNextQueue.isNotEmpty) {
-          final next = _playNextQueue.removeAt(0);
-          _playSong(next);
-        } else {
-          _playNextTrack();
+      if (_repeatMode == 2 && _currentSong != null) {
+        _audioPlayer.seek(Duration.zero);
+        _audioPlayer.play();
+        return;
+      }
+
+      if (_playNextQueue.isNotEmpty) {
+        final next = _playNextQueue.removeAt(0);
+        _playSong(next);
+        return;
+      }
+
+      if (_shuffleEnabled && _filteredSongs.isNotEmpty) {
+        _playNextTrack();
+        return;
+      }
+
+      if (_filteredSongs.isNotEmpty && _currentSong != null) {
+        final curIdx = _filteredSongs.indexOf(_currentSong!);
+        if (curIdx != -1 && curIdx + 1 < _filteredSongs.length) {
+          _playSong(_filteredSongs[curIdx + 1]);
+        } else if (_repeatMode == 1) {
+          _playSong(_filteredSongs.first);
         }
       }
     });
@@ -1016,24 +1047,47 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   }
 
   Future<void> _initHardwareDsp() async {
-    if (!Platform.isAndroid) return;
     try {
-      if (_eqEnabled) {
-        await _applyHardwareEqGains();
-      }
+      await _applyDacAndAudioProperties();
+      await _applyHardwareEqGains();
+    } catch (_) {}
+  }
+
+  Future<void> _applyDacAndAudioProperties() async {
+    try {
+      final dynPlayer = _audioPlayer.platform as dynamic;
+      await dynPlayer.setProperty('audio-exclusive', _usbDacExclusive ? 'yes' : 'no');
+      await dynPlayer.setProperty('replaygain', _replayGain ? 'track' : 'no');
+      await dynPlayer.setProperty('gapless-audio', _gaplessPlayback ? 'yes' : 'no');
     } catch (_) {}
   }
 
   Future<void> _applyHardwareEqGains() async {
-    if (!Platform.isAndroid) return;
     try {
-      if (!_eqEnabled) return;
-      final bands = [];
-      final values = _eqBands.values.toList();
-      for (int i = 0; i < bands.length && i < values.length; i++) {
-        final clamped = values[i].clamp(-24.0, 24.0);
-        await bands[i].setGain(clamped);
+      final dynPlayer = _audioPlayer.platform as dynamic;
+      final List<String> filters = [];
+
+      if (_eqEnabled) {
+        const freqs = [60, 230, 910, 3600, 14000];
+        final values = _eqBands.values.toList();
+        for (int i = 0; i < freqs.length && i < values.length; i++) {
+          final g = values[i].clamp(-12.0, 12.0).toStringAsFixed(1);
+          filters.add('equalizer=f=${freqs[i]}:t=q:w=1.2:g=$g');
+        }
       }
+
+      if (_preampGainDb > 0.05) {
+        filters.add('volume=volume=${_preampGainDb.toStringAsFixed(1)}dB');
+      }
+
+      if (_soundstagePreset == 'Studio') {
+        filters.add('extrastereo=m=1.28');
+      } else if (_soundstagePreset == 'Concert') {
+        filters.add('aecho=0.8:0.88:42:0.22');
+      }
+
+      final afGraph = filters.isEmpty ? '' : 'lavfi=[${filters.join(",")}]';
+      await dynPlayer.setProperty('af', afGraph);
     } catch (_) {}
   }
 
@@ -1107,11 +1161,36 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
               s.albumArt = await tf.readAsBytes();
             }
           }
+          _shuffleEnabled = data['shuffleEnabled'] ?? false;
+          _repeatMode = data['repeatMode'] ?? 1;
           if (cachedSongs.isNotEmpty && mounted) {
+            final byPath = {for (final t in cachedSongs) t.path: t};
+            final savedQueue = (data['playNextPaths'] as List?)
+                    ?.map((p) => byPath[p.toString()])
+                    .whereType<AudioTrack>()
+                    .toList() ??
+                [];
+            final lastPath = data['lastSongPath']?.toString();
+            final lastPosMs = (data['lastPositionMs'] as int?) ?? 0;
+            final restoredSong = (lastPath != null) ? byPath[lastPath] : null;
             setState(() {
               _songs = cachedSongs;
               _filteredSongs = List.from(cachedSongs);
+              _playNextQueue
+                ..clear()
+                ..addAll(savedQueue);
+              if (restoredSong != null) {
+                _currentSong = restoredSong;
+              }
             });
+            if (restoredSong != null && File(restoredSong.path).existsSync()) {
+              await _audioPlayer.open(Media(restoredSong.path), play: false);
+              if (lastPosMs > 0) {
+                await Future.delayed(const Duration(milliseconds: 180));
+                await _audioPlayer.seek(Duration(milliseconds: lastPosMs));
+              }
+              _syncMediaNotification(restoredSong);
+            }
           }
         }
       }
@@ -1130,6 +1209,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'artistImageRetryAfter': _artistImageRetryAfter,
         'artistSeparators': _artistSeparators,
         'accentColor': mounted ? NamiApp.of(context).accentColor.value : null,
+        'shuffleEnabled': _shuffleEnabled,
+        'repeatMode': _repeatMode,
+        'lastSongPath': _currentSong?.path,
+        'lastPositionMs': _audioPlayer.state.position.inMilliseconds,
+        'playNextPaths': _playNextQueue.map((s) => s.path).toList(),
         'cachedTracks': _songs.map((s) => s.toJson()).toList(),
       };
       await f.writeAsString(jsonEncode(map));
@@ -1197,12 +1281,26 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       await _audioPlayer.setPitch(1.0);
 
       _deviceSub?.cancel();
-      _deviceSub = Stream.empty().listen((devices) {
-        _checkConnectedAudioHardware(devices);
-      });
-
-      final initialDevices = <AudioDevice>{};
-      _checkConnectedAudioHardware(initialDevices, isInitial: true);
+      try {
+        final dynStream = _audioPlayer.stream as dynamic;
+        _deviceSub = dynStream.audioDevices.listen((devices) {
+          if (devices is Iterable) {
+            for (final d in devices) {
+              final desc = (d.description?.toString() ?? '').trim();
+              final name = (d.name?.toString() ?? '').trim();
+              final label = desc.isNotEmpty ? desc : name;
+              if (label.isNotEmpty &&
+                  label.toLowerCase() != 'auto' &&
+                  label.toLowerCase() != 'null' &&
+                  label != _lastKnownDac) {
+                _lastKnownDac = label;
+                _connectedDacName = label;
+                if (mounted) setState(() {});
+              }
+            }
+          }
+        });
+      } catch (_) {}
     } catch (_) {}
   }
 
@@ -1318,12 +1416,23 @@ Future<void> _playSong(AudioTrack song) async {
       _playSong(next);
       return;
     }
-    if (_filteredSongs.isNotEmpty && _currentSong != null) {
-      int nextIdx =
-          (_filteredSongs.indexOf(_currentSong!) + 1) % _filteredSongs.length;
-      _playSong(_filteredSongs[nextIdx]);
-    } else if (_filteredSongs.isNotEmpty) {
-      _playSong(_filteredSongs.first);
+    if (_filteredSongs.isNotEmpty) {
+      if (_shuffleEnabled && _filteredSongs.length > 1) {
+        final rng = math.Random();
+        int randIdx = rng.nextInt(_filteredSongs.length);
+        if (_currentSong != null && _filteredSongs[randIdx].path == _currentSong!.path) {
+          randIdx = (randIdx + 1) % _filteredSongs.length;
+        }
+        _playSong(_filteredSongs[randIdx]);
+        return;
+      }
+      if (_currentSong != null) {
+        int nextIdx =
+            (_filteredSongs.indexOf(_currentSong!) + 1) % _filteredSongs.length;
+        _playSong(_filteredSongs[nextIdx]);
+      } else {
+        _playSong(_filteredSongs.first);
+      }
     }
   }
 
@@ -1767,8 +1876,7 @@ const SizedBox(height: 10),
                     onChanged: (v) async {
                       setEqState(() => _preampGainDb = v);
                       setState(() {});
-                      try {
-                      } catch (_) {}
+                      await _applyHardwareEqGains();
                     },
                   ),
                 ],
@@ -1806,8 +1914,11 @@ const SizedBox(height: 10),
                               selected: _soundstagePreset == p,
                               selectedColor:
                                   Theme.of(context).colorScheme.primary,
-                              onSelected: (_) =>
-                                  setEqState(() => _soundstagePreset = p),
+                              onSelected: (_) async {
+                                setEqState(() => _soundstagePreset = p);
+                                setState(() {});
+                                await _applyHardwareEqGains();
+                              },
                             ))
                         .toList(),
                   ),
@@ -3286,6 +3397,17 @@ _buildCoverArt(song, 46, 8),
           autoColoring: _autoColoring,
           ambientGlow: _ambientGlow,
           syllableLyricsEnabled: _syllableLyricsEnabled,
+          shuffleEnabled: _shuffleEnabled,
+          repeatMode: _repeatMode,
+          onToggleShuffle: () {
+            setState(() => _shuffleEnabled = !_shuffleEnabled);
+            _saveStateCache();
+          },
+          onCycleRepeat: () {
+            setState(() => _repeatMode = (_repeatMode + 1) % 3);
+            _audioPlayer.setPlaylistMode(_repeatMode == 2 ? PlaylistMode.single : PlaylistMode.none);
+            _saveStateCache();
+          },
           preferEmbeddedLyrics: _preferEmbeddedLyrics,
           autoFetchOnlineMetadata: _autoFetchOnlineMetadata,
           splitMultiArtists: _splitMultiArtists,
@@ -3297,7 +3419,7 @@ _buildCoverArt(song, 46, 8),
           onOpenFolderExplorer: _showFolderExplorerModal,
           onExportBackup: _exportBackup,
           onImportBackup: _importBackup,
-          onUsbDacChanged: (v) => setState(() => _usbDacExclusive = v),
+          onUsbDacChanged: (v) { setState(() => _usbDacExclusive = v); _applyDacAndAudioProperties(); },
           onGaplessChanged: (v) => setState(() => _gaplessPlayback = v),
           onNotificationChanged: (v) => setState(() => _mediaNotificationEnabled = v),
           onPitchBlackChanged: (v) {
@@ -3322,7 +3444,7 @@ _buildCoverArt(song, 46, 8),
             _saveStateCache();
           },
           onForceMiniColorChanged: (v) => setState(() => _forceMiniColor = v),
-          onReplayGainChanged: (v) => setState(() => _replayGain = v),
+          onReplayGainChanged: (v) { setState(() => _replayGain = v); _applyDacAndAudioProperties(); },
           onRescan: () => _fastScanDeviceMusic(forceReparse: true),
         ),
       ),
@@ -4738,6 +4860,12 @@ _buildCoverArt(song, 46, 8),
         IconButton(icon: const Icon(Icons.play_arrow_rounded, size: 22), onPressed: () { if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first); }),
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text('${_songs.length} Tracks', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
         const Spacer(),
+        TextButton.icon(
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: Colors.white70),
+          icon: const Icon(Icons.album_rounded, size: 17),
+          label: const Text('Albums', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          onPressed: _showAlbumsBrowserScreen,
+        ),
         IconButton(icon: const Icon(Icons.sort_rounded, size: 20), tooltip: 'Reverse Order', onPressed: () => setState(() => _filteredSongs = _filteredSongs.reversed.toList())),
       ]),
     );
@@ -4919,21 +5047,313 @@ _buildCoverArt(song, 46, 8),
     );
   }
 
+  void _showAlbumsBrowserScreen() {
+    String sortBy = 'title'; // 'title', 'artist', 'year', 'count'
+    bool gridMode = true;
+    String filterQuery = '';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StatefulBuilder(
+          builder: (context, setAlbState) {
+            final Map<String, List<AudioTrack>> map = {};
+            for (final s in _songs) {
+              final key = s.album.trim().isNotEmpty ? s.album.trim() : 'Unknown Album';
+              map.putIfAbsent(key, () => []).add(s);
+            }
+            var entries = map.entries.where((e) {
+              if (filterQuery.isEmpty) return true;
+              final q = filterQuery.toLowerCase();
+              return e.key.toLowerCase().contains(q) ||
+                  e.value.first.artist.toLowerCase().contains(q);
+            }).toList();
+
+            entries.sort((a, b) {
+              if (sortBy == 'artist') {
+                return a.value.first.artist.toLowerCase().compareTo(b.value.first.artist.toLowerCase());
+              } else if (sortBy == 'year') {
+                return b.value.first.year.compareTo(a.value.first.year);
+              } else if (sortBy == 'count') {
+                return b.value.length.compareTo(a.value.length);
+              }
+              return a.key.toLowerCase().compareTo(b.key.toLowerCase());
+            });
+
+            final accent = Theme.of(context).colorScheme.primary;
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: Colors.transparent,
+                title: Text('Albums (${entries.length})', style: const TextStyle(fontWeight: FontWeight.w800)),
+                actions: [
+                  IconButton(
+                    tooltip: gridMode ? 'List View' : 'Grid View',
+                    icon: Icon(gridMode ? Icons.view_list_rounded : Icons.grid_view_rounded),
+                    onPressed: () => setAlbState(() => gridMode = !gridMode),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.sort_rounded),
+                    color: const Color(0xFF14141E),
+                    onSelected: (v) => setAlbState(() => sortBy = v),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'title', child: Text('Sort: Album A–Z')),
+                      PopupMenuItem(value: 'artist', child: Text('Sort: Artist A–Z')),
+                      PopupMenuItem(value: 'year', child: Text('Sort: Year (Newest)')),
+                      PopupMenuItem(value: 'count', child: Text('Sort: Track Count')),
+                    ],
+                  ),
+                ],
+              ),
+              body: Stack(
+                children: [
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+                        child: TextField(
+                          onChanged: (v) => setAlbState(() => filterQuery = v),
+                          decoration: InputDecoration(
+                            hintText: 'Filter albums or artists...',
+                            prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                            filled: true,
+                            fillColor: const Color(0xFF14141E),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: gridMode
+                            ? GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(14, 2, 14, 110),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  childAspectRatio: 0.78,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                ),
+                                itemCount: entries.length,
+                                itemBuilder: (ctx, idx) {
+                                  final albName = entries[idx].key;
+                                  final tracks = entries[idx].value;
+                                  final artTrack = tracks.firstWhere(
+                                    (t) => t.albumArt != null || (t.thumbPath != null && File(t.thumbPath!).existsSync()),
+                                    orElse: () => tracks.first,
+                                  );
+                                  return GestureDetector(
+                                    onTap: () => _showAlbumDetailScreen(albName, tracks),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF101018),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: Colors.white10),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Center(child: _buildCoverArt(artTrack, 138, 12)),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(albName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${cleanArtistStr(tracks.first.artist)} • ${tracks.length} tracks',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 11, color: Colors.white60),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(12, 2, 12, 110),
+                                itemCount: entries.length,
+                                itemBuilder: (ctx, idx) {
+                                  final albName = entries[idx].key;
+                                  final tracks = entries[idx].value;
+                                  final artTrack = tracks.firstWhere(
+                                    (t) => t.albumArt != null || (t.thumbPath != null && File(t.thumbPath!).existsSync()),
+                                    orElse: () => tracks.first,
+                                  );
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF101018),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: Colors.white10),
+                                    ),
+                                    child: ListTile(
+                                      leading: _buildCoverArt(artTrack, 50, 10),
+                                      title: Text(albName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                      subtitle: Text('${cleanArtistStr(tracks.first.artist)} • ${tracks.length} tracks • ${tracks.first.year}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                                      trailing: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
+                                      onTap: () => _showAlbumDetailScreen(albName, tracks),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                  Positioned(left: 10, right: 10, bottom: 10, child: _buildReactiveMiniPlayer()),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _toggleTrackSelection(AudioTrack song) {
+    setState(() {
+      if (_selectedTrackPaths.contains(song.path)) {
+        _selectedTrackPaths.remove(song.path);
+        if (_selectedTrackPaths.isEmpty) _isSelectionMode = false;
+      } else {
+        _isSelectionMode = true;
+        _selectedTrackPaths.add(song.path);
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedTrackPaths.clear();
+    });
+  }
+
+  List<AudioTrack> get _selectedTracksList =>
+      _songs.where((s) => _selectedTrackPaths.contains(s.path)).toList();
+
+  void _showBatchAddToPlaylistDialog(List<AudioTrack> batch) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF14141F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Add ${batch.length} Tracks to Playlist', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              ..._customPlaylists.map((pl) => ListTile(
+                    leading: const Icon(Icons.queue_music_rounded),
+                    title: Text(pl.name),
+                    subtitle: Text('${pl.tracks.length} Tracks'),
+                    onTap: () {
+                      setState(() {
+                        for (final s in batch) {
+                          if (!pl.tracks.contains(s)) pl.tracks.add(s);
+                        }
+                      });
+                      _saveStateCache();
+                      _exitSelectionMode();
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${batch.length} tracks to ${pl.name}')));
+                    },
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBatchSelectionBar() {
+    final accent = Theme.of(context).colorScheme.primary;
+    final batch = _selectedTracksList;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161622),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withOpacity(0.5)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.75), blurRadius: 16)],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          TextButton.icon(
+            icon: Icon(Icons.playlist_play_rounded, color: accent, size: 20),
+            label: const Text('Play Next', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+            onPressed: () {
+              setState(() => _playNextQueue.addAll(batch));
+              _exitSelectionMode();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queued ${batch.length} tracks')));
+            },
+          ),
+          TextButton.icon(
+            icon: Icon(Icons.playlist_add_rounded, color: accent, size: 20),
+            label: const Text('Playlist', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+            onPressed: () => _showBatchAddToPlaylistDialog(batch),
+          ),
+          TextButton.icon(
+            icon: Icon(Icons.favorite_rounded, color: accent, size: 18),
+            label: const Text('Fav', style: TextStyle(fontSize: 11.5, color: Colors.white)),
+            onPressed: () {
+              setState(() {
+                for (final s in batch) {
+                  s.isFavorite = true;
+                }
+              });
+              _saveStateCache();
+              _exitSelectionMode();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Favorited ${batch.length} tracks')));
+            },
+          ),
+          IconButton(
+            tooltip: 'Delete Selected',
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+            onPressed: () async {
+              for (final s in batch) {
+                try {
+                  final f = File(s.path);
+                  if (await f.exists()) await f.delete();
+                } catch (_) {}
+              }
+              setState(() {
+                _songs.removeWhere((s) => _selectedTrackPaths.contains(s.path));
+                _filteredSongs.removeWhere((s) => _selectedTrackPaths.contains(s.path));
+              });
+              _saveStateCache();
+              _exitSelectionMode();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildNamidaTrackTile(AudioTrack song) {
     final isCurrent = _currentSong?.path == song.path;
+    final isSelected = _selectedTrackPaths.contains(song.path);
+    final accent = Theme.of(context).colorScheme.primary;
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 1.5, 4, 1.5),
       decoration: BoxDecoration(
-        color: isCurrent ? Theme.of(context).colorScheme.primary.withOpacity(0.12) : const Color(0xFF0C0C12),
+        color: isSelected
+            ? accent.withOpacity(0.22)
+            : (isCurrent ? accent.withOpacity(0.12) : const Color(0xFF0C0C12)),
         borderRadius: BorderRadius.circular(12),
+        border: isSelected ? Border.all(color: accent.withOpacity(0.6)) : null,
       ),
       child: Dismissible(
         key: Key('${song.path}_${song.hashCode}'),
-        direction: DismissDirection.endToStart,
+        direction: _isSelectionMode ? DismissDirection.none : DismissDirection.endToStart,
         background: Container(
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 20),
-          decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.playlist_add_rounded, color: Colors.white, size: 22),
         ),
         confirmDismiss: (direction) async {
@@ -4943,10 +5363,29 @@ _buildCoverArt(song, 46, 8),
         },
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => _playSong(song),
+          onLongPress: () {
+            HapticFeedback.mediumImpact();
+            _toggleTrackSelection(song);
+          },
+          onTap: () {
+            if (_isSelectionMode) {
+              _toggleTrackSelection(song);
+            } else {
+              _playSong(song);
+            }
+          },
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
             child: Row(children: [
+              if (_isSelectionMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Icon(
+                    isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                    color: isSelected ? accent : Colors.white38,
+                    size: 22,
+                  ),
+                ),
               _buildCoverArt(song, 54, 10),
               const SizedBox(width: 13),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -5585,6 +6024,13 @@ void _showCreatePlaylistDialog() {
               onTap: () => _showFilteredListScreen('Favorites', favSongs),
             ),
             _buildHomeSmartTile(
+              icon: Icons.album_rounded,
+              title: 'Albums',
+              subtitle: '${_songs.map((s) => s.album).toSet().length} Albums',
+              color: Colors.cyanAccent,
+              onTap: _showAlbumsBrowserScreen,
+            ),
+            _buildHomeSmartTile(
               icon: Icons.local_fire_department_rounded,
               title: 'Most Played',
               subtitle: 'Top rotation',
@@ -5740,34 +6186,54 @@ void _showCreatePlaylistDialog() {
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                onChanged: _filterSongs,
-                decoration: const InputDecoration(hintText: 'Search library...', border: InputBorder.none),
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              )
-            : Text(tabTitles[_selectedIndex], style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.1)),
-        actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
-            onPressed: () {
-              setState(() {
-                _isSearching = !_isSearching;
-                if (!_isSearching) {
-                  _searchController.clear();
-                  _filteredSongs = _songs;
-                }
-              });
-            },
-          ),
-          IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
-        ],
-      ),
+      appBar: _isSelectionMode
+          ? AppBar(
+              backgroundColor: const Color(0xFF12121C),
+              leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: _exitSelectionMode),
+              title: Text('${_selectedTrackPaths.length} Selected', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      if (_selectedTrackPaths.length == _filteredSongs.length) {
+                        _exitSelectionMode();
+                      } else {
+                        _selectedTrackPaths.addAll(_filteredSongs.map((s) => s.path));
+                      }
+                    });
+                  },
+                  child: const Text('Select All', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            )
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              title: _isSearching
+                  ? TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      onChanged: _filterSongs,
+                      decoration: const InputDecoration(hintText: 'Search library...', border: InputBorder.none),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    )
+                  : Text(tabTitles[_selectedIndex], style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.1)),
+              actions: [
+                IconButton(
+                  icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
+                  onPressed: () {
+                    setState(() {
+                      _isSearching = !_isSearching;
+                      if (!_isSearching) {
+                        _searchController.clear();
+                        _filteredSongs = _songs;
+                      }
+                    });
+                  },
+                ),
+                IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
+              ],
+            ),
       body: Stack(
         children: [
           AnimatedSwitcher(
@@ -5779,6 +6245,8 @@ void _showCreatePlaylistDialog() {
               child: pages[_selectedIndex],
             ),
           ),
+          if (_isSelectionMode)
+            Positioned(left: 10, right: 10, bottom: 86, child: _buildBatchSelectionBar()),
           Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
         ],
       ),
@@ -6357,7 +6825,11 @@ class NowPlayingModal extends StatefulWidget {
   final List<AudioTrack> playNextQueue;
   final bool ambientGlow;
   final bool syllableLyricsEnabled;
-  final VoidCallback onShowPath,
+  final bool shuffleEnabled;
+  final int repeatMode;
+  final VoidCallback onToggleShuffle,
+      onCycleRepeat,
+      onShowPath,
       onShowEqualizer,
       onShowSleepTimer,
       onOpenLyricsManager,
@@ -6376,6 +6848,10 @@ class NowPlayingModal extends StatefulWidget {
     required this.playNextQueue,
     required this.ambientGlow,
     required this.syllableLyricsEnabled,
+    required this.shuffleEnabled,
+    required this.repeatMode,
+    required this.onToggleShuffle,
+    required this.onCycleRepeat,
     required this.onShowPath,
     required this.onShowEqualizer,
     required this.onShowSleepTimer,
@@ -6538,22 +7014,48 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
         return Scaffold(
           backgroundColor: const Color(0xFF07070B),
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF07070B),
-              gradient: widget.ambientGlow
-                  ? RadialGradient(
-                      center: const Alignment(0.0, -0.22),
-                      radius: 1.05,
-                      colors: [glowColor.withOpacity(0.32), glowColor.withOpacity(0.11), const Color(0xFF07070B)],
-                      stops: const [0.0, 0.52, 1.0],
-                    )
-                  : null,
-            ),
-            child: SafeArea(
+          body: Stack(
+            children: [
+              if (song?.albumArt != null && song!.albumArt!.isNotEmpty)
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.24,
+                    child: ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(sigmaX: 46, sigmaY: 46),
+                      child: Image.memory(song.albumArt!, fit: BoxFit.cover),
+                    ),
+                  ),
+                ),
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF07070B).withOpacity(0.68),
+                        const Color(0xFF07070B).withOpacity(0.84),
+                        const Color(0xFF07070B),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                width: double.infinity,
+                height: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
+                decoration: BoxDecoration(
+                  gradient: widget.ambientGlow
+                      ? RadialGradient(
+                          center: const Alignment(0.0, -0.22),
+                          radius: 1.05,
+                          colors: [glowColor.withOpacity(0.28), glowColor.withOpacity(0.08), Colors.transparent],
+                          stops: const [0.0, 0.52, 1.0],
+                        )
+                      : null,
+                ),
+                child: SafeArea(
               child: Column(
                 children: [
                   Row(
@@ -6591,6 +7093,21 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                         ? GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onDoubleTap: () => _seekRelative(-5),
+                            onHorizontalDragEnd: (details) {
+                              final v = details.primaryVelocity ?? 0;
+                              if (v < -220) {
+                                HapticFeedback.lightImpact();
+                                widget.onNext();
+                              } else if (v > 220) {
+                                HapticFeedback.lightImpact();
+                                widget.onPrevious();
+                              }
+                            },
+                            onVerticalDragEnd: (details) {
+                              if ((details.primaryVelocity ?? 0) > 360) {
+                                Navigator.pop(context);
+                              }
+                            },
                             child: Container(
                               width: artSize,
                               height: artSize,
@@ -6888,10 +7405,25 @@ return GestureDetector(
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
-                              icon: Icon(_isLooping ? Icons.repeat_one_rounded : Icons.repeat_rounded, size: 20, color: _isLooping ? accent : Colors.white70),
+                              icon: Icon(Icons.shuffle_rounded, size: 20, color: widget.shuffleEnabled ? accent : Colors.white70),
                               onPressed: () {
-                                setState(() => _isLooping = !_isLooping);
-                                widget.audioPlayer.setPlaylistMode(_isLooping ? PlaylistMode.single : PlaylistMode.none);
+                                widget.onToggleShuffle();
+                                setState(() {});
+                              },
+                            ),
+                            const SizedBox(width: 12),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              icon: Icon(
+                                widget.repeatMode == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                                size: 20,
+                                color: widget.repeatMode > 0 ? accent : Colors.white70,
+                              ),
+                              onPressed: () {
+                                widget.onCycleRepeat();
+                                setState(() {});
                               },
                             ),
                             const SizedBox(width: 12),
@@ -6935,6 +7467,8 @@ return GestureDetector(
                 ],
               ),
             ),
+          ),
+            ],
           ),
         );
       },
