@@ -788,6 +788,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   int _repeatMode = 1; // 0 = Off, 1 = Repeat All, 2 = Repeat One
   bool _isSelectionMode = false;
   final Set<String> _selectedTrackPaths = {};
+  List<String> _scanFolders = [
+    '/storage/emulated/0/Music',
+    '/storage/emulated/0/Download',
+  ];
+  bool _ignoreShortClips = true;
   List<String> _artistSeparators = [',', '&', '/', ';', 'feat.', 'ft.'];
 
   Directory _currentFolder = Directory('/storage/emulated/0/Music');
@@ -1157,8 +1162,30 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           }
           _shuffleEnabled = data['shuffleEnabled'] ?? false;
           _repeatMode = data['repeatMode'] ?? 1;
+          _ignoreShortClips = data['ignoreShortClips'] ?? true;
+          if (data['scanFolders'] is List && (data['scanFolders'] as List).isNotEmpty) {
+            _scanFolders = List<String>.from(data['scanFolders']);
+          }
           if (cachedSongs.isNotEmpty && mounted) {
             final byPath = {for (final t in cachedSongs) t.path: t};
+            if (data['customPlaylists'] is List) {
+              final loadedPls = <CustomPlaylist>[];
+              for (final rawPl in (data['customPlaylists'] as List)) {
+                if (rawPl is Map && rawPl['name'] != null) {
+                  final pTracks = (rawPl['paths'] as List?)
+                          ?.map((p) => byPath[p.toString()])
+                          .whereType<AudioTrack>()
+                          .toList() ??
+                      [];
+                  loadedPls.add(CustomPlaylist(name: rawPl['name'].toString(), tracks: pTracks));
+                }
+              }
+              if (loadedPls.isNotEmpty) {
+                _customPlaylists
+                  ..clear()
+                  ..addAll(loadedPls);
+              }
+            }
             final savedQueue = (data['playNextPaths'] as List?)
                     ?.map((p) => byPath[p.toString()])
                     .whereType<AudioTrack>()
@@ -1205,6 +1232,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'accentColor': mounted ? NamiApp.of(context).accentColor.value : null,
         'shuffleEnabled': _shuffleEnabled,
         'repeatMode': _repeatMode,
+        'ignoreShortClips': _ignoreShortClips,
+        'scanFolders': _scanFolders,
+        'customPlaylists': _customPlaylists.map((p) => p.toJson()).toList(),
         'lastSongPath': _currentSong?.path,
         'lastPositionMs': _audioPlayer.state.position.inMilliseconds,
         'playNextPaths': _playNextQueue.map((s) => s.path).toList(),
@@ -1572,83 +1602,177 @@ Future<void> _playSong(AudioTrack song) async {
     );
   }
 
-  void _showAudioPathDetails(AudioTrack song) {
-    final kHz = (song.sampleRateHz / 1000.0).toStringAsFixed(1);
-    final pcmKbps = (song.sampleRateHz * song.bitDepth * 2) ~/ 1000;
+  String _formatMpvSampleFmt(String rawFmt, int fallbackBits) {
+    final f = rawFmt.toLowerCase().trim();
+    if (f.contains('16')) return '16-Bit';
+    if (f.contains('24')) return '24-Bit';
+    if (f.contains('32')) return '32-Bit';
+    if (f.contains('float') || f.contains('dbl')) return '32-Bit Float';
+    return '$fallbackBits-Bit';
+  }
 
+  Future<Map<String, String>> _queryLiveMpvTelemetry(AudioTrack song) async {
+    int srcRate = song.sampleRateHz;
+    int outRate = song.sampleRateHz;
+    String srcFmt = '${song.bitDepth}-Bit';
+    String outFmt = '${song.bitDepth}-Bit';
+    String channels = '2';
+    String activeDev = _connectedDacName;
+
+    try {
+      final dyn = _audioPlayer.platform as dynamic;
+      Future<String> prop(String key) async {
+        try {
+          final v = await dyn.getProperty(key);
+          return (v?.toString() ?? '').trim();
+        } catch (_) {
+          return '';
+        }
+      }
+
+      final sRateStr = await prop('audio-params/samplerate');
+      final oRateStr = await prop('audio-out-params/samplerate');
+      final sFmtStr = await prop('audio-params/format');
+      final oFmtStr = await prop('audio-out-params/format');
+      final chStr = await prop('audio-out-params/channel-count');
+      final devStr = await prop('audio-device');
+
+      if (int.tryParse(sRateStr) != null && int.parse(sRateStr) > 0) {
+        srcRate = int.parse(sRateStr);
+      }
+      if (int.tryParse(oRateStr) != null && int.parse(oRateStr) > 0) {
+        outRate = int.parse(oRateStr);
+      } else {
+        outRate = srcRate;
+      }
+      if (sFmtStr.isNotEmpty) srcFmt = _formatMpvSampleFmt(sFmtStr, song.bitDepth);
+      if (oFmtStr.isNotEmpty) {
+        outFmt = _formatMpvSampleFmt(oFmtStr, song.bitDepth);
+      } else {
+        outFmt = srcFmt;
+      }
+      if (chStr.isNotEmpty && chStr != '0') channels = chStr;
+      if (devStr.isNotEmpty && devStr != 'auto' && devStr != 'null') {
+        activeDev = devStr;
+      }
+    } catch (_) {}
+
+    final isExactRate = (srcRate == outRate) && !_eqEnabled;
+    return {
+      'srcRate': '$srcRate',
+      'outRate': '$outRate',
+      'srcFmt': srcFmt,
+      'outFmt': outFmt,
+      'channels': channels,
+      'device': activeDev,
+      'isBitPerfect': isExactRate ? '1' : '0',
+    };
+  }
+
+  void _showAudioPathDetails(AudioTrack song) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121218),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                  child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                          color: Colors.white38,
-                          borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (context) => FutureBuilder<Map<String, String>>(
+        future: _queryLiveMpvTelemetry(song),
+        builder: (context, snap) {
+          final data = snap.data;
+          final srcRate = int.tryParse(data?['srcRate'] ?? '') ?? song.sampleRateHz;
+          final outRate = int.tryParse(data?['outRate'] ?? '') ?? srcRate;
+          final srcKhz = (srcRate / 1000.0).toStringAsFixed(1);
+          final outKhz = (outRate / 1000.0).toStringAsFixed(1);
+          final srcFmt = data?['srcFmt'] ?? '${song.bitDepth}-Bit';
+          final outFmt = data?['outFmt'] ?? '${song.bitDepth}-Bit';
+          final ch = data?['channels'] ?? '2';
+          final isBitPerfect = (data?['isBitPerfect'] ?? (_eqEnabled ? '0' : '1')) == '1';
+          final pcmKbps = (outRate * song.bitDepth * (int.tryParse(ch) ?? 2)) ~/ 1000;
+
+          final statusLabel = _eqEnabled
+              ? 'libmpv DSP'
+              : (isBitPerfect ? 'Bit-perfect' : 'OS Resampled');
+          final statusColor = _eqEnabled
+              ? Colors.cyanAccent
+              : (isBitPerfect ? Colors.amber : Colors.orangeAccent);
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Audio path',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 17,
-                          color: Colors.white)),
+                  Center(
+                      child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                              color: Colors.white38,
+                              borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Audio path',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                              color: Colors.white)),
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.14),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: statusColor.withOpacity(0.45))),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isBitPerfect ? Icons.verified_rounded : Icons.bolt_rounded,
+                              size: 14,
+                              color: statusColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(statusLabel,
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('$outKhz kHz', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('Output Rate', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
+                    const SizedBox(width: 8),
+                    Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text(outFmt, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('Word Depth', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
+                    const SizedBox(width: 8),
+                    Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('$pcmKbps kbps', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('PCM Stream', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
+                  ]),
+                  const SizedBox(height: 14),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: Colors.white10,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Row(
-                      children: [
-                        Icon(Icons.bolt_rounded,
-                            size: 14,
-                            color:
-                                _eqEnabled ? Colors.cyanAccent : Colors.amber),
-                        const SizedBox(width: 4),
-                        Text(_eqEnabled ? 'Hardware DSP' : 'Bit-perfect',
-                            style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white)),
-                      ],
-                    ),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
+                    child: Column(children: [
+                      _buildAudioPathNode(icon: Icons.music_note_rounded, title: 'Source • PCM', subtitle: '$srcFmt • $srcKhz kHz • $ch ch • $pcmKbps kbps', showConnectorDown: true),
+                      _buildAudioPathNode(
+                        icon: Icons.bolt_rounded,
+                        title: _eqEnabled ? 'libmpv DSP Pipeline ($_selectedEqPreset)' : (isBitPerfect ? 'Bit-perfect Direct (1:1 Rate)' : 'Audio Clock Resampler'),
+                        subtitle: _eqEnabled ? '5-Band Parametric EQ Active' : (isBitPerfect ? '$srcKhz kHz -> $outKhz kHz (No Resampling)' : '$srcKhz kHz -> $outKhz kHz'),
+                        showConnectorDown: true,
+                      ),
+                      _buildAudioPathNode(icon: Icons.settings_input_composite_rounded, title: 'libmpv Hardware Out', subtitle: '$outFmt • $outKhz kHz • Exclusive=${_usbDacExclusive ? "ON" : "OFF"}', showConnectorDown: true),
+                      _buildAudioPathNode(icon: Icons.speaker_rounded, title: _connectedDacName, subtitle: 'Verified Live Audio Endpoint', showConnectorDown: false),
+                    ]),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-Row(children: [
-  Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('$kHz kHz', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('Sample Rate', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
-  const SizedBox(width: 8),
-  Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('${song.bitDepth}-Bit', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('Word Depth', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
-  const SizedBox(width: 8),
-  Expanded(child: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: Column(children: [Text('$pcmKbps kbps', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white)), const SizedBox(height: 2), const Text('PCM Stream', style: TextStyle(fontSize: 10, color: Colors.white54))]))),
-]),
-const SizedBox(height: 14),
-Container(
-  padding: const EdgeInsets.all(14),
-  decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
-  child: Column(children: [
-    _buildAudioPathNode(icon: Icons.music_note_rounded, title: 'Source • PCM', subtitle: '${song.bitDepth}-bit • $kHz kHz • 2 ch • $pcmKbps kbps', showConnectorDown: true),
-    _buildAudioPathNode(icon: Icons.bolt_rounded, title: _eqEnabled ? 'AndroidEqualizer Pipeline ($_selectedEqPreset)' : 'Bit-perfect Direct', subtitle: _eqEnabled ? '5-Band Hardware EQ Active' : 'Bypassing OS Resampler', showConnectorDown: true),
-    _buildAudioPathNode(icon: Icons.settings_input_composite_rounded, title: 'USB Direct Access', subtitle: '${song.bitDepth}-bit • $kHz kHz • Hardware DAC volume', showConnectorDown: true),
-    _buildAudioPathNode(icon: Icons.speaker_rounded, title: _connectedDacName, subtitle: 'Exclusive USB Audio Endpoint', showConnectorDown: false),
-  ]),
-),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -3395,6 +3519,18 @@ _buildCoverArt(song, 46, 8),
           autoFetchOnlineMetadata: _autoFetchOnlineMetadata,
           splitMultiArtists: _splitMultiArtists,
           artistSeparators: _artistSeparators,
+          scanFolders: _scanFolders,
+          ignoreShortClips: _ignoreShortClips,
+          onScanFoldersChanged: (list) {
+            setState(() => _scanFolders = list);
+            _saveStateCache();
+            _fastScanDeviceMusic(forceReparse: false);
+          },
+          onIgnoreShortClipsChanged: (v) {
+            setState(() => _ignoreShortClips = v);
+            _saveStateCache();
+            _fastScanDeviceMusic(forceReparse: false);
+          },
           forceMiniColor: _forceMiniColor,
           replayGain: _replayGain,
           connectedDacName: _connectedDacName,
@@ -3648,10 +3784,14 @@ _buildCoverArt(song, 46, 8),
 
     try {
       List<Directory> searchDirs = [];
-      final rootMusic = Directory('/storage/emulated/0/Music');
-      if (await rootMusic.exists()) searchDirs.add(rootMusic);
-      final downloadDir = Directory('/storage/emulated/0/Download');
-      if (await downloadDir.exists()) searchDirs.add(downloadDir);
+      for (final folderPath in _scanFolders) {
+        final d = Directory(folderPath);
+        if (await d.exists()) searchDirs.add(d);
+      }
+      if (searchDirs.isEmpty) {
+        final fallback = Directory('/storage/emulated/0/Music');
+        if (await fallback.exists()) searchDirs.add(fallback);
+      }
 
       final Set<String> seenPaths = {};
 
@@ -3712,6 +3852,9 @@ _buildCoverArt(song, 46, 8),
       debugPrint('Error scanning music: $e');
     }
 
+    if (_ignoreShortClips) {
+      foundTracks.removeWhere((t) => t.duration.inSeconds > 0 && t.duration.inSeconds < 30);
+    }
     foundTracks.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
     setState(() {
@@ -3742,6 +3885,13 @@ _buildCoverArt(song, 46, 8),
             _artworkTick.value++;
             setState(() {});
           }
+        }
+      }
+      if (_ignoreShortClips) {
+        final beforeLen = _songs.length;
+        _songs.removeWhere((t) => t.duration.inSeconds > 0 && t.duration.inSeconds < 30);
+        if (_songs.length != beforeLen) {
+          _filteredSongs = List.from(_songs);
         }
       }
       if (mounted) {
@@ -4430,6 +4580,146 @@ _buildCoverArt(song, 46, 8),
     } catch (_) {}
   }
 
+  Future<void> _showEditProfileSheet() async {
+    final nameCtrl = TextEditingController(text: _userName);
+    String? tempPhoto = _userPhotoPath;
+    final foundPhotos = <File>[];
+    for (final dirPath in [
+      '/storage/emulated/0/Pictures',
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/DCIM/Camera',
+    ]) {
+      try {
+        final d = Directory(dirPath);
+        if (await d.exists()) {
+          for (final ent in d.listSync(followLinks: false)) {
+            if (ent is File) {
+              final l = ent.path.toLowerCase();
+              if (l.endsWith('.jpg') || l.endsWith('.jpeg') || l.endsWith('.png') || l.endsWith('.webp')) {
+                foundPhotos.add(ent);
+                if (foundPhotos.length >= 24) break;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      if (foundPhotos.length >= 24) break;
+    }
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF14141F),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setProfState) {
+          final accent = Theme.of(ctx).colorScheme.primary;
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 14, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const Text('Edit Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    (tempPhoto != null && File(tempPhoto!).existsSync())
+                        ? CircleAvatar(radius: 30, backgroundImage: FileImage(File(tempPhoto!)))
+                        : CircleAvatar(
+                            radius: 30,
+                            backgroundColor: accent.withOpacity(0.18),
+                            child: Icon(Icons.headphones_rounded, color: accent, size: 28),
+                          ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: TextField(
+                        controller: nameCtrl,
+                        decoration: InputDecoration(
+                          labelText: 'Display Name',
+                          filled: true,
+                          fillColor: const Color(0xFF0E0E15),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (foundPhotos.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Choose Avatar From Device', style: TextStyle(fontSize: 12, color: Colors.white60)),
+                      if (tempPhoto != null)
+                        TextButton(
+                          onPressed: () => setProfState(() => tempPhoto = null),
+                          child: const Text('Reset Icon', style: TextStyle(fontSize: 11.5)),
+                        ),
+                    ],
+                  ),
+                  SizedBox(
+                    height: 64,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: foundPhotos.length,
+                      itemBuilder: (_, idx) {
+                        final f = foundPhotos[idx];
+                        final selected = tempPhoto == f.path;
+                        return GestureDetector(
+                          onTap: () => setProfState(() => tempPhoto = f.path),
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 10),
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: selected ? accent : Colors.transparent, width: 2),
+                            ),
+                            child: CircleAvatar(
+                              radius: 26,
+                              backgroundImage: FileImage(f),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        if (nameCtrl.text.trim().isNotEmpty) {
+                          _userName = nameCtrl.text.trim();
+                        }
+                        _userPhotoPath = tempPhoto;
+                      });
+                      _saveStateCache();
+                      Navigator.pop(ctx);
+                    },
+                    child: const Text('Save Profile', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildNamiHomeScreen(List<String> uniqueArtists) {
     final accent = Theme.of(context).colorScheme.primary;
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
@@ -4440,42 +4730,68 @@ _buildCoverArt(song, 46, 8),
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 110),
       children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF14141E),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: accent.withOpacity(0.18),
-                child: Icon(Icons.headphones_rounded, color: accent, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: _showEditProfileSheet,
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF14141E),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                Stack(
                   children: [
-                    Text('Welcome, $_userName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text(
-                      'DAC: $_connectedDacName • ${_songs.length} Tracks • ${_totalListenSeconds ~/ 60}m listened',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                    (_userPhotoPath != null && File(_userPhotoPath!).existsSync())
+                        ? CircleAvatar(
+                            radius: 25,
+                            backgroundImage: FileImage(File(_userPhotoPath!)),
+                          )
+                        : CircleAvatar(
+                            radius: 25,
+                            backgroundColor: accent.withOpacity(0.18),
+                            child: Icon(Icons.headphones_rounded, color: accent, size: 24),
+                          ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: accent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFF14141E), width: 1.5),
+                        ),
+                        child: const Icon(Icons.edit_rounded, size: 10, color: Colors.white),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              IconButton(
-                tooltip: 'Listening Statistics',
-                icon: Icon(Icons.bar_chart_rounded, color: accent),
-                onPressed: _openStatisticsScreen,
-              ),
-            ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Welcome, $_userName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'DAC: $_connectedDacName • ${_songs.length} Tracks • ${_totalListenSeconds ~/ 60}m listened',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Listening Statistics',
+                  icon: Icon(Icons.bar_chart_rounded, color: accent),
+                  onPressed: _openStatisticsScreen,
+                ),
+              ],
+            ),
           ),
         ),
         if (_historyTracks.isNotEmpty) ...[
@@ -6052,19 +6368,327 @@ void _showCreatePlaylistDialog() {
     );
   }
 
+  Future<void> _exportPlaylistM3u8(CustomPlaylist playlist) async {
+    try {
+      final safeName = playlist.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+      final outDir = Directory('/storage/emulated/0/Music');
+      if (!await outDir.exists()) await outDir.create(recursive: true);
+      final outFile = File('${outDir.path}/$safeName.m3u8');
+      final buf = StringBuffer('#EXTM3U\n');
+      for (final t in playlist.tracks) {
+        buf.writeln('#EXTINF:${t.duration.inSeconds},${cleanArtistStr(t.artist)} - ${t.title}');
+        buf.writeln(t.path);
+      }
+      await outFile.writeAsString(buf.toString(), encoding: utf8);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Exported ${outFile.path}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _importPlaylistsM3u8() async {
+    final byPath = {for (final s in _songs) s.path: s};
+    final byFileName = {for (final s in _songs) s.path.split('/').last.toLowerCase(): s};
+    int importedCount = 0;
+
+    for (final dirPath in ['/storage/emulated/0/Music', '/storage/emulated/0/Download']) {
+      try {
+        final dir = Directory(dirPath);
+        if (!await dir.exists()) continue;
+        for (final ent in dir.listSync(recursive: true, followLinks: false)) {
+          if (ent is File) {
+            final lower = ent.path.toLowerCase();
+            if (lower.endsWith('.m3u8') || lower.endsWith('.m3u')) {
+              final lines = await ent.readAsLines();
+              final matched = <AudioTrack>[];
+              for (final rawLine in lines) {
+                final line = rawLine.trim();
+                if (line.isEmpty || line.startsWith('#')) continue;
+                final direct = byPath[line];
+                if (direct != null) {
+                  if (!matched.contains(direct)) matched.add(direct);
+                } else {
+                  final fname = line.split(RegExp(r'[/\\]')).last.toLowerCase();
+                  final byName = byFileName[fname];
+                  if (byName != null && !matched.contains(byName)) {
+                    matched.add(byName);
+                  }
+                }
+              }
+              final rawName = ent.uri.pathSegments.last;
+              final plName = rawName.substring(0, rawName.lastIndexOf('.'));
+              final existingIdx = _customPlaylists.indexWhere((p) => p.name.toLowerCase() == plName.toLowerCase());
+              if (existingIdx != -1) {
+                for (final t in matched) {
+                  if (!_customPlaylists[existingIdx].tracks.contains(t)) {
+                    _customPlaylists[existingIdx].tracks.add(t);
+                  }
+                }
+              } else {
+                _customPlaylists.add(CustomPlaylist(name: plName, tracks: matched));
+              }
+              importedCount++;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (importedCount > 0) {
+      setState(() {});
+      _saveStateCache();
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(importedCount > 0
+              ? 'Imported $importedCount .m3u8 playlist(s)!'
+              : 'No .m3u8 files found in /Music or /Download'),
+        ),
+      );
+    }
+  }
+
+  void _showRenamePlaylistDialog(CustomPlaylist playlist) {
+    final ctrl = TextEditingController(text: playlist.name);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF14141F),
+        title: const Text('Rename Playlist'),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.primary),
+            onPressed: () {
+              if (ctrl.text.trim().isNotEmpty) {
+                setState(() => playlist.name = ctrl.text.trim());
+                _saveStateCache();
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openPlaylistEditorScreen(CustomPlaylist playlist) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StatefulBuilder(
+          builder: (context, setEdState) {
+            final accent = Theme.of(context).colorScheme.primary;
+            final totalSec = playlist.tracks.fold<int>(0, (sum, t) => sum + t.duration.inSeconds);
+            final durText = _formatTotalDurationHoursMins(Duration(seconds: totalSec));
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: Colors.transparent,
+                title: Text(playlist.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                actions: [
+                  IconButton(
+                    tooltip: 'Add Tracks',
+                    icon: const Icon(Icons.playlist_add_rounded),
+                    onPressed: () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: const Color(0xFF12121A),
+                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                        builder: (bCtx) => StatefulBuilder(
+                          builder: (bCtx, setPickState) => SizedBox(
+                            height: MediaQuery.of(bCtx).size.height * 0.75,
+                            child: Column(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Add Songs to Playlist', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                                      TextButton(onPressed: () => Navigator.pop(bCtx), child: const Text('Done')),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  child: ListView.builder(
+                                    itemCount: _songs.length,
+                                    itemBuilder: (_, i) {
+                                      final s = _songs[i];
+                                      final inPl = playlist.tracks.contains(s);
+                                      return ListTile(
+                                        leading: _buildCoverArt(s, 42, 8),
+                                        title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                        subtitle: Text(cleanArtistStr(s.artist), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                        trailing: Icon(
+                                          inPl ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded,
+                                          color: inPl ? accent : Colors.white54,
+                                        ),
+                                        onTap: () {
+                                          setPickState(() {
+                                            if (inPl) {
+                                              playlist.tracks.remove(s);
+                                            } else {
+                                              playlist.tracks.add(s);
+                                            }
+                                          });
+                                          setEdState(() {});
+                                          setState(() {});
+                                          _saveStateCache();
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  IconButton(
+                    tooltip: 'Export .m3u8',
+                    icon: const Icon(Icons.ios_share_rounded),
+                    onPressed: () => _exportPlaylistM3u8(playlist),
+                  ),
+                  IconButton(
+                    tooltip: 'Rename Playlist',
+                    icon: const Icon(Icons.edit_rounded),
+                    onPressed: () => _showRenamePlaylistDialog(playlist),
+                  ),
+                ],
+              ),
+              body: Stack(
+                children: [
+                  Column(
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF14141E),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('${playlist.tracks.length} Tracks • $durText', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                                  const SizedBox(height: 2),
+                                  const Text('Drag handle to reorder • Tap remove icon to delete', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                                ],
+                              ),
+                            ),
+                            if (playlist.tracks.isNotEmpty) ...[
+                              IconButton.filled(
+                                style: IconButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.white),
+                                icon: const Icon(Icons.play_arrow_rounded),
+                                onPressed: () => _playSong(playlist.tracks.first),
+                              ),
+                              const SizedBox(width: 6),
+                              IconButton.outlined(
+                                style: IconButton.styleFrom(side: const BorderSide(color: Colors.white24)),
+                                icon: const Icon(Icons.shuffle_rounded, size: 20),
+                                onPressed: () {
+                                  final sh = List<AudioTrack>.from(playlist.tracks)..shuffle();
+                                  _playSong(sh.first);
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: playlist.tracks.isEmpty
+                            ? const Center(child: Text('Playlist is empty. Tap + above to add tracks.', style: TextStyle(color: Colors.white54)))
+                            : ReorderableListView.builder(
+                                padding: const EdgeInsets.fromLTRB(10, 4, 10, 120),
+                                itemCount: playlist.tracks.length,
+                                onReorder: (oldIndex, newIndex) {
+                                  setEdState(() {
+                                    if (newIndex > oldIndex) newIndex -= 1;
+                                    final item = playlist.tracks.removeAt(oldIndex);
+                                    playlist.tracks.insert(newIndex, item);
+                                  });
+                                  setState(() {});
+                                  _saveStateCache();
+                                },
+                                itemBuilder: (ctx, idx) {
+                                  final s = playlist.tracks[idx];
+                                  return Container(
+                                    key: ValueKey('pl_${playlist.name}_${s.path}_$idx'),
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0E0E15),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.white10),
+                                    ),
+                                    child: ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                                      leading: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          ReorderableDragStartListener(
+                                            index: idx,
+                                            child: const Padding(
+                                              padding: EdgeInsets.only(right: 8),
+                                              child: Icon(Icons.drag_indicator_rounded, color: Colors.white38, size: 20),
+                                            ),
+                                          ),
+                                          _buildCoverArt(s, 44, 8),
+                                        ],
+                                      ),
+                                      title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                                      subtitle: Text(cleanArtistStr(s.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                                      trailing: IconButton(
+                                        icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.redAccent, size: 20),
+                                        onPressed: () {
+                                          setEdState(() => playlist.tracks.removeAt(idx));
+                                          setState(() {});
+                                          _saveStateCache();
+                                        },
+                                      ),
+                                      onTap: () => _playSong(s),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                  Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildNamiPlaylistsPage() {
     final accent = Theme.of(context).colorScheme.primary;
     final favSongs = _songs.where((s) => s.isFavorite).toList();
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
-    final recentlyAdded = List<AudioTrack>.from(_songs)..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 110),
       children: [
         Row(
           children: [
-            
-
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
@@ -6072,8 +6696,13 @@ void _showCreatePlaylistDialog() {
             ),
             const Spacer(),
             TextButton.icon(
+              icon: const Icon(Icons.file_open_rounded, size: 17),
+              label: const Text('Import .m3u8', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              onPressed: _importPlaylistsM3u8,
+            ),
+            TextButton.icon(
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('New Playlist', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+              label: const Text('New', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
               onPressed: _showCreatePlaylistDialog,
             ),
           ],
@@ -6122,8 +6751,6 @@ void _showCreatePlaylistDialog() {
               color: Colors.orangeAccent,
               onTap: () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList()),
             ),
-
-
           ],
         ),
         const SizedBox(height: 20),
@@ -6147,10 +6774,29 @@ void _showCreatePlaylistDialog() {
               subtitle: '${p.tracks.length} Tracks',
               icon: Icons.queue_music_rounded,
               coverTrack: p.tracks.isNotEmpty ? p.tracks.first : null,
-              onTap: () => _showFilteredListScreen(p.name, p.tracks),
+              onTap: () => _openPlaylistEditorScreen(p),
               onPlay: () {
                 if (p.tracks.isNotEmpty) _playSong(p.tracks.first);
               },
+              trailingExtra: PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 20),
+                color: const Color(0xFF14141E),
+                onSelected: (val) {
+                  if (val == 'edit') _openPlaylistEditorScreen(p);
+                  if (val == 'rename') _showRenamePlaylistDialog(p);
+                  if (val == 'export') _exportPlaylistM3u8(p);
+                  if (val == 'delete') {
+                    setState(() => _customPlaylists.remove(p));
+                    _saveStateCache();
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit & Reorder Tracks')),
+                  PopupMenuItem(value: 'rename', child: Text('Rename Playlist')),
+                  PopupMenuItem(value: 'export', child: Text('Export as .m3u8')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete Playlist', style: TextStyle(color: Colors.redAccent))),
+                ],
+              ),
             )),
       ],
     );
@@ -6163,6 +6809,7 @@ void _showCreatePlaylistDialog() {
     AudioTrack? coverTrack,
     required VoidCallback onTap,
     required VoidCallback onPlay,
+    Widget? trailingExtra,
   }) {
     final accent = Theme.of(context).colorScheme.primary;
     return Container(
@@ -6184,9 +6831,15 @@ void _showCreatePlaylistDialog() {
               ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
-        trailing: IconButton(
-          icon: const Icon(Icons.play_circle_fill_rounded, size: 30, color: Colors.white70),
-          onPressed: onPlay,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.play_circle_fill_rounded, size: 30, color: Colors.white70),
+              onPressed: onPlay,
+            ),
+            if (trailingExtra != null) trailingExtra,
+          ],
         ),
         onTap: onTap,
       ),
@@ -6438,6 +7091,10 @@ class MainSettingsScreen extends StatefulWidget {
   final bool autoFetchOnlineMetadata;
   final bool splitMultiArtists;
   final List<String> artistSeparators;
+  final List<String> scanFolders;
+  final bool ignoreShortClips;
+  final ValueChanged<List<String>> onScanFoldersChanged;
+  final ValueChanged<bool> onIgnoreShortClipsChanged;
   final bool forceMiniColor;
   final bool replayGain;
   final String connectedDacName;
@@ -6473,6 +7130,10 @@ class MainSettingsScreen extends StatefulWidget {
     required this.autoFetchOnlineMetadata,
     required this.splitMultiArtists,
     required this.artistSeparators,
+    required this.scanFolders,
+    required this.ignoreShortClips,
+    required this.onScanFoldersChanged,
+    required this.onIgnoreShortClipsChanged,
     required this.forceMiniColor,
     required this.replayGain,
     required this.connectedDacName,
@@ -6512,6 +7173,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   late bool _autoFetchOnline;
   late bool _splitArtists;
   late List<String> _separators;
+  late List<String> _folders;
+  late bool _ignoreShort;
   late bool _forceMini;
   late bool _replayGain;
   double _hueValue = 0.0;
@@ -6542,6 +7205,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
     _autoFetchOnline = widget.autoFetchOnlineMetadata;
     _splitArtists = widget.splitMultiArtists;
     _separators = List<String>.from(widget.artistSeparators);
+    _folders = List<String>.from(widget.scanFolders);
+    _ignoreShort = widget.ignoreShortClips;
     _forceMini = widget.forceMiniColor;
     _replayGain = widget.replayGain;
   }
@@ -6921,8 +7586,102 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               },
             ),
           ]),
-          _buildSectionHeader('Storage & Backup', Icons.storage_rounded),
+          _buildSectionHeader('Storage & Scan Folders', Icons.storage_rounded),
           _buildSettingsCard([
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.timer_off_outlined, themeColor),
+              title: const Text('Ignore Short Audio Clips (< 30s)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Filter out ringtones, voice notes & notification sounds', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _ignoreShort,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _ignoreShort = v);
+                widget.onIgnoreShortClipsChanged(v);
+              },
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Library Scan Folders', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        icon: Icon(Icons.create_new_folder_outlined, size: 17, color: themeColor),
+                        label: const Text('Add Folder', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          final ctrl = TextEditingController(text: '/storage/emulated/0/');
+                          showDialog(
+                            context: context,
+                            builder: (dCtx) => AlertDialog(
+                              backgroundColor: const Color(0xFF14141F),
+                              title: const Text('Add Music Folder Path'),
+                              content: TextField(
+                                controller: ctrl,
+                                autofocus: true,
+                                decoration: const InputDecoration(hintText: '/storage/emulated/0/Music'),
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: themeColor),
+                                  onPressed: () {
+                                    final p = ctrl.text.trim();
+                                    if (p.isNotEmpty && !_folders.contains(p)) {
+                                      setState(() => _folders.add(p));
+                                      widget.onScanFoldersChanged(_folders);
+                                    }
+                                    Navigator.pop(dCtx);
+                                  },
+                                  child: const Text('Add'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ..._folders.map((folder) => Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF161622),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.folder_rounded, size: 16, color: themeColor),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                folder.replaceFirst('/storage/emulated/0', '~'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              ),
+                            ),
+                            if (_folders.length > 1)
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() => _folders.remove(folder));
+                                  widget.onScanFoldersChanged(_folders);
+                                },
+                                child: const Icon(Icons.close_rounded, size: 16, color: Colors.white54),
+                              ),
+                          ],
+                        ),
+                      )),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white10, height: 1),
             ListTile(
               leading: _settingsBadge(Icons.folder_open_rounded, themeColor),
               title: const Text('Storage Folder Explorer', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
@@ -7772,7 +8531,7 @@ Widget _buildFormatPill(AudioTrack song, Color accent) {
   final dotIdx = song.path.lastIndexOf('.');
   final ext = (dotIdx != -1 ? song.path.substring(dotIdx + 1) : 'AUDIO').toUpperCase();
   final isLossless = ext == 'FLAC' || ext == 'WAV' || ext == 'ALAC' || ext == 'AIFF';
-  final label = isLossless ? '$ext • ${song.bitDepth}b' : ext;
+  final label = isLossless ? '$ext • ${song.bitDepth}-Bit' : ext;
   final pillColor = isLossless ? accent : Colors.white54;
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),

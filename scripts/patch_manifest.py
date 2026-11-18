@@ -63,3 +63,102 @@ for kt in kt_files:
     with open(kt, "w", encoding="utf-8") as f:
         f.write(new_kt)
     print(f"✅ Patched {kt} to extend AudioServiceActivity")
+
+
+# --- Nami Custom Adaptive Launcher Icon Generator ---
+import os as _os
+import zlib as _zlib
+import struct as _struct
+
+def _write_png(path, w, h, pixels_rgba):
+    def _chunk(tag, data):
+        return _struct.pack(">I", len(data)) + tag + data + _struct.pack(">I", _zlib.crc32(tag + data) & 0xffffffff)
+    raw = bytearray()
+    for y in range(h):
+        raw.append(0)
+        row_start = y * w * 4
+        raw.extend(pixels_rgba[row_start:row_start + w * 4])
+    ihdr = _struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+    png = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", ihdr) + _chunk(b"IDAT", _zlib.compress(bytes(raw), 9)) + _chunk(b"IEND", b"")
+    _os.makedirs(_os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as _f:
+        _f.write(png)
+
+def _render_nami_icon_rgba(size):
+    buf = bytearray(size * size * 4)
+    cx = cy = (size - 1) / 2.0
+    rad = size * 0.44
+    bars = [(-0.22, 0.22), (-0.11, 0.36), (0.00, 0.46), (0.11, 0.32), (0.22, 0.20)]
+    bar_half_w = max(1.5, size * 0.032)
+    for y in range(size):
+        for x in range(size):
+            dx = abs(x - cx) / rad
+            dy = abs(y - cy) / rad
+            dist = (dx ** 4 + dy ** 4) ** 0.25
+            idx = (y * size + x) * 4
+            if dist <= 1.0:
+                t = ((x / size) + (y / size)) * 0.5
+                r = int(229 + (255 - 229) * t)
+                g = int(57 + (112 - 57) * t)
+                b = int(53 + (67 - 53) * t)
+                ny = abs(y - cy) / size
+                for bx, bh in bars:
+                    if abs(x - (cx + bx * size)) <= bar_half_w and ny <= bh * 0.5:
+                        r, g, b = 255, 255, 255
+                        break
+                buf[idx:idx+4] = bytes((r, g, b, 255))
+            else:
+                buf[idx:idx+4] = b"\x00\x00\x00\x00"
+    return buf
+
+_res_dir = "android/app/src/main/res"
+if _os.path.isdir(_res_dir):
+    _os.makedirs(f"{_res_dir}/values", exist_ok=True)
+    with open(f"{_res_dir}/values/ic_launcher_background.xml", "w", encoding="utf-8") as _f:
+        _f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#09090F</color>\n</resources>\n')
+
+    _os.makedirs(f"{_res_dir}/drawable", exist_ok=True)
+    _fg_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+        '    xmlns:aapt="http://schemas.android.com/aapt"\n'
+        '    android:width="108dp"\n'
+        '    android:height="108dp"\n'
+        '    android:viewportWidth="108"\n'
+        '    android:viewportHeight="108">\n'
+        '    <path android:pathData="M36,24 L72,24 Q84,24 84,36 L84,72 Q84,84 72,84 L36,84 Q24,84 24,72 L24,36 Q24,24 36,24 Z">\n'
+        '        <aapt:attr name="android:fillColor">\n'
+        '            <gradient android:startX="24" android:startY="24" android:endX="84" android:endY="84" android:type="linear">\n'
+        '                <item android:offset="0" android:color="#FFE53935"/>\n'
+        '                <item android:offset="1" android:color="#FFFF7043"/>\n'
+        '            </gradient>\n'
+        '        </aapt:attr>\n'
+        '    </path>\n'
+        '    <path android:fillColor="#FFFFFFFF" android:pathData="M37,47 h4 a2,2 0 0 1 2,2 v10 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-10 a2,2 0 0 1 2,-2 z"/>\n'
+        '    <path android:fillColor="#FFFFFFFF" android:pathData="M44.5,41 h4 a2,2 0 0 1 2,2 v22 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-22 a2,2 0 0 1 2,-2 z"/>\n'
+        '    <path android:fillColor="#FFFFFFFF" android:pathData="M52,36 h4 a2,2 0 0 1 2,2 v32 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-32 a2,2 0 0 1 2,-2 z"/>\n'
+        '    <path android:fillColor="#FFFFFFFF" android:pathData="M59.5,42 h4 a2,2 0 0 1 2,2 v20 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-20 a2,2 0 0 1 2,-2 z"/>\n'
+        '    <path android:fillColor="#FFFFFFFF" android:pathData="M67,48 h4 a2,2 0 0 1 2,2 v8 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 v-8 a2,2 0 0 1 2,-2 z"/>\n'
+        '</vector>\n'
+    )
+    with open(f"{_res_dir}/drawable/ic_launcher_foreground.xml", "w", encoding="utf-8") as _f:
+        _f.write(_fg_xml)
+
+    _os.makedirs(f"{_res_dir}/mipmap-anydpi-v26", exist_ok=True)
+    _adaptive_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '    <background android:drawable="@color/ic_launcher_background"/>\n'
+        '    <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n'
+        '</adaptive-icon>\n'
+    )
+    with open(f"{_res_dir}/mipmap-anydpi-v26/ic_launcher.xml", "w", encoding="utf-8") as _f:
+        _f.write(_adaptive_xml)
+    with open(f"{_res_dir}/mipmap-anydpi-v26/ic_launcher_round.xml", "w", encoding="utf-8") as _f:
+        _f.write(_adaptive_xml)
+
+    for _dpi, _px in [("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)]:
+        _rgba = _render_nami_icon_rgba(_px)
+        _write_png(f"{_res_dir}/mipmap-{_dpi}/ic_launcher.png", _px, _px, _rgba)
+        _write_png(f"{_res_dir}/mipmap-{_dpi}/ic_launcher_round.png", _px, _px, _rgba)
+    print("Patched custom Nami adaptive launcher icon & mipmap PNGs!")
