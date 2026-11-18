@@ -4313,7 +4313,8 @@ _buildCoverArt(song, 46, 8),
           song.rawLyrics = (synced != null && synced.isNotEmpty) ? synced : plain!;
           song.parsedLyrics = _parseLrc(song.rawLyrics);
           song.isLyricsFetched = true;
-          if (mounted) setState(() {});
+          if (mounted) setState(() {}  ),
+);
           return;
         }
       }
