@@ -6434,16 +6434,16 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         final bitrate = song?.bitrateKbps ?? 1645;
         final kHz = ((song?.sampleRateHz ?? 48000) / 1000.0).toStringAsFixed(1);
         final screenWidth = MediaQuery.of(context).size.width;
-        final artSize = screenWidth * 0.89;
+        final artSize = screenWidth - 28;
         final glowColor = _extractDominantColor(song?.albumArt, accent);
         final dynamicIdx = (song != null && widget.allSongs.contains(song)) ? (widget.allSongs.indexOf(song) + 1) : 1;
         final totalCount = widget.allSongs.length;
 
         Widget artWidget;
         if (song?.albumArt != null && song!.albumArt!.isNotEmpty) {
-          artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover);
+          artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
         } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
-          artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover);
+          artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover, width: double.infinity, height: double.infinity);
         } else {
           artWidget = Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24));
         }
@@ -6453,7 +6453,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           body: Container(
             width: double.infinity,
             height: double.infinity,
-            padding: const EdgeInsets.fromLTRB(18, 6, 18, 12),
+            padding: const EdgeInsets.fromLTRB(14, 6, 14, 12),
             decoration: BoxDecoration(
               color: const Color(0xFF07070B),
               gradient: widget.ambientGlow
@@ -6498,7 +6498,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     ],
                   ),
 
-                  const Spacer(flex: 2),
+                  const Spacer(flex: 3),
 
                   Center(
                     child: _viewMode == 0
@@ -6518,10 +6518,13 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   ),
                                 ],
                               ),
-                              child: Padding(padding: const EdgeInsets.only(top: 16.0, left: 8.0, right: 8.0, bottom: 32.0), child: Hero(tag: 'nami_np_art_${song?.path ?? ""}', child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: artWidget,
-                              ))),
+                              child: Hero(
+                                tag: 'nami_np_art_${song?.path ?? ""}',
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: SizedBox.expand(child: artWidget),
+                                ),
+                              ),
                             ),
                           )
                         : SizedBox(
