@@ -8,7 +8,6 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 
 import 'package:permission_handler/permission_handler.dart';
@@ -753,7 +752,7 @@ class NamiHomeShell extends StatefulWidget {
 }
 
 class _NamiHomeShellState extends State<NamiHomeShell> {
-  int _selectedIndex = 1;
+  int _selectedIndex = 0;
 
       late final Player _audioPlayer;
 
@@ -819,6 +818,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   bool _usePitchBlack = true;
   bool _autoColoring = true;
   bool _ambientGlow = false;
+  bool _blurredBackdrop = true;
+  bool _showCodecBadges = true;
+  bool _compactTrackTiles = false;
+  bool _resumeSessionOnStartup = true;
+  bool _pauseOnDisconnect = true;
+  int _doubleTapSeekSec = 10;
+  int _minTrackSeconds = 30;
+  String _replayGainMode = 'Track'; // 'Off', 'Track', 'Album'
+  int _defaultStartupTab = 0; // 0=Home, 1=Tracks, 2=Artists, 3=Playlists
   bool _preferEmbeddedLyrics = true;
   bool _syllableLyricsEnabled = true;
   bool _autoFetchOnlineMetadata = true;
@@ -944,7 +952,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   ];
 
   final Map<String, List<AudioTrack>> artistGroups = {};
-  final Map<String, List<AudioTrack>> albumGroups = {};
 
   final ValueNotifier<int> _artworkTick = ValueNotifier<int>(0);
   final Map<String, String> _artistImagePaths = {};
@@ -963,12 +970,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     
 
     
-    if (Platform.isAndroid) {
-      try {
-        
-      } catch (_) {}
-    }
-
     _audioPlayer = _globalMediaKitPlayer;
     if (audioHandler is NamiAudioHandler) {
       final h = audioHandler as NamiAudioHandler;
@@ -1056,7 +1057,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     try {
       final dynPlayer = _audioPlayer.platform as dynamic;
       await dynPlayer.setProperty('audio-exclusive', _usbDacExclusive ? 'yes' : 'no');
-      await dynPlayer.setProperty('replaygain', _replayGain ? 'track' : 'no');
+      final rgVal = (!_replayGain || _replayGainMode == 'Off')
+          ? 'no'
+          : (_replayGainMode == 'Album' ? 'album' : 'track');
+      await dynPlayer.setProperty('replaygain', rgVal);
       await dynPlayer.setProperty('gapless-audio', _gaplessPlayback ? 'yes' : 'no');
     } catch (_) {}
   }
@@ -1163,6 +1167,19 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           _shuffleEnabled = data['shuffleEnabled'] ?? false;
           _repeatMode = data['repeatMode'] ?? 1;
           _ignoreShortClips = data['ignoreShortClips'] ?? true;
+          _minTrackSeconds = data['minTrackSeconds'] ?? 30;
+          _blurredBackdrop = data['blurredBackdrop'] ?? true;
+          _showCodecBadges = data['showCodecBadges'] ?? true;
+          _compactTrackTiles = data['compactTrackTiles'] ?? false;
+          _resumeSessionOnStartup = data['resumeSessionOnStartup'] ?? true;
+          _pauseOnDisconnect = data['pauseOnDisconnect'] ?? true;
+          _doubleTapSeekSec = data['doubleTapSeekSec'] ?? 10;
+          _replayGainMode = data['replayGainMode'] ?? 'Track';
+          _replayGain = _replayGainMode != 'Off';
+          _defaultStartupTab = data['defaultStartupTab'] ?? 0;
+          if (_defaultStartupTab >= 0 && _defaultStartupTab <= 4) {
+            _selectedIndex = _defaultStartupTab;
+          }
           if (data['scanFolders'] is List && (data['scanFolders'] as List).isNotEmpty) {
             _scanFolders = List<String>.from(data['scanFolders']);
           }
@@ -1204,7 +1221,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
                 _currentSong = restoredSong;
               }
             });
-            if (restoredSong != null && File(restoredSong.path).existsSync()) {
+            if (_resumeSessionOnStartup && restoredSong != null && File(restoredSong.path).existsSync()) {
               await _audioPlayer.open(Media(restoredSong.path), play: false);
               if (lastPosMs > 0) {
                 await Future.delayed(const Duration(milliseconds: 180));
@@ -1233,6 +1250,15 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'shuffleEnabled': _shuffleEnabled,
         'repeatMode': _repeatMode,
         'ignoreShortClips': _ignoreShortClips,
+        'minTrackSeconds': _minTrackSeconds,
+        'blurredBackdrop': _blurredBackdrop,
+        'showCodecBadges': _showCodecBadges,
+        'compactTrackTiles': _compactTrackTiles,
+        'resumeSessionOnStartup': _resumeSessionOnStartup,
+        'pauseOnDisconnect': _pauseOnDisconnect,
+        'doubleTapSeekSec': _doubleTapSeekSec,
+        'replayGainMode': _replayGainMode,
+        'defaultStartupTab': _defaultStartupTab,
         'scanFolders': _scanFolders,
         'customPlaylists': _customPlaylists.map((p) => p.toJson()).toList(),
         'lastSongPath': _currentSong?.path,
@@ -1326,19 +1352,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         });
       } catch (_) {}
     } catch (_) {}
-  }
-
-  void _checkConnectedAudioHardware(Set<AudioDevice> devices,
-      {bool isInitial = false}) {
-    for (var d in devices) {
-      if (d.name.isNotEmpty) {
-        if (d.name != _lastKnownDac) {
-          _lastKnownDac = d.name;
-          _connectedDacName = d.name;
-          if (mounted) setState(() {});
-        }
-      }
-    }
   }
 
   void _filterSongs(String query) {
@@ -3514,6 +3527,15 @@ _buildCoverArt(song, 46, 8),
           usePitchBlack: _usePitchBlack,
           autoColoring: _autoColoring,
           ambientGlow: _ambientGlow,
+          blurredBackdrop: _blurredBackdrop,
+          showCodecBadges: _showCodecBadges,
+          compactTrackTiles: _compactTrackTiles,
+          resumeSessionOnStartup: _resumeSessionOnStartup,
+          pauseOnDisconnect: _pauseOnDisconnect,
+          doubleTapSeekSec: _doubleTapSeekSec,
+          minTrackSeconds: _minTrackSeconds,
+          replayGainMode: _replayGainMode,
+          defaultStartupTab: _defaultStartupTab,
           syllableLyricsEnabled: _syllableLyricsEnabled,
           preferEmbeddedLyrics: _preferEmbeddedLyrics,
           autoFetchOnlineMetadata: _autoFetchOnlineMetadata,
@@ -3521,6 +3543,15 @@ _buildCoverArt(song, 46, 8),
           artistSeparators: _artistSeparators,
           scanFolders: _scanFolders,
           ignoreShortClips: _ignoreShortClips,
+          forceMiniColor: _forceMiniColor,
+          connectedDacName: _connectedDacName,
+          thumbCacheSizeFuture: _getThumbCacheSizeLabel(),
+          onClearThumbCache: _clearArtworkCache,
+          onOpenEqualizer: _showEqualizerSheet,
+          onOpenExtensionRepo: _openExtensionRepoScreen,
+          onOpenFolderExplorer: _showFolderExplorerModal,
+          onExportBackup: _exportBackup,
+          onImportBackup: _importBackup,
           onScanFoldersChanged: (list) {
             setState(() => _scanFolders = list);
             _saveStateCache();
@@ -3531,15 +3562,19 @@ _buildCoverArt(song, 46, 8),
             _saveStateCache();
             _fastScanDeviceMusic(forceReparse: false);
           },
-          forceMiniColor: _forceMiniColor,
-          replayGain: _replayGain,
-          connectedDacName: _connectedDacName,
-          onOpenExtensionRepo: _openExtensionRepoScreen,
-          onOpenFolderExplorer: _showFolderExplorerModal,
-          onExportBackup: _exportBackup,
-          onImportBackup: _importBackup,
-          onUsbDacChanged: (v) { setState(() => _usbDacExclusive = v); _applyDacAndAudioProperties(); },
-          onGaplessChanged: (v) => setState(() => _gaplessPlayback = v),
+          onMinTrackSecondsChanged: (sec) {
+            setState(() => _minTrackSeconds = sec);
+            _saveStateCache();
+            _fastScanDeviceMusic(forceReparse: false);
+          },
+          onUsbDacChanged: (v) {
+            setState(() => _usbDacExclusive = v);
+            _applyDacAndAudioProperties();
+          },
+          onGaplessChanged: (v) {
+            setState(() => _gaplessPlayback = v);
+            _applyDacAndAudioProperties();
+          },
           onNotificationChanged: (v) => setState(() => _mediaNotificationEnabled = v),
           onPitchBlackChanged: (v) {
             setState(() => _usePitchBlack = v);
@@ -3547,6 +3582,42 @@ _buildCoverArt(song, 46, 8),
           },
           onAutoColoringChanged: (v) => setState(() => _autoColoring = v),
           onAmbientGlowChanged: (v) => setState(() => _ambientGlow = v),
+          onBlurredBackdropChanged: (v) {
+            setState(() => _blurredBackdrop = v);
+            _saveStateCache();
+          },
+          onShowCodecBadgesChanged: (v) {
+            setState(() => _showCodecBadges = v);
+            _saveStateCache();
+          },
+          onCompactTrackTilesChanged: (v) {
+            setState(() => _compactTrackTiles = v);
+            _saveStateCache();
+          },
+          onResumeSessionChanged: (v) {
+            setState(() => _resumeSessionOnStartup = v);
+            _saveStateCache();
+          },
+          onPauseOnDisconnectChanged: (v) {
+            setState(() => _pauseOnDisconnect = v);
+            _saveStateCache();
+          },
+          onDoubleTapSeekChanged: (sec) {
+            setState(() => _doubleTapSeekSec = sec);
+            _saveStateCache();
+          },
+          onReplayGainModeChanged: (mode) {
+            setState(() {
+              _replayGainMode = mode;
+              _replayGain = mode != 'Off';
+            });
+            _applyDacAndAudioProperties();
+            _saveStateCache();
+          },
+          onDefaultStartupTabChanged: (tab) {
+            setState(() => _defaultStartupTab = tab);
+            _saveStateCache();
+          },
           onSyllableLyricsChanged: (v) => setState(() => _syllableLyricsEnabled = v),
           onPreferEmbeddedChanged: (v) => setState(() => _preferEmbeddedLyrics = v),
           onAutoFetchOnlineChanged: (v) {
@@ -3563,7 +3634,6 @@ _buildCoverArt(song, 46, 8),
             _saveStateCache();
           },
           onForceMiniColorChanged: (v) => setState(() => _forceMiniColor = v),
-          onReplayGainChanged: (v) { setState(() => _replayGain = v); _applyDacAndAudioProperties(); },
           onRescan: () => _fastScanDeviceMusic(forceReparse: true),
         ),
       ),
@@ -3853,7 +3923,7 @@ _buildCoverArt(song, 46, 8),
     }
 
     if (_ignoreShortClips) {
-      foundTracks.removeWhere((t) => t.duration.inSeconds > 0 && t.duration.inSeconds < 30);
+      foundTracks.removeWhere((t) => t.duration.inSeconds > 0 && t.duration.inSeconds < _minTrackSeconds);
     }
     foundTracks.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
@@ -3889,7 +3959,7 @@ _buildCoverArt(song, 46, 8),
       }
       if (_ignoreShortClips) {
         final beforeLen = _songs.length;
-        _songs.removeWhere((t) => t.duration.inSeconds > 0 && t.duration.inSeconds < 30);
+        _songs.removeWhere((t) => t.duration.inSeconds > 0 && t.duration.inSeconds < _minTrackSeconds);
         if (_songs.length != beforeLen) {
           _filteredSongs = List.from(_songs);
         }
@@ -4720,25 +4790,122 @@ _buildCoverArt(song, 46, 8),
     );
   }
 
+  Future<String> _getThumbCacheSizeLabel() async {
+    try {
+      final dir = await _ensureThumbDir();
+      if (!await dir.exists()) return '0.0 MB';
+      int totalBytes = 0;
+      int fileCount = 0;
+      await for (final ent in dir.list(recursive: true, followLinks: false)) {
+        if (ent is File && !ent.path.endsWith('.json')) {
+          totalBytes += await ent.length();
+          fileCount++;
+        }
+      }
+      final mb = (totalBytes / (1024 * 1024)).toStringAsFixed(1);
+      return '$mb MB ($fileCount cached covers)';
+    } catch (_) {
+      return '0.0 MB';
+    }
+  }
+
+  Future<void> _clearArtworkCache() async {
+    try {
+      final dir = await _ensureThumbDir();
+      if (await dir.exists()) {
+        await for (final ent in dir.list(recursive: true, followLinks: false)) {
+          if (ent is File && !ent.path.endsWith('.json')) {
+            await ent.delete();
+          }
+        }
+      }
+      _artistImagePaths.clear();
+      _artistDiskChecked.clear();
+      for (final s in _songs) {
+        s.thumbPath = null;
+        s.albumArt = null;
+        s.isOnlineEnriched = false;
+      }
+      _artworkTick.value++;
+      if (mounted) setState(() {});
+      await _saveStateCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cleared cached cover art. Tap Rescan to rebuild.')),
+        );
+      }
+    } catch (_) {}
+  }
+
+  String _timeGreeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   Widget _buildNamiHomeScreen(List<String> uniqueArtists) {
     final accent = Theme.of(context).colorScheme.primary;
-    final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
-    final recentlyAdded = List<AudioTrack>.from(_songs)..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
-    final flacCount = _songs.where((s) => s.path.toLowerCase().endsWith('.flac')).length;
-    final hiResCount = _songs.where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000).length;
+    final mostPlayed = List<AudioTrack>.from(_songs)
+      ..sort((a, b) => b.playCount.compareTo(a.playCount));
+    final recentlyAdded = List<AudioTrack>.from(_songs)
+      ..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
+    final hiResTracks = _songs
+        .where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000)
+        .toList();
+    final flacCount =
+        _songs.where((s) => s.path.toLowerCase().endsWith('.flac')).length;
+    final favSongs = _songs.where((s) => s.isFavorite).toList();
+
+    final Map<String, List<AudioTrack>> albMap = {};
+    for (final s in _songs) {
+      final k = s.album.trim().isNotEmpty ? s.album.trim() : 'Unknown Album';
+      albMap.putIfAbsent(k, () => []).add(s);
+    }
+    final topAlbums = albMap.entries.toList()
+      ..sort((a, b) => b.value.length.compareTo(a.value.length));
+
+    String? spotlightArtist;
+    List<AudioTrack> spotlightTracks = [];
+    if (uniqueArtists.isNotEmpty) {
+      final sortedArtists = List<String>.from(uniqueArtists)
+        ..sort((a, b) {
+          final playsB = (artistGroups[b] ?? [])
+              .fold<int>(0, (sum, t) => sum + t.playCount);
+          final playsA = (artistGroups[a] ?? [])
+              .fold<int>(0, (sum, t) => sum + t.playCount);
+          if (playsB != playsA) return playsB.compareTo(playsA);
+          return (artistGroups[b]?.length ?? 0)
+              .compareTo(artistGroups[a]?.length ?? 0);
+        });
+      spotlightArtist = sortedArtists.first;
+      spotlightTracks = artistGroups[spotlightArtist] ?? [];
+    }
+
+    final resumeTrack = _currentSong ??
+        (_historyTracks.isNotEmpty
+            ? _historyTracks.first
+            : (_songs.isNotEmpty ? _songs.first : null));
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 110),
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 115),
       children: [
         InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(22),
           onTap: _showEditProfileSheet,
           child: Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF14141E),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white10),
+              gradient: LinearGradient(
+                colors: [
+                  Color.alphaBlend(accent.withOpacity(0.18), const Color(0xFF13131E)),
+                  const Color(0xFF0E0E16),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: accent.withOpacity(0.28)),
             ),
             child: Row(
               children: [
@@ -4746,23 +4913,23 @@ _buildCoverArt(song, 46, 8),
                   children: [
                     (_userPhotoPath != null && File(_userPhotoPath!).existsSync())
                         ? CircleAvatar(
-                            radius: 25,
+                            radius: 27,
                             backgroundImage: FileImage(File(_userPhotoPath!)),
                           )
                         : CircleAvatar(
-                            radius: 25,
-                            backgroundColor: accent.withOpacity(0.18),
-                            child: Icon(Icons.headphones_rounded, color: accent, size: 24),
+                            radius: 27,
+                            backgroundColor: accent.withOpacity(0.20),
+                            child: Icon(Icons.headphones_rounded, color: accent, size: 26),
                           ),
                     Positioned(
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        padding: const EdgeInsets.all(3),
+                        padding: const EdgeInsets.all(3.5),
                         decoration: BoxDecoration(
                           color: accent,
                           shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFF14141E), width: 1.5),
+                          border: Border.all(color: const Color(0xFF13131E), width: 1.5),
                         ),
                         child: const Icon(Icons.edit_rounded, size: 10, color: Colors.white),
                       ),
@@ -4774,19 +4941,53 @@ _buildCoverArt(song, 46, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Welcome, $_userName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 2),
                       Text(
-                        'DAC: $_connectedDacName • ${_songs.length} Tracks • ${_totalListenSeconds ~/ 60}m listened',
+                        '${_timeGreeting()}, $_userName',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                        style: const TextStyle(fontSize: 18.5, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              color: accent.withOpacity(0.16),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: accent.withOpacity(0.45), width: 0.7),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.usb_rounded, size: 12, color: accent),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _connectedDacName,
+                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: accent),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${_songs.length} tracks • ${_totalListenSeconds ~/ 60}m',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
                 IconButton(
                   tooltip: 'Listening Statistics',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withOpacity(0.06),
+                  ),
                   icon: Icon(Icons.bar_chart_rounded, color: accent),
                   onPressed: _openStatisticsScreen,
                 ),
@@ -4794,27 +4995,276 @@ _buildCoverArt(song, 46, 8),
             ),
           ),
         ),
+
+        const SizedBox(height: 12),
+
+        SizedBox(
+          height: 38,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _buildHomePillChip(Icons.shuffle_rounded, 'Shuffle All', accent, _shufflePlay),
+              _buildHomePillChip(Icons.high_quality_rounded, '24-Bit Hi-Res (${hiResTracks.length})', Colors.cyanAccent, () => _showFilteredListScreen('24-Bit Hi-Res Audio', hiResTracks)),
+              _buildHomePillChip(Icons.favorite_rounded, 'Favorites (${favSongs.length})', Colors.pinkAccent, () => _showFilteredListScreen('Favorites', favSongs)),
+              _buildHomePillChip(Icons.album_rounded, 'Albums (${topAlbums.length})', Colors.amberAccent, _showAlbumsBrowserScreen),
+              _buildHomePillChip(Icons.tune_rounded, 'Equalizer', Colors.tealAccent, _showEqualizerSheet),
+              _buildHomePillChip(Icons.bedtime_rounded, 'Sleep Timer', Colors.deepPurpleAccent, _showSleepTimerDialog),
+            ],
+          ),
+        ),
+
+        if (resumeTrack != null) ...[
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () => _playSong(resumeTrack),
+            child: Container(
+              height: 108,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: const Color(0xFF12121C),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Stack(
+                children: [
+                  if (resumeTrack.albumArt != null && resumeTrack.albumArt!.isNotEmpty)
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: 0.25,
+                        child: ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                          child: Image.memory(resumeTrack.albumArt!, fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        _buildCoverArt(resumeTrack, 82, 14),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    _audioPlayer.state.playing ? 'NOW PLAYING' : 'CONTINUE LISTENING',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.0,
+                                      color: accent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  if (_showCodecBadges) _buildFormatPill(resumeTrack, accent),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                resumeTrack.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: Colors.white),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${cleanArtistStr(resumeTrack.artist)} • ${resumeTrack.album}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11.5, color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: accent,
+                            shape: BoxShape.circle,
+                            boxShadow: [BoxShadow(color: accent.withOpacity(0.45), blurRadius: 12)],
+                          ),
+                          child: Icon(
+                            (_audioPlayer.state.playing && _currentSong?.path == resumeTrack.path)
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 26,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildBentoMetricCard(
+                icon: Icons.album_outlined,
+                label: 'FLAC Lossless',
+                value: '$flacCount',
+                sub: '${_songs.isNotEmpty ? ((flacCount * 100) ~/ _songs.length) : 0}% of library',
+                color: accent,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildBentoMetricCard(
+                icon: Icons.graphic_eq_rounded,
+                label: '24-Bit Hi-Res',
+                value: '${hiResTracks.length}',
+                sub: 'Studio Master',
+                color: Colors.cyanAccent,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildBentoMetricCard(
+                icon: Icons.schedule_rounded,
+                label: 'Listen Time',
+                value: '${_totalListenSeconds ~/ 60}m',
+                sub: '${uniqueArtists.length} Artists',
+                color: Colors.amberAccent,
+              ),
+            ),
+          ],
+        ),
+
         if (_historyTracks.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildHomeSectionHeader('History', () => _showFilteredListScreen('Play History', _historyTracks)),
+          const SizedBox(height: 22),
+          _buildHomeSectionHeader('Jump Back In', () => _showFilteredListScreen('Play History', _historyTracks)),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(_historyTracks.take(15).toList()),
         ],
+
         if (_songs.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildHomeSectionHeader('Most Played', () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList())),
+          const SizedBox(height: 22),
+          _buildHomeSectionHeader('Heavy Rotation', () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList())),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(mostPlayed.take(15).toList(), showPlayBadge: true),
         ],
-        if (_songs.isNotEmpty) ...[
+
+        if (topAlbums.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          _buildHomeSectionHeader('Top Albums', _showAlbumsBrowserScreen),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 158,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: math.min(topAlbums.length, 15),
+              itemBuilder: (ctx, idx) {
+                final albEntry = topAlbums[idx];
+                final albTracks = albEntry.value;
+                final artTrack = albTracks.firstWhere(
+                  (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
+                  orElse: () => albTracks.first,
+                );
+                return GestureDetector(
+                  onTap: () => _showAlbumDetailScreen(albEntry.key, albTracks),
+                  child: Container(
+                    width: 114,
+                    margin: const EdgeInsets.only(right: 11),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Stack(
+                          children: [
+                            _buildCoverArt(artTrack, 110, 14),
+                            Positioned(
+                              right: 6,
+                              bottom: 6,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.76),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${albTracks.length} tracks',
+                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(albEntry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        Text(cleanArtistStr(albTracks.first.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+
+        if (spotlightArtist != null && spotlightTracks.isNotEmpty) ...[
           const SizedBox(height: 20),
-          _buildHomeSectionHeader('Recently Added', () => _showFilteredListScreen('Recently Added', recentlyAdded.take(50).toList())),
+          GestureDetector(
+            onTap: () => _showArtistDetailScreen(spotlightArtist!, spotlightTracks),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF11111A),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Row(
+                children: [
+                  _buildRoundArtistAvatar(spotlightTracks.first, 28),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('ARTIST SPOTLIGHT', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 1.0, color: accent)),
+                        const SizedBox(height: 2),
+                        Text(spotlightArtist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800)),
+                        Text('${spotlightTracks.length} songs in your library', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent.withOpacity(0.18),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () => _playSong(spotlightTracks.first),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        if (_songs.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          _buildHomeSectionHeader('Freshly Added', () => _showFilteredListScreen('Recently Added', recentlyAdded.take(50).toList())),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(recentlyAdded.take(15).toList()),
         ],
+
         if (uniqueArtists.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _buildHomeSectionHeader('Artists', () => setState(() => _selectedIndex = 2)),
+          const SizedBox(height: 22),
+          _buildHomeSectionHeader('Featured Artists', () => setState(() => _selectedIndex = 2)),
           const SizedBox(height: 8),
           SizedBox(
             height: 112,
@@ -4846,26 +5296,65 @@ _buildCoverArt(song, 46, 8),
             ),
           ),
         ],
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.all(14),
+      ],
+    );
+  }
+
+  Widget _buildHomePillChip(IconData icon, String label, Color color, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-            color: const Color(0xFF0E0E15),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
+            color: const Color(0xFF12121B),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white12),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              _buildFormatStat('FLAC Lossless', '$flacCount'),
-              Container(width: 1, height: 28, color: Colors.white10),
-              _buildFormatStat('24-Bit Hi-Res', '$hiResCount'),
-              Container(width: 1, height: 28, color: Colors.white10),
-              _buildFormatStat('Artists', '${uniqueArtists.length}'),
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white)),
             ],
           ),
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildBentoMetricCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required String sub,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E0E16),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Icon(icon, size: 16, color: color),
+              Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white70)),
+          Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, color: Colors.white38)),
+        ],
+      ),
     );
   }
 
@@ -5674,7 +6163,7 @@ _buildCoverArt(song, 46, 8),
             }
           },
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+            padding: EdgeInsets.fromLTRB(10, _compactTrackTiles ? 4.5 : 8, 6, _compactTrackTiles ? 4.5 : 8),
             child: Row(children: [
               if (_isSelectionMode)
                 Padding(
@@ -5688,11 +6177,11 @@ _buildCoverArt(song, 46, 8),
               Stack(
                 alignment: Alignment.center,
                 children: [
-                  _buildCoverArt(song, 54, 10),
+                  _buildCoverArt(song, _compactTrackTiles ? 44 : 54, _compactTrackTiles ? 8 : 10),
                   if (isCurrent)
                     Container(
-                      width: 54,
-                      height: 54,
+                      width: _compactTrackTiles ? 44 : 54,
+                      height: _compactTrackTiles ? 44 : 54,
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.55),
                         borderRadius: BorderRadius.circular(10),
@@ -5740,8 +6229,10 @@ _buildCoverArt(song, 46, 8),
                     const SizedBox(height: 3),
                     Row(
                       children: [
-                        _buildFormatPill(song, Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 6),
+                        if (_showCodecBadges) ...[
+                          _buildFormatPill(song, Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 6),
+                        ],
                         Expanded(
                           child: Text(
                             '${song.album} • ${formatReleaseDate(song.year)}',
@@ -5861,7 +6352,7 @@ _buildCoverArt(song, 46, 8),
                                 style: const TextStyle(fontSize: 11.5, color: Colors.white60),
                               ),
                             ),
-                            if (activeSong != null) ...[
+                            if (activeSong != null && _showCodecBadges) ...[
                               const SizedBox(width: 6),
                               _buildFormatPill(activeSong, accent),
                             ],
@@ -7086,6 +7577,15 @@ class MainSettingsScreen extends StatefulWidget {
   final bool usePitchBlack;
   final bool autoColoring;
   final bool ambientGlow;
+  final bool blurredBackdrop;
+  final bool showCodecBadges;
+  final bool compactTrackTiles;
+  final bool resumeSessionOnStartup;
+  final bool pauseOnDisconnect;
+  final int doubleTapSeekSec;
+  final int minTrackSeconds;
+  final String replayGainMode;
+  final int defaultStartupTab;
   final bool syllableLyricsEnabled;
   final bool preferEmbeddedLyrics;
   final bool autoFetchOnlineMetadata;
@@ -7093,28 +7593,38 @@ class MainSettingsScreen extends StatefulWidget {
   final List<String> artistSeparators;
   final List<String> scanFolders;
   final bool ignoreShortClips;
-  final ValueChanged<List<String>> onScanFoldersChanged;
-  final ValueChanged<bool> onIgnoreShortClipsChanged;
   final bool forceMiniColor;
-  final bool replayGain;
   final String connectedDacName;
+  final Future<String> thumbCacheSizeFuture;
+  final Future<void> Function() onClearThumbCache;
+  final VoidCallback onOpenEqualizer;
   final VoidCallback onOpenExtensionRepo;
   final VoidCallback onOpenFolderExplorer;
   final VoidCallback onExportBackup;
   final VoidCallback onImportBackup;
+  final ValueChanged<List<String>> onScanFoldersChanged;
+  final ValueChanged<bool> onIgnoreShortClipsChanged;
+  final ValueChanged<int> onMinTrackSecondsChanged;
   final ValueChanged<bool> onUsbDacChanged;
   final ValueChanged<bool> onGaplessChanged;
   final ValueChanged<bool> onNotificationChanged;
   final ValueChanged<bool> onPitchBlackChanged;
   final ValueChanged<bool> onAutoColoringChanged;
   final ValueChanged<bool> onAmbientGlowChanged;
+  final ValueChanged<bool> onBlurredBackdropChanged;
+  final ValueChanged<bool> onShowCodecBadgesChanged;
+  final ValueChanged<bool> onCompactTrackTilesChanged;
+  final ValueChanged<bool> onResumeSessionChanged;
+  final ValueChanged<bool> onPauseOnDisconnectChanged;
+  final ValueChanged<int> onDoubleTapSeekChanged;
+  final ValueChanged<String> onReplayGainModeChanged;
+  final ValueChanged<int> onDefaultStartupTabChanged;
   final ValueChanged<bool> onSyllableLyricsChanged;
   final ValueChanged<bool> onPreferEmbeddedChanged;
   final ValueChanged<bool> onAutoFetchOnlineChanged;
   final ValueChanged<bool> onSplitArtistsChanged;
   final ValueChanged<List<String>> onArtistSeparatorsChanged;
   final ValueChanged<bool> onForceMiniColorChanged;
-  final ValueChanged<bool> onReplayGainChanged;
   final VoidCallback onRescan;
 
   const MainSettingsScreen({
@@ -7125,6 +7635,15 @@ class MainSettingsScreen extends StatefulWidget {
     required this.usePitchBlack,
     required this.autoColoring,
     required this.ambientGlow,
+    required this.blurredBackdrop,
+    required this.showCodecBadges,
+    required this.compactTrackTiles,
+    required this.resumeSessionOnStartup,
+    required this.pauseOnDisconnect,
+    required this.doubleTapSeekSec,
+    required this.minTrackSeconds,
+    required this.replayGainMode,
+    required this.defaultStartupTab,
     required this.syllableLyricsEnabled,
     required this.preferEmbeddedLyrics,
     required this.autoFetchOnlineMetadata,
@@ -7132,28 +7651,38 @@ class MainSettingsScreen extends StatefulWidget {
     required this.artistSeparators,
     required this.scanFolders,
     required this.ignoreShortClips,
-    required this.onScanFoldersChanged,
-    required this.onIgnoreShortClipsChanged,
     required this.forceMiniColor,
-    required this.replayGain,
     required this.connectedDacName,
+    required this.thumbCacheSizeFuture,
+    required this.onClearThumbCache,
+    required this.onOpenEqualizer,
     required this.onOpenExtensionRepo,
     required this.onOpenFolderExplorer,
     required this.onExportBackup,
     required this.onImportBackup,
+    required this.onScanFoldersChanged,
+    required this.onIgnoreShortClipsChanged,
+    required this.onMinTrackSecondsChanged,
     required this.onUsbDacChanged,
     required this.onGaplessChanged,
     required this.onNotificationChanged,
     required this.onPitchBlackChanged,
     required this.onAutoColoringChanged,
     required this.onAmbientGlowChanged,
+    required this.onBlurredBackdropChanged,
+    required this.onShowCodecBadgesChanged,
+    required this.onCompactTrackTilesChanged,
+    required this.onResumeSessionChanged,
+    required this.onPauseOnDisconnectChanged,
+    required this.onDoubleTapSeekChanged,
+    required this.onReplayGainModeChanged,
+    required this.onDefaultStartupTabChanged,
     required this.onSyllableLyricsChanged,
     required this.onPreferEmbeddedChanged,
     required this.onAutoFetchOnlineChanged,
     required this.onSplitArtistsChanged,
     required this.onArtistSeparatorsChanged,
     required this.onForceMiniColorChanged,
-    required this.onReplayGainChanged,
     required this.onRescan,
   });
 
@@ -7168,6 +7697,15 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   late bool _pitchBlack;
   late bool _autoColor;
   late bool _ambientGlow;
+  late bool _blurredBg;
+  late bool _codecBadges;
+  late bool _compactRows;
+  late bool _resumeSession;
+  late bool _pauseDisconnect;
+  late int _seekSec;
+  late int _minSec;
+  late String _rgMode;
+  late int _startupTab;
   late bool _syllableLyrics;
   late bool _preferEmbedded;
   late bool _autoFetchOnline;
@@ -7176,8 +7714,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   late List<String> _folders;
   late bool _ignoreShort;
   late bool _forceMini;
-  late bool _replayGain;
-  double _hueValue = 0.0;
+  late Future<String> _cacheSizeFuture;
 
   final List<Color> _swatches = [
     const Color(0xFFE53935),
@@ -7200,6 +7737,15 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
     _pitchBlack = widget.usePitchBlack;
     _autoColor = widget.autoColoring;
     _ambientGlow = widget.ambientGlow;
+    _blurredBg = widget.blurredBackdrop;
+    _codecBadges = widget.showCodecBadges;
+    _compactRows = widget.compactTrackTiles;
+    _resumeSession = widget.resumeSessionOnStartup;
+    _pauseDisconnect = widget.pauseOnDisconnect;
+    _seekSec = widget.doubleTapSeekSec;
+    _minSec = widget.minTrackSeconds;
+    _rgMode = widget.replayGainMode;
+    _startupTab = widget.defaultStartupTab;
     _syllableLyrics = widget.syllableLyricsEnabled;
     _preferEmbedded = widget.preferEmbeddedLyrics;
     _autoFetchOnline = widget.autoFetchOnlineMetadata;
@@ -7208,7 +7754,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
     _folders = List<String>.from(widget.scanFolders);
     _ignoreShort = widget.ignoreShortClips;
     _forceMini = widget.forceMiniColor;
-    _replayGain = widget.replayGain;
+    _cacheSizeFuture = widget.thumbCacheSizeFuture;
   }
 
   void _showAddSeparatorDialog() {
@@ -7269,22 +7815,14 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   ),
                 ),
               ),
-              const Text(
-                'Pick UI Accent Color',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
-              ),
+              const Text('Pick Nami Accent Color', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
               const SizedBox(height: 14),
               HuePaletteCanvas(
                 initialColor: currentAccent,
-                onColorChanged: (color) {
-                  NamiApp.of(context).updateTheme(newAccent: color);
-                },
+                onColorChanged: (color) => NamiApp.of(context).updateTheme(newAccent: color),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Preset Swatches',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+              const Text('Preset Swatches', style: TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 12,
@@ -7301,8 +7839,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                             decoration: BoxDecoration(
                               color: color,
                               shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: Colors.white24, width: 2),
+                              border: Border.all(color: Colors.white24, width: 2),
                             ),
                           ),
                         ))
@@ -7317,8 +7854,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Done',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -7331,7 +7867,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   Widget _buildSectionHeader(String title, IconData icon) {
     final accent = Theme.of(context).colorScheme.primary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
       child: Row(
         children: [
           Icon(icon, size: 16, color: accent),
@@ -7372,25 +7908,23 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final themeColor = Theme.of(context).colorScheme.primary;
+    const tabNames = ['Home', 'Tracks', 'Artists', 'Playlists'];
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Settings & Customize', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('Nami Settings', style: TextStyle(fontWeight: FontWeight.w800)),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 32),
+        padding: const EdgeInsets.fromLTRB(14, 4, 14, 36),
         children: [
-          _buildSectionHeader('Customize & Appearance', Icons.palette_outlined),
+          _buildSectionHeader('Nami Appearance & Interface', Icons.palette_outlined),
           _buildSettingsCard([
             ListTile(
-              leading: CircleAvatar(
-                radius: 16,
-                backgroundColor: themeColor.withOpacity(0.18),
-                child: Icon(Icons.color_lens_rounded, color: themeColor, size: 18),
-              ),
-              title: const Text('Accent Color & Hue Palette', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text('Tap to customize accent swatches or fine-tune hue', style: TextStyle(fontSize: 11.5, color: Colors.white54)),
+              leading: _settingsBadge(Icons.color_lens_rounded, themeColor),
+              title: const Text('Accent Theme & Hue Canvas', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              subtitle: const Text('Customize swatches or fine-tune 2D color palette', style: TextStyle(fontSize: 11.5, color: Colors.white54)),
               trailing: Container(width: 24, height: 24, decoration: BoxDecoration(color: themeColor, shape: BoxShape.circle, border: Border.all(color: Colors.white38))),
               onTap: _showColorPicker,
             ),
@@ -7418,8 +7952,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             const Divider(color: Colors.white10, height: 1),
             SwitchListTile(
               secondary: _settingsBadge(Icons.auto_awesome_rounded, themeColor),
-              title: const Text('Auto-Coloring From Artwork', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Adapt UI accent dynamically to active album cover', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              title: const Text('Dynamic Artwork Accent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Adapt UI colors automatically to active cover art', style: TextStyle(fontSize: 11, color: Colors.white54)),
               value: _autoColor,
               activeColor: themeColor,
               onChanged: (v) {
@@ -7428,13 +7962,46 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               },
             ),
             SwitchListTile(
+              secondary: _settingsBadge(Icons.blur_circular_rounded, themeColor),
+              title: const Text('Now Playing Blurred Backdrop', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Frosted album artwork background layer in full player', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _blurredBg,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _blurredBg = v);
+                widget.onBlurredBackdropChanged(v);
+              },
+            ),
+            SwitchListTile(
               secondary: _settingsBadge(Icons.blur_on_rounded, themeColor),
-              title: const Text('Ambient Glow Behind Cover Art', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              title: const Text('Ambient Cover Radial Glow', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
               value: _ambientGlow,
               activeColor: themeColor,
               onChanged: (v) {
                 setState(() => _ambientGlow = v);
                 widget.onAmbientGlowChanged(v);
+              },
+            ),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.high_quality_rounded, themeColor),
+              title: const Text('Show Audio Codec & Bit-Depth Badges', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Display FLAC • 24-Bit pills on track rows & mini-player', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _codecBadges,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _codecBadges = v);
+                widget.onShowCodecBadgesChanged(v);
+              },
+            ),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.density_small_rounded, themeColor),
+              title: const Text('Compact Track Rows', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Denser list layout to fit more songs on screen', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _compactRows,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _compactRows = v);
+                widget.onCompactTrackTilesChanged(v);
               },
             ),
             SwitchListTile(
@@ -7449,7 +8016,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             ),
             SwitchListTile(
               secondary: _settingsBadge(Icons.contrast_rounded, themeColor),
-              title: const Text('Pitch Black AMOLED Mode', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              title: const Text('Pitch Black AMOLED Theme', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
               value: _pitchBlack,
               activeColor: themeColor,
               onChanged: (v) {
@@ -7458,12 +8025,172 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               },
             ),
           ]),
-          _buildSectionHeader('Library & Artist Separators', Icons.people_outline_rounded),
+
+          _buildSectionHeader('Audio Engine (libmpv) & USB DAC', Icons.graphic_eq_rounded),
+          _buildSettingsCard([
+            ListTile(
+              leading: _settingsBadge(Icons.tune_rounded, themeColor),
+              title: const Text('5-Band Parametric Equalizer & DSP', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Configure 60Hz–14kHz EQ, Preamp & Soundstage', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onOpenEqualizer();
+              },
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.usb_rounded, themeColor),
+              title: const Text('USB DAC Exclusive Hardware Routing', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: Text('Active Output: ${widget.connectedDacName}', style: TextStyle(fontSize: 11.5, color: themeColor, fontWeight: FontWeight.w600)),
+              value: _usbDac,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _usbDac = v);
+                widget.onUsbDacChanged(v);
+              },
+            ),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.all_inclusive_rounded, themeColor),
+              title: const Text('Gapless Audio Transitions', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              value: _gapless,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _gapless = v);
+                widget.onGaplessChanged(v);
+              },
+            ),
+            ListTile(
+              leading: _settingsBadge(Icons.equalizer_rounded, themeColor),
+              title: const Text('ReplayGain Normalization', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Balance loudness across tracks or full albums', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              trailing: SegmentedButton<String>(
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+                segments: const [
+                  ButtonSegment(value: 'Off', label: Text('Off')),
+                  ButtonSegment(value: 'Track', label: Text('Track')),
+                  ButtonSegment(value: 'Album', label: Text('Album')),
+                ],
+                selected: {_rgMode},
+                onSelectionChanged: (sel) {
+                  final mode = sel.first;
+                  setState(() => _rgMode = mode);
+                  widget.onReplayGainModeChanged(mode);
+                },
+              ),
+            ),
+          ]),
+
+          _buildSectionHeader('Playback, Gestures & Lock Screen', Icons.play_circle_outline_rounded),
+          _buildSettingsCard([
+            ListTile(
+              leading: _settingsBadge(Icons.home_outlined, themeColor),
+              title: const Text('Default Startup Screen', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Choose which tab opens when launching Nami', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              trailing: DropdownButton<int>(
+                value: _startupTab,
+                dropdownColor: const Color(0xFF161622),
+                underline: const SizedBox.shrink(),
+                style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12.5),
+                items: List.generate(
+                  tabNames.length,
+                  (i) => DropdownMenuItem(value: i, child: Text(tabNames[i])),
+                ),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _startupTab = v);
+                    widget.onDefaultStartupTabChanged(v);
+                  }
+                },
+              ),
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.history_toggle_off_rounded, themeColor),
+              title: const Text('Restore Last Session on Startup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Remember last track, seek position & queue', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _resumeSession,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _resumeSession = v);
+                widget.onResumeSessionChanged(v);
+              },
+            ),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.headset_off_rounded, themeColor),
+              title: const Text('Pause When DAC / Headphones Unplug', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              value: _pauseDisconnect,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _pauseDisconnect = v);
+                widget.onPauseOnDisconnectChanged(v);
+              },
+            ),
+            ListTile(
+              leading: _settingsBadge(Icons.replay_10_rounded, themeColor),
+              title: const Text('Cover Art Double-Tap Seek', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              trailing: SegmentedButton<int>(
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+                segments: const [
+                  ButtonSegment(value: 5, label: Text('5s')),
+                  ButtonSegment(value: 10, label: Text('10s')),
+                  ButtonSegment(value: 15, label: Text('15s')),
+                ],
+                selected: {_seekSec},
+                onSelectionChanged: (sel) {
+                  setState(() => _seekSec = sel.first);
+                  widget.onDoubleTapSeekChanged(sel.first);
+                },
+              ),
+            ),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.notifications_active_outlined, themeColor),
+              title: const Text('Android Lock Screen & Media Notification', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              value: _mediaNotif,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _mediaNotif = v);
+                widget.onNotificationChanged(v);
+              },
+            ),
+          ]),
+
+          _buildSectionHeader('Lyrics & Metadata Engine', Icons.lyrics_outlined),
           _buildSettingsCard([
             SwitchListTile(
+              secondary: _settingsBadge(Icons.subtitles_rounded, themeColor),
+              title: const Text('Syllable-by-Syllable Karaoke Sweep', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Progressive word highlight on active lyric line', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              value: _syllableLyrics,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _syllableLyrics = v);
+                widget.onSyllableLyricsChanged(v);
+              },
+            ),
+            SwitchListTile(
+              secondary: _settingsBadge(Icons.lyrics_rounded, themeColor),
+              title: const Text('Prefer Embedded Track Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              value: _preferEmbedded,
+              activeColor: themeColor,
+              onChanged: (v) {
+                setState(() => _preferEmbedded = v);
+                widget.onPreferEmbeddedChanged(v);
+              },
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            SwitchListTile(
               secondary: _settingsBadge(Icons.cloud_download_outlined, themeColor),
-              title: const Text('Auto-Fetch Missing Covers & Artist Info', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Fetch high-res artwork online when files lack embedded tags', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              title: const Text('Auto-Fetch Missing Artwork & Tags', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Enrich tracks missing embedded cover art online', style: TextStyle(fontSize: 11, color: Colors.white54)),
               value: _autoFetchOnline,
               activeColor: themeColor,
               onChanged: (v) {
@@ -7471,11 +8198,10 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 widget.onAutoFetchOnlineChanged(v);
               },
             ),
-            const Divider(color: Colors.white10, height: 1),
             SwitchListTile(
               secondary: _settingsBadge(Icons.call_split_rounded, themeColor),
-              title: const Text('Split Multi-Artist Tags', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Separate collaborating artists into individual profiles', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              title: const Text('Split Collaborating Artists', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Separate multi-artist credits into individual profiles', style: TextStyle(fontSize: 11, color: Colors.white54)),
               value: _splitArtists,
               activeColor: themeColor,
               onChanged: (v) {
@@ -7489,7 +8215,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Active Artist Separators', style: TextStyle(fontSize: 11.5, color: Colors.white60, fontWeight: FontWeight.w600)),
+                    const Text('Artist Separator Tokens', style: TextStyle(fontSize: 11.5, color: Colors.white60, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -7518,80 +8244,13 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 ),
               ),
           ]),
-          _buildSectionHeader('Lyrics Engine', Icons.lyrics_outlined),
-          _buildSettingsCard([
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.subtitles_rounded, themeColor),
-              title: const Text('Syllable-by-Syllable Karaoke Sweep', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Highlight center lyric line progressively as sung', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _syllableLyrics,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _syllableLyrics = v);
-                widget.onSyllableLyricsChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.lyrics_rounded, themeColor),
-              title: const Text('Prefer Embedded Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _preferEmbedded,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _preferEmbedded = v);
-                widget.onPreferEmbeddedChanged(v);
-              },
-            ),
-          ]),
-          _buildSectionHeader('Audio Engine & USB DAC', Icons.graphic_eq_rounded),
-          _buildSettingsCard([
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.usb_rounded, themeColor),
-              title: const Text('USB DAC Exclusive Routing', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: Text('Active Output: ${widget.connectedDacName}', style: TextStyle(fontSize: 11.5, color: themeColor, fontWeight: FontWeight.w600)),
-              value: _usbDac,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _usbDac = v);
-                widget.onUsbDacChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.all_inclusive_rounded, themeColor),
-              title: const Text('Gapless Playback', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _gapless,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _gapless = v);
-                widget.onGaplessChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.notifications_active_outlined, themeColor),
-              title: const Text('Media Session & Notification Controls', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _mediaNotif,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _mediaNotif = v);
-                widget.onNotificationChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.equalizer_rounded, themeColor),
-              title: const Text('ReplayGain Normalization', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _replayGain,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _replayGain = v);
-                widget.onReplayGainChanged(v);
-              },
-            ),
-          ]),
-          _buildSectionHeader('Storage & Scan Folders', Icons.storage_rounded),
+
+          _buildSectionHeader('Library Folders, Extensions & Storage', Icons.storage_rounded),
           _buildSettingsCard([
             SwitchListTile(
               secondary: _settingsBadge(Icons.timer_off_outlined, themeColor),
-              title: const Text('Ignore Short Audio Clips (< 30s)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Filter out ringtones, voice notes & notification sounds', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              title: Text('Ignore Short Audio Clips (< ${_minSec}s)', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Exclude ringtones, voice notes & notification sounds', style: TextStyle(fontSize: 11, color: Colors.white54)),
               value: _ignoreShort,
               activeColor: themeColor,
               onChanged: (v) {
@@ -7599,6 +8258,33 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 widget.onIgnoreShortClipsChanged(v);
               },
             ),
+            if (_ignoreShort)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Minimum Track Duration', style: TextStyle(fontSize: 12, color: Colors.white60)),
+                    SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                      segments: const [
+                        ButtonSegment(value: 15, label: Text('15s')),
+                        ButtonSegment(value: 30, label: Text('30s')),
+                        ButtonSegment(value: 60, label: Text('60s')),
+                      ],
+                      selected: {_minSec},
+                      onSelectionChanged: (sel) {
+                        setState(() => _minSec = sel.first);
+                        widget.onMinTrackSecondsChanged(sel.first);
+                      },
+                    ),
+                  ],
+                ),
+              ),
             const Divider(color: Colors.white10, height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -7701,16 +8387,31 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             const Divider(color: Colors.white10, height: 1),
             ListTile(
               leading: _settingsBadge(Icons.backup_rounded, themeColor),
-              title: const Text('Backup Library & Playlists', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Export JSON to /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              title: const Text('Export Library & Playlists Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Save JSON to /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
               onTap: widget.onExportBackup,
             ),
             const Divider(color: Colors.white10, height: 1),
             ListTile(
               leading: _settingsBadge(Icons.restore_rounded, themeColor),
-              title: const Text('Restore Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+              title: const Text('Restore Library Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
               subtitle: const Text('Import /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
               onTap: widget.onImportBackup,
+            ),
+            const Divider(color: Colors.white10, height: 1),
+            FutureBuilder<String>(
+              future: _cacheSizeFuture,
+              builder: (context, snap) => ListTile(
+                leading: _settingsBadge(Icons.cleaning_services_rounded, themeColor),
+                title: const Text('Clear Artwork Thumbnail Cache', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                subtitle: Text('Used: ${snap.data ?? "Calculating..."}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                onTap: () async {
+                  await widget.onClearThumbCache();
+                  setState(() {
+                    _cacheSizeFuture = widget.thumbCacheSizeFuture;
+                  });
+                },
+              ),
             ),
             const Divider(color: Colors.white10, height: 1),
             ListTile(
@@ -7721,6 +8422,24 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 widget.onRescan();
                 Navigator.pop(context);
               },
+            ),
+          ]),
+
+          _buildSectionHeader('About Nami', Icons.info_outline_rounded),
+          _buildSettingsCard([
+            ListTile(
+              leading: _settingsBadge(Icons.graphic_eq_rounded, themeColor),
+              title: const Text('Nami Music Player', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+              subtitle: const Text('Version 2.0.0 • Bit-Perfect libmpv + AudioService Engine', style: TextStyle(fontSize: 11.5, color: Colors.white60)),
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: themeColor.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: themeColor.withOpacity(0.45)),
+                ),
+                child: Text('v2.0.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: themeColor)),
+              ),
             ),
           ]),
         ],
@@ -7781,9 +8500,6 @@ class NowPlayingModal extends StatefulWidget {
 
 class _NowPlayingModalState extends State<NowPlayingModal> {
   int _viewMode = 0;
-  bool _isLooping = false;
-  Duration? _loopA;
-  Duration? _loopB;
   final ScrollController _lyricsScrollCtrl = ScrollController();
   int _lastScrolledLyricIndex = -1;
 
@@ -7845,23 +8561,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (false) ListTile(
-                leading: const Icon(Icons.repeat_one_on_rounded),
-                title: Text(_loopA == null ? 'Set A-B Loop Start (Point A)' : (_loopB == null ? 'Set A-B Loop End (Point B)' : 'Clear A-B Loop')),
-                onTap: () {
-                  setState(() {
-                    if (_loopA == null) {
-                      _loopA = widget.audioPlayer.state.position;
-                    } else if (_loopB == null) {
-                      _loopB = widget.audioPlayer.state.position;
-                    } else {
-                      _loopA = null;
-                      _loopB = null;
-                    }
-                  });
-                  Navigator.pop(ctx);
-                },
-              ),
               ListTile(
                 leading: const Icon(Icons.lyrics_outlined),
                 title: const Text('Lyrics Metadata & Editor'),
@@ -7915,7 +8614,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         final totalCount = widget.allSongs.length;
 
         Widget artWidget;
-        if (song?.albumArt != null && song!.albumArt!.isNotEmpty) {
+        if (widget.blurredBackdrop && song?.albumArt != null && song!.albumArt!.isNotEmpty) {
           artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
         } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
           artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover, width: double.infinity, height: double.infinity);
@@ -8014,7 +8713,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     child: _viewMode == 0
                         ? GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onDoubleTap: () => _seekRelative(-5),
+                            onDoubleTap: () => _seekRelative(-widget.doubleTapSeekSec),
                             onHorizontalDragEnd: (details) {
                               final v = details.primaryVelocity ?? 0;
                               if (v < -220) {
@@ -8077,9 +8776,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                     stream: widget.audioPlayer.stream.position,
                                     builder: (context, snapshot) {
                                       final pos = snapshot.data ?? Duration.zero;
-                                      if (_loopB != null && _loopA != null && pos >= _loopB!) {
-                                        widget.audioPlayer.seek(_loopA!);
-                                      }
                                       final lyrics = song?.parsedLyrics ?? [];
                                       if (lyrics.isEmpty) {
                                         return Center(
@@ -8190,9 +8886,6 @@ return GestureDetector(
                     stream: widget.audioPlayer.stream.position,
                     builder: (context, posSnap) {
                       final pos = posSnap.data ?? Duration.zero;
-                      if (_loopB != null && _loopA != null && pos >= _loopB!) {
-                        widget.audioPlayer.seek(_loopA!);
-                      }
                       return StreamBuilder<Duration?>(
                         stream: widget.audioPlayer.stream.duration,
                         builder: (context, durSnap) {

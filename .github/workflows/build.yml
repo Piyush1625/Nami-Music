@@ -64,11 +64,14 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
-      - name: Patch Android Manifest and MainActivity via Python
+      - name: Patch Android Manifest, Signing Keystore and MainActivity via Python
+        env:
+          NAMI_KEYSTORE_B64: ${{ secrets.NAMI_KEYSTORE_B64 }}
+          NAMI_KEY_PASS: ${{ secrets.NAMI_KEY_PASS }}
         run: python3 scripts/patch_manifest.py
 
       - name: Build Optimized ARM64 Release APK
-        run: flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
+        run: flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }} --no-tree-shake-icons
 
       - name: Upload APK to Workflow Artifacts
         uses: actions/upload-artifact@v4

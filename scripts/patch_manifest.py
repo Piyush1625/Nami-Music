@@ -162,3 +162,70 @@ if _os.path.isdir(_res_dir):
         _write_png(f"{_res_dir}/mipmap-{_dpi}/ic_launcher.png", _px, _px, _rgba)
         _write_png(f"{_res_dir}/mipmap-{_dpi}/ic_launcher_round.png", _px, _px, _rgba)
     print("Patched custom Nami adaptive launcher icon & mipmap PNGs!")
+
+
+# --- Nami Persistent Release Keystore Signing (Enables In-Place APK Updates) ---
+import base64 as _b64
+import glob as _glob
+
+_ks_b64 = _os.environ.get("NAMI_KEYSTORE_B64", "").strip()
+_ks_pass = _os.environ.get("NAMI_KEY_PASS", "nami2026release").strip() or "nami2026release"
+
+if _ks_b64:
+    _app_dir = "android/app"
+    _ks_path = f"{_app_dir}/nami-release.jks"
+    with open(_ks_path, "wb") as _kf:
+        _kf.write(_b64.b64decode(_ks_b64))
+    with open("android/key.properties", "w", encoding="utf-8") as _kp:
+        _kp.write(f"storePassword={_ks_pass}\nkeyPassword={_ks_pass}\nkeyAlias=nami\nstoreFile=nami-release.jks\n")
+
+    for _gpath in _glob.glob("android/app/build.gradle*"):
+        with open(_gpath, "r", encoding="utf-8") as _gf:
+            _gtxt = _gf.read()
+        if "nami-release.jks" in _gtxt:
+            continue
+        if _gpath.endswith(".kts"):
+            _sign_block = (
+                'import java.util.Properties\n'
+                'import java.io.FileInputStream\n\n'
+                'val keystoreProperties = Properties()\n'
+                'val keystorePropertiesFile = rootProject.file("key.properties")\n'
+                'if (keystorePropertiesFile.exists()) {\n'
+                '    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
+                '}\n\n'
+            )
+            _gtxt = _sign_block + _gtxt
+            _gtxt = _gtxt.replace(
+                'signingConfig = signingConfigs.getByName("debug")',
+                'signingConfigs.create("release") {\n'
+                '                keyAlias = keystoreProperties.getProperty("keyAlias")\n'
+                '                keyPassword = keystoreProperties.getProperty("keyPassword")\n'
+                '                storeFile = file(keystoreProperties.getProperty("storeFile"))\n'
+                '                storePassword = keystoreProperties.getProperty("storePassword")\n'
+                '            }\n'
+                '            signingConfig = signingConfigs.getByName("release")'
+            )
+        else:
+            _sign_groovy = (
+                'def keystoreProperties = new Properties()\n'
+                "def keystorePropertiesFile = rootProject.file('key.properties')\n"
+                'if (keystorePropertiesFile.exists()) {\n'
+                '    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n'
+                '}\n\n'
+            )
+            _gtxt = _sign_groovy + _gtxt
+            _gtxt = _gtxt.replace(
+                'signingConfig signingConfigs.debug',
+                'signingConfigs {\n'
+                '                release {\n'
+                "                    keyAlias keystoreProperties['keyAlias']\n"
+                "                    keyPassword keystoreProperties['keyPassword']\n"
+                "                    storeFile file(keystoreProperties['storeFile'])\n"
+                "                    storePassword keystoreProperties['storePassword']\n"
+                '                }\n'
+                '            }\n'
+                '            signingConfig signingConfigs.release'
+            )
+        with open(_gpath, "w", encoding="utf-8") as _gf:
+            _gf.write(_gtxt)
+        print(f"Configured persistent release signing in {_gpath}!")
