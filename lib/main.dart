@@ -3878,8 +3878,7 @@ _buildCoverArt(song, 46, 8),
                           child: ListTile(
                             leading: Icon(Icons.extension_rounded, color: ext.isInstalled ? accent : Colors.white38),
                             title: Text('${ext.name} • ${ext.version}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                            subtitle: Text('${ext.category} • ${ext.format}
-${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                            subtitle: Text('${ext.category} • ${ext.format}\n${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
                             isThreeLine: true,
                             trailing: Switch(
                               value: ext.isInstalled,
