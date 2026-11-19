@@ -305,9 +305,11 @@ class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
                                 color: Colors.black.withOpacity(0.6),
                                 blurRadius: 6,
                               ),
+                            ],
                           ),
                         ),
                       ),
+                    ],
                   ),
                 ),
               ),
@@ -342,6 +344,7 @@ class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
                             Color(0xFF0000FF),
                             Color(0xFFFF00FF),
                             Color(0xFFFF0000),
+                          ],
                         ),
                       ),
                     ),
@@ -358,9 +361,11 @@ class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
                             BoxShadow(
                                 color: Colors.black.withOpacity(0.5),
                                 blurRadius: 4),
+                          ],
                         ),
                       ),
                     ),
+                  ],
                 ),
               ),
             );
@@ -392,12 +397,15 @@ class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
                     color: Colors.white,
                   ),
                 ),
+              ],
             ),
             Text(
               'H: ${_hue.round()}°  S: ${(_saturation * 100).round()}%  B: ${(_value * 100).round()}%',
               style: const TextStyle(fontSize: 11.5, color: Colors.white54),
             ),
+          ],
         ),
+      ],
     );
   }
 }
@@ -701,6 +709,7 @@ class _NamiFastScrollerState extends State<NamiFastScroller> {
                           ),
                         ),
                       ),
+                    ],
                   ),
                 ),
               ),
@@ -717,6 +726,7 @@ class _NamiFastScrollerState extends State<NamiFastScroller> {
                     boxShadow: [
                       BoxShadow(
                           color: Colors.black.withOpacity(0.6), blurRadius: 10)
+                    ],
                   ),
                   child: Text(
                     widget.labelBuilder(_activeIndex),
@@ -727,6 +737,7 @@ class _NamiFastScrollerState extends State<NamiFastScroller> {
                   ),
                 ),
               ),
+          ],
         );
       },
     );
@@ -1178,29 +1189,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           if (data['scanFolders'] is List && (data['scanFolders'] as List).isNotEmpty) {
             _scanFolders = List<String>.from(data['scanFolders']);
           }
-          if (data['customMornyeExtensions'] is List) {
-            for (final raw in (data['customMornyeExtensions'] as List)) {
-              if (raw is Map && raw['name'] != null) {
-                final eName = raw['name'].toString();
-                if (!_extensions.any((e) => e.name.toLowerCase() == eName.toLowerCase())) {
-                  _extensions.add(MornyeExtension(
-                    name: eName,
-                    version: (raw['version'] ?? 'v1.0.0').toString(),
-                    author: (raw['author'] ?? 'Mornye').toString(),
-                    format: (raw['format'] ?? 'Manifest').toString(),
-                    category: (raw['category'] ?? 'Metadata').toString(),
-                    description: (raw['description'] ?? 'Imported extension manifest').toString(),
-                    endpointUrl: raw['endpointUrl']?.toString(),
-                    isInstalled: raw['isInstalled'] != false,
-                    isEnabled: raw['isEnabled'] != false,
-                  ));
-                }
-                if (!_mornyeServices.contains(eName)) {
-                  _mornyeServices.add(eName);
-                }
-              }
-            }
-          }
           if (cachedSongs.isNotEmpty && mounted) {
             final byPath = {for (final t in cachedSongs) t.path: t};
             if (data['customPlaylists'] is List) {
@@ -1278,19 +1266,6 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'replayGainMode': _replayGainMode,
         'defaultStartupTab': _defaultStartupTab,
         'scanFolders': _scanFolders,
-        'customMornyeExtensions': _extensions
-            .map((e) => {
-                  'name': e.name,
-                  'version': e.version,
-                  'author': e.author,
-                  'format': e.format,
-                  'category': e.category,
-                  'description': e.description,
-                  'endpointUrl': e.endpointUrl,
-                  'isInstalled': e.isInstalled,
-                  'isEnabled': e.isEnabled,
-                })
-            .toList(),
         'customPlaylists': _customPlaylists.map((p) => p.toJson()).toList(),
         'lastSongPath': _currentSong?.path,
         'lastPositionMs': _audioPlayer.state.position.inMilliseconds,
@@ -1621,6 +1596,7 @@ Future<void> _playSong(AudioTrack song) async {
                   const Text('Sleep Timer',
                       style:
                           TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -1660,6 +1636,7 @@ Future<void> _playSong(AudioTrack song) async {
                     _cancelSleepTimer();
                   },
                 ),
+            ],
           ),
         ),
       ),
@@ -1804,8 +1781,10 @@ Future<void> _playSong(AudioTrack song) async {
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white)),
+                          ],
                         ),
                       ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                   Row(children: [
@@ -1836,6 +1815,7 @@ Future<void> _playSong(AudioTrack song) async {
                       ),
                     ]),
                   ),
+                ],
               ),
             ),
           );
@@ -1883,8 +1863,11 @@ Future<void> _playSong(AudioTrack song) async {
                             fontSize: 11.5,
                             color: Colors.white60,
                             fontWeight: FontWeight.w500)),
+                  ],
+                ],
               ),
             ),
+          ],
         ),
         if (showConnectorDown)
           Padding(
@@ -1892,6 +1875,7 @@ Future<void> _playSong(AudioTrack song) async {
             child: Icon(Icons.south_rounded,
                 size: 12, color: Colors.white.withOpacity(0.25)),
           ),
+      ],
     );
   }
 
@@ -1920,6 +1904,7 @@ Future<void> _playSong(AudioTrack song) async {
                       const Text('Hardware Equalizer & DSP',
                           style: TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 17)),
+                    ],
                   ),
                   Switch(
                     value: _eqEnabled,
@@ -1930,6 +1915,7 @@ Future<void> _playSong(AudioTrack song) async {
                       await _applyHardwareEqGains();
                     },
                   ),
+                ],
               ),
               const SizedBox(height: 10),
 Container(
@@ -2039,6 +2025,7 @@ const SizedBox(height: 10),
                             style: const TextStyle(
                                 fontSize: 11, color: Colors.grey)),
                       ),
+                    ],
                   )),
               const Divider(color: Colors.white12),
               Row(
@@ -2057,6 +2044,7 @@ const SizedBox(height: 10),
                       await _applyHardwareEqGains();
                     },
                   ),
+                ],
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2075,6 +2063,7 @@ const SizedBox(height: 10),
                       setState(() {});
                     },
                   ),
+                ],
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2098,7 +2087,9 @@ const SizedBox(height: 10),
                             ))
                         .toList(),
                   ),
+                ],
               ),
+            ],
           ),
         ),
       ),
@@ -2241,6 +2232,7 @@ const SizedBox(height: 10),
                           } catch (_) {}
                         },
                       ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -2290,6 +2282,7 @@ const SizedBox(height: 10),
                                 Text('Global',
                                     style: TextStyle(
                                         fontSize: 11, color: Colors.white54)),
+                              ],
                             ),
                           ),
                           Text(
@@ -2299,6 +2292,7 @@ const SizedBox(height: 10),
                                 fontWeight: FontWeight.w700,
                                 color: accent),
                           ),
+                        ],
                       ),
                     ),
                   ),
@@ -2387,7 +2381,9 @@ const SizedBox(height: 10),
                                             fontSize: 10.5,
                                             color: accent,
                                             fontWeight: FontWeight.w600)),
+                                  ],
                                 ),
+                              ],
                             ),
                             const Spacer(),
                             IconButton(
@@ -2408,6 +2404,7 @@ const SizedBox(height: 10),
                               onPressed: () =>
                                   setSheetState(() => lyricsEditCtrl.clear()),
                             ),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         SizedBox(
@@ -2444,8 +2441,10 @@ const SizedBox(height: 10),
                                   ),
                                 ),
                               ),
+                            ],
                           ),
                         ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -2539,7 +2538,9 @@ const SizedBox(height: 10),
                             style: TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
+                    ],
                   ),
+                ],
               ),
             ),
           );
@@ -2641,6 +2642,7 @@ const SizedBox(height: 10),
                       tabs: const [
                         Tab(icon: Icon(Icons.cloud_download_rounded, size: 18), text: 'Fetch Online'),
                         Tab(icon: Icon(Icons.photo_library_rounded, size: 18), text: 'Device Gallery'),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     Expanded(
@@ -2684,6 +2686,7 @@ const SizedBox(height: 10),
                                         ),
                                       ),
                               ),
+                            ],
                           ),
                           GridView.builder(
                             physics: const BouncingScrollPhysics(),
@@ -2703,8 +2706,10 @@ const SizedBox(height: 10),
                               child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(localImages[i], fit: BoxFit.cover, gaplessPlayback: true, cacheWidth: 300)),
                             ),
                           ),
+                        ],
                       ),
                     ),
+                  ],
                 ),
               ),
             ),
@@ -2767,6 +2772,7 @@ const SizedBox(height: 10),
                       _showNamiLyricsManagerSheet(song);
                     },
                   ),
+                ],
               ),
               const SizedBox(height: 10),
               Padding(
@@ -2827,6 +2833,7 @@ const SizedBox(height: 10),
                         },
                       ),
                     ),
+                  ],
                 ),
               ),
               _buildRichInputField(titleCtrl, 'Title'),
@@ -2896,7 +2903,9 @@ const SizedBox(height: 10),
                     },
                     child: const Text('Save'),
                   ),
+                ],
               ),
+            ],
           ),
         ),
       ),
@@ -2972,6 +2981,7 @@ const SizedBox(height: 10),
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
+        ],
       ),
     );
   }
@@ -3002,6 +3012,7 @@ const SizedBox(height: 10),
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added to ${pl.name}')));
                     },
                   )),
+            ],
           ),
         ),
       ),
@@ -3029,8 +3040,10 @@ const SizedBox(height: 10),
                       children: [
                         Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         Text('${cleanArtistStr(song.artist)} • ${song.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                      ],
                     ),
                   ),
+                ],
               ),
               const SizedBox(height: 12),
               ListTile(
@@ -3103,6 +3116,7 @@ const SizedBox(height: 10),
                   _showAdvancedDeleteDialog(song);
                 },
               ),
+            ],
           ),
         ),
       ),
@@ -3132,6 +3146,7 @@ const SizedBox(height: 10),
               _infoRow('Duration & Plays', '${_formatDurationPadded(song.duration)} • ${song.playCount} plays'),
               _infoRow('File Size', sizeMb),
               _infoRow('File Path', song.path),
+            ],
           ),
         ),
       ),
@@ -3146,6 +3161,7 @@ const SizedBox(height: 10),
         children: [
           SizedBox(width: 125, child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.w600))),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600))),
+        ],
       ),
     );
   }
@@ -3191,6 +3207,7 @@ const SizedBox(height: 10),
                     const Text('Folder Explorer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                     const Spacer(),
                     IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context)),
+                  ],
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -3211,6 +3228,7 @@ const SizedBox(height: 10),
                         ),
                       ),
                       Text('${entities.length} items', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -3244,6 +3262,7 @@ const SizedBox(height: 10),
                     },
                   ),
                 ),
+              ],
             ),
           );
         },
@@ -3289,6 +3308,7 @@ const SizedBox(height: 10),
                               Text(_currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.white)),
                               const SizedBox(height: 2),
                               Text(cleanArtistStr(_currentSong!.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                            ],
                           ),
                         ),
                         StreamBuilder<bool>(
@@ -3306,6 +3326,7 @@ const SizedBox(height: 10),
                             );
                           },
                         ),
+                      ],
                     ),
                   ),
                 Expanded(
@@ -3338,6 +3359,7 @@ const SizedBox(height: 10),
                                     '$activeIndex/${_songs.length} • ${_formatTotalDurationHoursMins(totalDur)}',
                                     style: const TextStyle(fontSize: 11.5, color: Colors.white54),
                                   ),
+                                ],
                               ),
                               Row(
                                 children: [
@@ -3360,7 +3382,9 @@ const SizedBox(height: 10),
                                     icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 22, color: Colors.white70),
                                     onPressed: () => Navigator.pop(context),
                                   ),
+                                ],
                               ),
+                            ],
                           ),
                         ),
                         const Divider(color: Colors.white10, height: 1),
@@ -3453,6 +3477,7 @@ Container(
                                       _locateActivePlayingTrack();
                                     },
                                   ),
+                                ],
                               ),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
@@ -3474,11 +3499,14 @@ Container(
                                   }
                                 },
                               ),
+                            ],
                           ),
                         ),
+                      ],
                     ),
                   ),
                 ),
+              ],
             ),
           );
         },
@@ -3540,6 +3568,7 @@ _buildCoverArt(song, 46, 8),
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 10.5, color: Colors.white38),
                   ),
+                ],
               ),
             ),
             const SizedBox(width: 8),
@@ -3556,6 +3585,7 @@ _buildCoverArt(song, 46, 8),
                     size: 17,
                   ),
                 ),
+              ],
             ),
             const SizedBox(width: 10),
             if (isReorderable)
@@ -3582,6 +3612,7 @@ _buildCoverArt(song, 46, 8),
                 icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 18),
                 onPressed: () => _showTrackOptionsMenu(song),
               ),
+          ],
         ),
       ),
     ),
@@ -3712,199 +3743,6 @@ _buildCoverArt(song, 46, 8),
     );
   }
 
-  Map<String, dynamic>? _extractManifestFromBytes(Uint8List bytes) {
-    if (bytes.isEmpty) return null;
-
-    // Case A: Standard JSON manifest
-    try {
-      final text = utf8.decode(bytes, allowMalformed: true).trim();
-      if (text.startsWith('{')) {
-        final decoded = jsonDecode(text);
-        if (decoded is Map<String, dynamic>) return decoded;
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      }
-    } catch (_) {}
-
-    // Case B: ZIP archive (.sflx bundle containing manifest.json or *.json)
-    if (bytes.length >= 22 && bytes[0] == 0x50 && bytes[1] == 0x4B) {
-      final bd = ByteData.sublistView(bytes);
-      // Locate End of Central Directory (PK\x05\x06)
-      int eocdOffset = -1;
-      final minSearch = math.max(0, bytes.length - 65557);
-      for (int i = bytes.length - 22; i >= minSearch; i--) {
-        if (bytes[i] == 0x50 && bytes[i + 1] == 0x4B && bytes[i + 2] == 0x05 && bytes[i + 3] == 0x06) {
-          eocdOffset = i;
-          break;
-        }
-      }
-      if (eocdOffset >= 0) {
-        final entryCount = bd.getUint16(eocdOffset + 10, Endian.little);
-        int cdOffset = bd.getUint32(eocdOffset + 16, Endian.little);
-        for (int idx = 0; idx < entryCount && cdOffset + 46 <= bytes.length; idx++) {
-          final sig = bd.getUint32(cdOffset, Endian.little);
-          if (sig != 0x02014B50) break;
-          final method = bd.getUint16(cdOffset + 10, Endian.little);
-          final compSize = bd.getUint32(cdOffset + 20, Endian.little);
-          final nameLen = bd.getUint16(cdOffset + 28, Endian.little);
-          final extraLen = bd.getUint16(cdOffset + 30, Endian.little);
-          final commentLen = bd.getUint16(cdOffset + 32, Endian.little);
-          final localHdrOffset = bd.getUint32(cdOffset + 42, Endian.little);
-
-          final nameStart = cdOffset + 46;
-          final nameEnd = math.min(bytes.length, nameStart + nameLen);
-          final entryName = latin1.decode(bytes.sublist(nameStart, nameEnd), allowInvalid: true).toLowerCase();
-
-          if (entryName.endsWith('.json') &&
-              (entryName == 'manifest.json' || entryName.endsWith('/manifest.json') || entryName.contains('manifest')) &&
-              method == 0 &&
-              localHdrOffset + 30 <= bytes.length) {
-            final lNameLen = bd.getUint16(localHdrOffset + 26, Endian.little);
-            final lExtraLen = bd.getUint16(localHdrOffset + 28, Endian.little);
-            final dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
-            final dataEnd = math.min(bytes.length, dataStart + compSize);
-            if (dataStart >= 0 && dataEnd > dataStart) {
-              try {
-                final rawJson = utf8.decode(bytes.sublist(dataStart, dataEnd), allowMalformed: true).trim();
-                final decoded = jsonDecode(rawJson);
-                if (decoded is Map<String, dynamic>) return decoded;
-                if (decoded is Map) return Map<String, dynamic>.from(decoded);
-              } catch (_) {}
-            }
-          }
-          cdOffset += 46 + nameLen + extraLen + commentLen;
-        }
-      }
-    }
-    return null;
-  }
-
-  int _registerManifestMap(Map<String, dynamic> parsed, {String fallbackName = 'Custom Extension'}) {
-    final rawName = (parsed['displayName'] ?? parsed['name'] ?? '').toString().trim();
-    final extName = rawName.isNotEmpty ? rawName : fallbackName;
-    if (extName.isEmpty) return 0;
-
-    final exists = _extensions.any((e) => e.name.toLowerCase() == extName.toLowerCase());
-    if (!exists) {
-      final typesVal = parsed['type'];
-      final typeStr = typesVal is List ? typesVal.join(', ') : (typesVal?.toString() ?? 'Extension');
-      final catVal = (parsed['category'] ?? '').toString().trim();
-      final resolvedCat = catVal.isNotEmpty
-          ? catVal
-          : (typeStr.toLowerCase().contains('download') ? 'Download' : 'Metadata');
-      _extensions.add(MornyeExtension(
-        name: extName,
-        version: (parsed['version'] ?? 'v1.0.0').toString(),
-        author: (parsed['author'] ?? 'Mornye Bundle').toString(),
-        format: (parsed['format'] ?? typeStr).toString(),
-        category: resolvedCat,
-        description: (parsed['description'] ?? 'Imported .sflx manifest').toString(),
-        endpointUrl: (parsed['endpointUrl'] ?? parsed['endpoint'] ?? parsed['homepage'])?.toString(),
-        isInstalled: true,
-        isEnabled: true,
-      ));
-      if (!_mornyeServices.contains(extName)) {
-        _mornyeServices.add(extName);
-      }
-      return 1;
-    }
-    return 0;
-  }
-
-  Map<String, dynamic>? _extractManifestFromBytes(Uint8List bytes) {
-    if (bytes.isEmpty) return null;
-
-    try {
-      final text = utf8.decode(bytes, allowMalformed: true).trim();
-      if (text.startsWith('{')) {
-        final decoded = jsonDecode(text);
-        if (decoded is Map<String, dynamic>) return decoded;
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      }
-    } catch (_) {}
-
-    if (bytes.length >= 22 && bytes[0] == 0x50 && bytes[1] == 0x4B) {
-      final bd = ByteData.sublistView(bytes);
-      int eocdOffset = -1;
-      final minSearch = math.max(0, bytes.length - 65557);
-      for (int i = bytes.length - 22; i >= minSearch; i--) {
-        if (bytes[i] == 0x50 && bytes[i + 1] == 0x4B && bytes[i + 2] == 0x05 && bytes[i + 3] == 0x06) {
-          eocdOffset = i;
-          break;
-        }
-      }
-      if (eocdOffset >= 0) {
-        final entryCount = bd.getUint16(eocdOffset + 10, Endian.little);
-        int cdOffset = bd.getUint32(eocdOffset + 16, Endian.little);
-        for (int idx = 0; idx < entryCount && cdOffset + 46 <= bytes.length; idx++) {
-          final sig = bd.getUint32(cdOffset, Endian.little);
-          if (sig != 0x02014B50) break;
-          final method = bd.getUint16(cdOffset + 10, Endian.little);
-          final compSize = bd.getUint32(cdOffset + 20, Endian.little);
-          final nameLen = bd.getUint16(cdOffset + 28, Endian.little);
-          final extraLen = bd.getUint16(cdOffset + 30, Endian.little);
-          final commentLen = bd.getUint16(cdOffset + 32, Endian.little);
-          final localHdrOffset = bd.getUint32(cdOffset + 42, Endian.little);
-
-          final nameStart = cdOffset + 46;
-          final nameEnd = math.min(bytes.length, nameStart + nameLen);
-          final entryName = latin1.decode(bytes.sublist(nameStart, nameEnd), allowInvalid: true).toLowerCase();
-
-          if (entryName.endsWith('.json') &&
-              (entryName == 'manifest.json' || entryName.endsWith('/manifest.json') || entryName.contains('manifest')) &&
-              method == 0 &&
-              localHdrOffset + 30 <= bytes.length) {
-            final lNameLen = bd.getUint16(localHdrOffset + 26, Endian.little);
-            final lExtraLen = bd.getUint16(localHdrOffset + 28, Endian.little);
-            final dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
-            final dataEnd = math.min(bytes.length, dataStart + compSize);
-            if (dataStart >= 0 && dataEnd > dataStart) {
-              try {
-                final rawJson = utf8.decode(bytes.sublist(dataStart, dataEnd), allowMalformed: true).trim();
-                final decoded = jsonDecode(rawJson);
-                if (decoded is Map<String, dynamic>) return decoded;
-                if (decoded is Map) return Map<String, dynamic>.from(decoded);
-              } catch (_) {}
-            }
-          }
-          cdOffset += 46 + nameLen + extraLen + commentLen;
-        }
-      }
-    }
-    return null;
-  }
-
-  int _registerManifestMap(Map<String, dynamic> parsed, {String fallbackName = 'Custom Extension'}) {
-    final rawName = (parsed['displayName'] ?? parsed['name'] ?? '').toString().trim();
-    final extName = rawName.isNotEmpty ? rawName : fallbackName;
-    if (extName.isEmpty) return 0;
-
-    final exists = _extensions.any((e) => e.name.toLowerCase() == extName.toLowerCase());
-    if (!exists) {
-      final typesVal = parsed['type'];
-      final typeStr = typesVal is List ? typesVal.join(', ') : (typesVal?.toString() ?? 'Extension');
-      final catVal = (parsed['category'] ?? '').toString().trim();
-      final resolvedCat = catVal.isNotEmpty
-          ? catVal
-          : (typeStr.toLowerCase().contains('download') ? 'Download' : 'Metadata');
-      _extensions.add(MornyeExtension(
-        name: extName,
-        version: (parsed['version'] ?? 'v1.0.0').toString(),
-        author: (parsed['author'] ?? 'Mornye Bundle').toString(),
-        format: (parsed['format'] ?? typeStr).toString(),
-        category: resolvedCat,
-        description: (parsed['description'] ?? 'Imported .sflx manifest').toString(),
-        endpointUrl: (parsed['endpointUrl'] ?? parsed['endpoint'] ?? parsed['homepage'])?.toString(),
-        isInstalled: true,
-        isEnabled: true,
-      ));
-      if (!_mornyeServices.contains(extName)) {
-        _mornyeServices.add(extName);
-      }
-      return 1;
-    }
-    return 0;
-  }
-
   Future<void> _importSflxManifest() async {
     try {
       final dlDir = Directory('/storage/emulated/0/Download');
@@ -3916,136 +3754,45 @@ _buildCoverArt(song, 46, 8),
           .toList();
       if (sflxFiles.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No .sflx files found in /storage/emulated/0/Download')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No .sflx files found in /Download')));
         }
         return;
       }
       int imported = 0;
       for (var file in sflxFiles) {
         try {
-          final bytes = await file.readAsBytes();
-          final parsed = _extractManifestFromBytes(bytes);
-          if (parsed != null) {
-            final baseFile = file.uri.pathSegments.last.replaceAll(RegExp(r'\.sflx$', caseSensitive: false), '');
-            imported += _registerManifestMap(parsed, fallbackName: baseFile);
+          final parsed = jsonDecode(await file.readAsString());
+          if (parsed is Map<String, dynamic> && parsed['name'] != null) {
+            final extName = parsed['name'].toString();
+            final exists = _extensions.any((e) => e.name.toLowerCase() == extName.toLowerCase());
+            if (!exists) {
+              _extensions.add(MornyeExtension(
+                name: extName,
+                version: parsed['version']?.toString() ?? 'v1.0.0',
+                author: parsed['author']?.toString() ?? 'External .sflx',
+                format: parsed['format']?.toString() ?? 'FLAC / Stream',
+                category: parsed['category']?.toString() ?? 'Download',
+                description: parsed['description']?.toString() ?? 'Imported via .sflx manifest',
+                endpointUrl: parsed['endpoint']?.toString(),
+                isInstalled: true,
+              ));
+              if (!_mornyeServices.contains(extName)) {
+                _mornyeServices.add(extName);
+              }
+              imported++;
+            }
           }
         } catch (_) {}
       }
       setState(() {});
-      await _saveStateCache();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Imported $imported .sflx extension(s) from Download')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Imported $imported .sflx extension(s)')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
     }
-  }
-
-  Future<void> _showAddExtensionFromUrlDialog(StateSetter setRepoState) async {
-    final urlCtrl = TextEditingController();
-    bool isFetchingUrl = false;
-
-    await showDialog(
-      context: context,
-      builder: (dCtx) => StatefulBuilder(
-        builder: (dCtx, setDlgState) => AlertDialog(
-          backgroundColor: const Color(0xFF14141F),
-          title: const Text('Add Extension from URL', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Paste a direct URL to a .sflx bundle, manifest.json, or JSON extension list:',
-                style: TextStyle(fontSize: 12, color: Colors.white60),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: urlCtrl,
-                autofocus: true,
-                style: const TextStyle(fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'https://.../extension.sflx or registry.json',
-                  filled: true,
-                  fillColor: const Color(0xFF0E0E15),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              if (isFetchingUrl) ...[
-                const SizedBox(height: 12),
-                Center(child: CircularProgressIndicator(color: Theme.of(dCtx).colorScheme.primary)),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(dCtx).colorScheme.primary),
-              onPressed: isFetchingUrl
-                  ? null
-                  : () async {
-                      final rawUrl = urlCtrl.text.trim();
-                      if (rawUrl.isEmpty) return;
-                      setDlgState(() => isFetchingUrl = true);
-                      try {
-                        final res = await http
-                            .get(Uri.parse(rawUrl), headers: _httpHeaders)
-                            .timeout(const Duration(seconds: 12));
-                        int added = 0;
-                        if (res.statusCode == 200) {
-                          final bodyStr = utf8.decode(res.bodyBytes, allowMalformed: true).trim();
-                          if (bodyStr.startsWith('[')) {
-                            final list = jsonDecode(bodyStr) as List;
-                            for (final entry in list) {
-                              if (entry is Map) {
-                                added += _registerManifestMap(Map<String, dynamic>.from(entry));
-                              }
-                            }
-                          } else {
-                            final single = _extractManifestFromBytes(res.bodyBytes);
-                            if (single != null) {
-                              if (single['extensions'] is List) {
-                                for (final entry in (single['extensions'] as List)) {
-                                  if (entry is Map) {
-                                    added += _registerManifestMap(Map<String, dynamic>.from(entry));
-                                  }
-                                }
-                              } else {
-                                final slug = Uri.tryParse(rawUrl)?.pathSegments.last.replaceAll(RegExp(r'\.(sflx|json)$', caseSensitive: false), '') ?? 'Remote Extension';
-                                added += _registerManifestMap(single, fallbackName: slug);
-                              }
-                            }
-                          }
-                        }
-                        if (mounted) setState(() {});
-                        setRepoState(() {});
-                        await _saveStateCache();
-                        if (dCtx.mounted) Navigator.pop(dCtx);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(added > 0
-                                  ? 'Added $added extension(s) from URL!'
-                                  : 'No valid manifest found at URL (HTTP ${res.statusCode})'),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        setDlgState(() => isFetchingUrl = false);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to fetch URL: $e')),
-                          );
-                        }
-                      }
-                    },
-              child: const Text('Add'),
-            ),
-        ),
-      ),
-    );
   }
 
   void _openExtensionRepoScreen() {
@@ -4062,9 +3809,26 @@ _buildCoverArt(song, 46, 8),
                 title: Text('Mornye Repo (${_extensions.where((e) => e.isInstalled).length}/${_extensions.length})'),
                 actions: [
                   IconButton(
-                    tooltip: 'Add from URL',
-                    icon: const Icon(Icons.link_rounded, size: 22),
-                    onPressed: () => _showAddExtensionFromUrlDialog(setRepoState),
+                    tooltip: 'Create Sample .sflx in /Download',
+                    icon: const Icon(Icons.note_add_outlined, size: 20),
+                    onPressed: () async {
+                      try {
+                        final f = File('/storage/emulated/0/Download/nami_custom_provider.sflx');
+                        await f.writeAsString(jsonEncode({
+                          'name': 'Custom Lossless Feed',
+                          'version': 'v1.0.0',
+                          'author': _userName,
+                          'format': '24-Bit FLAC',
+                          'category': 'Download',
+                          'description': 'Custom Mornye provider manifest',
+                        }));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Created /Download/nami_custom_provider.sflx')),
+                          );
+                        }
+                      } catch (_) {}
+                    },
                   ),
                   TextButton.icon(
                     icon: const Icon(Icons.file_open_rounded, size: 18),
@@ -4074,6 +3838,7 @@ _buildCoverArt(song, 46, 8),
                       setRepoState(() {});
                     },
                   ),
+                ],
               ),
               body: Column(
                 children: [
@@ -4113,7 +3878,8 @@ _buildCoverArt(song, 46, 8),
                           child: ListTile(
                             leading: Icon(Icons.extension_rounded, color: ext.isInstalled ? accent : Colors.white38),
                             title: Text('${ext.name} • ${ext.version}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                            subtitle: Text('${ext.category} • ${ext.format}\n${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                            subtitle: Text('${ext.category} • ${ext.format}
+${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
                             isThreeLine: true,
                             trailing: Switch(
                               value: ext.isInstalled,
@@ -4124,7 +3890,6 @@ _buildCoverArt(song, 46, 8),
                                   ext.isEnabled = v;
                                 });
                                 setState(() {});
-                                _saveStateCache();
                               },
                             ),
                           ),
@@ -4132,6 +3897,7 @@ _buildCoverArt(song, 46, 8),
                       },
                     ),
                   ),
+                ],
               ),
             );
           },
@@ -4160,12 +3926,14 @@ _buildCoverArt(song, 46, 8),
                     const SizedBox(height: 6),
                     Text('Total Library Tracks: ${_songs.length}', style: const TextStyle(color: Colors.white70)),
                     Text('Favorites Count: ${_songs.where((s) => s.isFavorite).length}', style: const TextStyle(color: Colors.white70)),
+                  ],
                 ),
               ),
               const SizedBox(height: 18),
               const Text('Most Played Tracks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               ...topPlayed.take(15).map((s) => _buildNamiTrackTile(s)),
+            ],
           ),
         ),
       ),
@@ -5187,6 +4955,7 @@ _buildCoverArt(song, 46, 8),
                         ),
                       ),
                     ),
+                  ],
                 ),
                 if (foundPhotos.isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -5199,6 +4968,7 @@ _buildCoverArt(song, 46, 8),
                           onPressed: () => setProfState(() => tempPhoto = null),
                           child: const Text('Reset Icon', style: TextStyle(fontSize: 11.5)),
                         ),
+                    ],
                   ),
                   SizedBox(
                     height: 64,
@@ -5226,6 +4996,7 @@ _buildCoverArt(song, 46, 8),
                       },
                     ),
                   ),
+                ],
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerRight,
@@ -5244,6 +5015,7 @@ _buildCoverArt(song, 46, 8),
                     child: const Text('Save Profile', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
+              ],
             ),
           );
         },
@@ -5360,7 +5132,8 @@ _buildCoverArt(song, 46, 8),
               gradient: LinearGradient(
                 colors: [
                   Color.alphaBlend(accent.withOpacity(0.18), const Color(0xFF13131E)),
-                  const Color(0xFF0E0E16),],
+                  const Color(0xFF0E0E16),
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -5394,6 +5167,7 @@ _buildCoverArt(song, 46, 8),
                         child: const Icon(Icons.edit_rounded, size: 10, color: Colors.white),
                       ),
                     ),
+                  ],
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -5425,6 +5199,7 @@ _buildCoverArt(song, 46, 8),
                                   _connectedDacName,
                                   style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: accent),
                                 ),
+                              ],
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -5436,7 +5211,9 @@ _buildCoverArt(song, 46, 8),
                               style: const TextStyle(fontSize: 11.5, color: Colors.white60),
                             ),
                           ),
+                        ],
                       ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -5447,6 +5224,7 @@ _buildCoverArt(song, 46, 8),
                   icon: Icon(Icons.bar_chart_rounded, color: accent),
                   onPressed: _openStatisticsScreen,
                 ),
+              ],
             ),
           ),
         ),
@@ -5464,6 +5242,7 @@ _buildCoverArt(song, 46, 8),
               _buildHomePillChip(Icons.album_rounded, 'Albums (${topAlbums.length})', Colors.amberAccent, _showAlbumsBrowserScreen),
               _buildHomePillChip(Icons.tune_rounded, 'Equalizer', Colors.tealAccent, _showEqualizerSheet),
               _buildHomePillChip(Icons.bedtime_rounded, 'Sleep Timer', Colors.deepPurpleAccent, _showSleepTimerDialog),
+            ],
           ),
         ),
 
@@ -5534,6 +5313,7 @@ _buildCoverArt(song, 46, 8),
                                             ),
                                             const SizedBox(width: 6),
                                             if (_showCodecBadges) _buildFormatPill(resumeTrack, accent),
+                                          ],
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
@@ -5549,6 +5329,7 @@ _buildCoverArt(song, 46, 8),
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(fontSize: 11.5, color: Colors.white70),
                                         ),
+                                      ],
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -5566,8 +5347,10 @@ _buildCoverArt(song, 46, 8),
                                       size: 26,
                                     ),
                                   ),
+                                ],
                               ),
                             ),
+                          ],
                         ),
                       ),
                       StreamBuilder<Duration>(
@@ -5584,11 +5367,13 @@ _buildCoverArt(song, 46, 8),
                           );
                         },
                       ),
+                    ],
                   ),
                 ),
               );
             },
           ),
+        ],
 
         const SizedBox(height: 16),
         Row(
@@ -5622,6 +5407,7 @@ _buildCoverArt(song, 46, 8),
                 color: Colors.amberAccent,
               ),
             ),
+          ],
         ),
 
         if (_historyTracks.isNotEmpty) ...[
@@ -5629,12 +5415,14 @@ _buildCoverArt(song, 46, 8),
           _buildHomeSectionHeader('Jump Back In', () => _showFilteredListScreen('Play History', _historyTracks)),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(_historyTracks.take(15).toList()),
+        ],
 
         if (_songs.isNotEmpty) ...[
           const SizedBox(height: 22),
           _buildHomeSectionHeader('Heavy Rotation', () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList())),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(mostPlayed.take(15).toList(), showPlayBadge: true),
+        ],
 
         if (topAlbums.isNotEmpty) ...[
           const SizedBox(height: 22),
@@ -5678,16 +5466,19 @@ _buildCoverArt(song, 46, 8),
                                 ),
                               ),
                             ),
+                          ],
                         ),
                         const SizedBox(height: 5),
                         Text(albEntry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                         Text(cleanArtistStr(albTracks.first.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                      ],
                     ),
                   ),
                 );
               },
             ),
           ),
+        ],
 
         if (spotlightArtist != null && spotlightTracks.isNotEmpty) ...[
           const SizedBox(height: 20),
@@ -5712,6 +5503,7 @@ _buildCoverArt(song, 46, 8),
                         const SizedBox(height: 2),
                         Text(spotlightArtist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800)),
                         Text('${spotlightTracks.length} songs in your library', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                      ],
                     ),
                   ),
                   ElevatedButton.icon(
@@ -5726,15 +5518,18 @@ _buildCoverArt(song, 46, 8),
                     label: const Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     onPressed: () => _playSong(spotlightTracks.first),
                   ),
+                ],
               ),
             ),
           ),
+        ],
 
         if (_songs.isNotEmpty) ...[
           const SizedBox(height: 22),
           _buildHomeSectionHeader('Freshly Added', () => _showFilteredListScreen('Recently Added', recentlyAdded.take(50).toList())),
           const SizedBox(height: 8),
           _buildHorizontalTrackCarousel(recentlyAdded.take(15).toList()),
+        ],
 
         if (uniqueArtists.isNotEmpty) ...[
           const SizedBox(height: 22),
@@ -5762,12 +5557,15 @@ _buildCoverArt(song, 46, 8),
                         const SizedBox(height: 6),
                         Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                         Text('${aTracks.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
+                      ],
                     ),
                   ),
                 );
               },
             ),
           ),
+        ],
+      ],
     );
   }
 
@@ -5790,6 +5588,7 @@ _buildCoverArt(song, 46, 8),
               Icon(icon, size: 15, color: color),
               const SizedBox(width: 6),
               Text(label, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white)),
+            ],
           ),
         ),
       ),
@@ -5818,10 +5617,12 @@ _buildCoverArt(song, 46, 8),
             children: [
               Icon(icon, size: 16, color: color),
               Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
+            ],
           ),
           const SizedBox(height: 8),
           Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white70)),
           Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, color: Colors.white38)),
+        ],
       ),
     );
   }
@@ -5962,6 +5763,7 @@ _buildCoverArt(song, 46, 8),
         Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
         const SizedBox(height: 2),
         Text(label, style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
+      ],
     );
   }
 
@@ -5998,8 +5800,10 @@ _buildCoverArt(song, 46, 8),
                 children: [
                   Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
                   Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                ],
               ),
             ),
+          ],
         ),
       ),
     );
@@ -6018,6 +5822,7 @@ _buildCoverArt(song, 46, 8),
             child: const Text('See all', style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w600)),
           ),
         ),
+      ],
     );
   }
 
@@ -6050,10 +5855,12 @@ _buildCoverArt(song, 46, 8),
                             child: Text('${track.playCount}x', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white)),
                           ),
                         ),
+                    ],
                   ),
                   const SizedBox(height: 5),
                   Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                   Text(cleanArtistStr(track.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                ],
               ),
             ),
           );
@@ -6091,11 +5898,13 @@ _buildCoverArt(song, 46, 8),
                       Container(width: 200, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(4))),
                       const SizedBox(height: 10),
                       Container(width: 120, height: 10, decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(4))),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8.0),
                 // Skeleton trailing icon
                 Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), shape: BoxShape.circle)),
+              ],
             ),
           );
         },
@@ -6139,8 +5948,10 @@ _buildCoverArt(song, 46, 8),
                     onSelected: (_) => _applyLibraryFilter(mode: entry.$1),
                   ),
                 ),
+            ],
           ),
         ),
+      ],
     );
 
     if (_filteredSongs.isEmpty) {
@@ -6164,9 +5975,11 @@ _buildCoverArt(song, 46, 8),
                       _applyLibraryFilter(query: '', mode: 'All');
                     },
                   ),
+                ],
               ),
             ),
           ),
+        ],
       );
     }
 
@@ -6200,6 +6013,7 @@ _buildCoverArt(song, 46, 8),
             child: const Icon(Icons.my_location_rounded, color: Colors.white, size: 20),
           ),
         ),
+      ],
     );
   }
 
@@ -6270,6 +6084,7 @@ _buildCoverArt(song, 46, 8),
                 icon: Icon(_artistSortByCount ? Icons.sort_by_alpha_rounded : Icons.sort_rounded, size: 20, color: _artistSortByCount ? accent : Colors.white),
                 onPressed: () => setState(() => _artistSortByCount = !_artistSortByCount),
               ),
+            ],
           ),
         ),
         Expanded(
@@ -6343,6 +6158,7 @@ _buildCoverArt(song, 46, 8),
                   ),
           ),
         ),
+      ],
     );
   }
 
@@ -6399,7 +6215,9 @@ _buildCoverArt(song, 46, 8),
                       PopupMenuItem(value: 'artist', child: Text('Sort: Artist A–Z')),
                       PopupMenuItem(value: 'year', child: Text('Sort: Year (Newest)')),
                       PopupMenuItem(value: 'count', child: Text('Sort: Track Count')),
+                    ],
                   ),
+                ],
               ),
               body: Stack(
                 children: [
@@ -6461,6 +6279,7 @@ _buildCoverArt(song, 46, 8),
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(fontSize: 11, color: Colors.white60),
                                           ),
+                                        ],
                                       ),
                                     ),
                                   );
@@ -6494,8 +6313,10 @@ _buildCoverArt(song, 46, 8),
                                 },
                               ),
                       ),
+                    ],
                   ),
                   Positioned(left: 10, right: 10, bottom: 10, child: _buildReactiveMiniPlayer()),
+                ],
               ),
             );
           },
@@ -6556,6 +6377,7 @@ _buildCoverArt(song, 46, 8),
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${batch.length} tracks to ${pl.name}')));
                     },
                   )),
+            ],
           ),
         ),
       ),
@@ -6622,6 +6444,7 @@ _buildCoverArt(song, 46, 8),
               _exitSelectionMode();
             },
           ),
+        ],
       ),
     );
   }
@@ -6705,6 +6528,7 @@ _buildCoverArt(song, 46, 8),
                         ),
                       ),
                     ),
+                ],
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -6735,6 +6559,7 @@ _buildCoverArt(song, 46, 8),
                         if (_showCodecBadges) ...[
                           _buildFormatPill(song, Theme.of(context).colorScheme.primary),
                           const SizedBox(width: 6),
+                        ],
                         Expanded(
                           child: Text(
                             '${song.album} • ${formatReleaseDate(song.year)}',
@@ -6743,7 +6568,9 @@ _buildCoverArt(song, 46, 8),
                             style: const TextStyle(fontSize: 10.5, color: Colors.white38),
                           ),
                         ),
+                      ],
                     ),
+                  ],
                 ),
               ),
                 const SizedBox(width: 6),
@@ -6763,6 +6590,7 @@ _buildCoverArt(song, 46, 8),
                         size: 18,
                       ),
                     ),
+                  ],
                 ),
                 const SizedBox(width: 2),
                 IconButton(
@@ -6772,6 +6600,7 @@ _buildCoverArt(song, 46, 8),
                   icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 19),
                   onPressed: () => _showTrackOptionsMenu(song),
                 ),
+              ],
             ),
           ),
         ),
@@ -6853,7 +6682,10 @@ _buildCoverArt(song, 46, 8),
                             if (activeSong != null && _showCodecBadges) ...[
                               const SizedBox(width: 6),
                               _buildFormatPill(activeSong, accent),
+                            ],
+                          ],
                         ),
+                    ],
                   ),
                 ),
                 StreamBuilder<bool>(
@@ -6906,9 +6738,11 @@ _buildCoverArt(song, 46, 8),
                           icon: const Icon(Icons.skip_next_rounded, size: 23, color: Colors.white70),
                           onPressed: _playNextTrack,
                         ),
+                ],
               );
             },
           ),
+        ],
       ))),
       StreamBuilder<Duration>(
         stream: _audioPlayer.stream.position,
@@ -7072,6 +6906,7 @@ _buildCoverArt(song, 46, 8),
                   if (shuffled.isNotEmpty) _playSong(shuffled.first);
                 },
               ),
+            ],
           ),
           body: Stack(
             children: [
@@ -7143,6 +6978,7 @@ const SizedBox(height: 20),
                                 const SizedBox(height: 4),
                                 Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                 Text('${entry.value.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.grey)),
+                              ],
                             ),
                           ),
                         );
@@ -7156,8 +6992,10 @@ const SizedBox(height: 20),
                   ),
                   const SizedBox(height: 10),
                   ...artistTracks.map((song) => _buildNamiTrackTile(song)),
+                ],
               ),
               Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+            ],
           ),
         ),
       ),
@@ -7247,9 +7085,12 @@ const SizedBox(height: 20),
                                       _playSong(sh.first);
                                     },
                                   ),
+                                ],
                               ),
+                            ],
                           ),
                         ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -7271,10 +7112,13 @@ const SizedBox(height: 20),
                             child: Text('#$badge', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
                           ),
                         ),
+                      ],
                     );
                   }),
+                ],
               ),
               Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+            ],
           ),
         ),
       ),
@@ -7306,6 +7150,7 @@ const SizedBox(height: 20),
                   IconButton.filled(style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black), icon: const Icon(Icons.play_arrow_rounded), onPressed: () => _playSong(tracks.first)),
                   const SizedBox(width: 6),
                   IconButton.outlined(style: IconButton.styleFrom(side: const BorderSide(color: Colors.white24)), icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: () { final sh = List<AudioTrack>.from(tracks)..shuffle(); _playSong(sh.first); }),
+                ],
               ]),
             );
           }
@@ -7338,6 +7183,7 @@ void _showCreatePlaylistDialog() {
             },
             child: const Text('Create'),
           ),
+        ],
       ),
     );
   }
@@ -7450,6 +7296,7 @@ void _showCreatePlaylistDialog() {
             },
             child: const Text('Save'),
           ),
+        ],
       ),
     );
   }
@@ -7489,6 +7336,7 @@ void _showCreatePlaylistDialog() {
                                     children: [
                                       const Text('Add Songs to Playlist', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                                       TextButton(onPressed: () => Navigator.pop(bCtx), child: const Text('Done')),
+                                    ],
                                   ),
                                 ),
                                 Expanded(
@@ -7521,6 +7369,7 @@ void _showCreatePlaylistDialog() {
                                     },
                                   ),
                                 ),
+                              ],
                             ),
                           ),
                         ),
@@ -7537,6 +7386,7 @@ void _showCreatePlaylistDialog() {
                     icon: const Icon(Icons.edit_rounded),
                     onPressed: () => _showRenamePlaylistDialog(playlist),
                   ),
+                ],
               ),
               body: Stack(
                 children: [
@@ -7559,6 +7409,7 @@ void _showCreatePlaylistDialog() {
                                   Text('${playlist.tracks.length} Tracks • $durText', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                                   const SizedBox(height: 2),
                                   const Text('Drag handle to reorder • Tap remove icon to delete', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                                ],
                               ),
                             ),
                             if (playlist.tracks.isNotEmpty) ...[
@@ -7576,6 +7427,8 @@ void _showCreatePlaylistDialog() {
                                   _playSong(sh.first);
                                 },
                               ),
+                            ],
+                          ],
                         ),
                       ),
                       Expanded(
@@ -7616,6 +7469,7 @@ void _showCreatePlaylistDialog() {
                                             ),
                                           ),
                                           _buildCoverArt(s, 44, 8),
+                                        ],
                                       ),
                                       title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
                                       subtitle: Text(cleanArtistStr(s.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
@@ -7633,8 +7487,10 @@ void _showCreatePlaylistDialog() {
                                 },
                               ),
                       ),
+                    ],
                   ),
                   Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+                ],
               ),
             );
           },
@@ -7669,6 +7525,7 @@ void _showCreatePlaylistDialog() {
               label: const Text('New', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
               onPressed: _showCreatePlaylistDialog,
             ),
+          ],
         ),
         const SizedBox(height: 8),
         GridView.count(
@@ -7714,6 +7571,7 @@ void _showCreatePlaylistDialog() {
               color: Colors.orangeAccent,
               onTap: () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList()),
             ),
+          ],
         ),
         const SizedBox(height: 20),
         const Padding(
@@ -7757,8 +7615,10 @@ void _showCreatePlaylistDialog() {
                   PopupMenuItem(value: 'rename', child: Text('Rename Playlist')),
                   PopupMenuItem(value: 'export', child: Text('Export as .m3u8')),
                   PopupMenuItem(value: 'delete', child: Text('Delete Playlist', style: TextStyle(color: Colors.redAccent))),
+                ],
               ),
             )),
+      ],
     );
   }
 
@@ -7799,16 +7659,379 @@ void _showCreatePlaylistDialog() {
               onPressed: onPlay,
             ),
             if (trailingExtra != null) trailingExtra,
+          ],
         ),
         onTap: onTap,
       ),
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final uniqueArtistsForHome = _buildArtistGroupsMap();
+    final List<String> tabTitles = ['Nami', 'Tracks', 'Artists', 'Playlists', 'Mornye'];
 
-}
-}
+    final List<Widget> pages = [
+      _buildNamiHomeScreen(uniqueArtistsForHome),
+      _buildTracksPageBody(),
+      _buildArtistsPageBody(),
+      _buildNamiPlaylistsPage(),
+      ListView(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 115),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0E0E15),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.16),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(Icons.travel_explore_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Mornye Catalog & Repo', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800)),
+                      Text(
+                        '${_extensions.where((e) => e.isInstalled).length} active extensions • Save -> $_mornyeDownloadFolder',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.extension_rounded, size: 16),
+                  label: const Text('Repo'),
+                  onPressed: _openExtensionRepoScreen,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _mornyeServices
+                  .map((srv) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(srv, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          selected: _selectedMornyeService == srv,
+                          selectedColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor: const Color(0xFF12121B),
+                          onSelected: (_) => setState(() => _selectedMornyeService = srv),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _mornyeSearchController,
+            onSubmitted: _searchMornyeCatalog,
+            decoration: InputDecoration(
+              hintText: 'Search $_selectedMornyeService tracks, albums, artists...',
+              filled: true,
+              fillColor: const Color(0xFF14141F),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.search_rounded),
+                onPressed: () => _searchMornyeCatalog(_mornyeSearchController.text),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: ['All', 'Track', 'Album', 'Artist'].map((tFilter) {
+                final sel = _mornyeFilterType == tFilter;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 7),
+                  child: ChoiceChip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(tFilter, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.white70)),
+                    selected: sel,
+                    selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.85),
+                    backgroundColor: const Color(0xFF0E0E15),
+                    onSelected: (_) => setState(() => _mornyeFilterType = tFilter),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_isMornyeSearching)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+              ),
+            )
+          else if (_mornyeResults.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E0E15),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                children: [
+                  const Text('Trending Quick Searches', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['Lo-Fi Beats', 'Acoustic Sessions', 'Synthwave', 'Cello Suites', 'Jazz Quartet']
+                        .map((sampleQ) => ActionChip(
+                              label: Text(sampleQ, style: const TextStyle(fontSize: 11.5)),
+                              backgroundColor: const Color(0xFF161622),
+                              onPressed: () {
+                                _mornyeSearchController.text = sampleQ;
+                                _searchMornyeCatalog(sampleQ);
+                              },
+                            ))
+                        .toList(),
+                  ),
+                ],
+              ),
+            )
+          else
+            ..._mornyeResults
+                .where((item) => _mornyeFilterType == 'All' || item.type == _mornyeFilterType)
+                .map((item) {
+                  final isPlayingPreview = _activePreviewTitle == item.title && _audioPlayer.state.playing;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0E0E15),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: ListTile(
+                      leading: item.artworkUrl != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(9),
+                              child: Image.network(item.artworkUrl!, width: 48, height: 48, fit: BoxFit.cover),
+                            )
+                          : Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(9)),
+                              child: Icon(
+                                item.type == 'Artist'
+                                    ? Icons.person_rounded
+                                    : (item.type == 'Album' ? Icons.album_rounded : Icons.music_note_rounded),
+                                color: Colors.white60,
+                              ),
+                            ),
+                      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                      subtitle: Text('${item.type} • ${item.artist} • ${item.subtitle}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
+                            IconButton(
+                              tooltip: isPlayingPreview ? 'Pause Preview' : 'Preview Track',
+                              icon: Icon(
+                                isPlayingPreview ? Icons.pause_circle_filled_rounded : Icons.play_circle_outline_rounded,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              onPressed: () {
+                                if (isPlayingPreview) {
+                                  _audioPlayer.pause();
+                                  setState(() => _activePreviewTitle = null);
+                                } else {
+                                  _playMornyePreview(item);
+                                }
+                              },
+                            ),
+                          if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
+                            _downloadingTitles.contains(item.title)
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                : IconButton(
+                                    tooltip: 'Download to Music',
+                                    icon: const Icon(Icons.download_rounded),
+                                    onPressed: () => _downloadMornyeItem(item),
+                                  ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+        ],
+      ),
+    ];
 
+    return Scaffold(
+      appBar: _isSelectionMode
+          ? AppBar(
+              backgroundColor: const Color(0xFF12121C),
+              leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: _exitSelectionMode),
+              title: Text('${_selectedTrackPaths.length} Selected', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      if (_selectedTrackPaths.length == _filteredSongs.length) {
+                        _exitSelectionMode();
+                      } else {
+                        _selectedTrackPaths.addAll(_filteredSongs.map((s) => s.path));
+                      }
+                    });
+                  },
+                  child: const Text('Select All', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            )
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              title: _isSearching
+                  ? TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      onChanged: _filterSongs,
+                      decoration: const InputDecoration(hintText: 'Search library...', border: InputBorder.none),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    )
+                  : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Theme.of(context).colorScheme.primary,
+                              Theme.of(context).colorScheme.primary.withOpacity(0.55),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.graphic_eq_rounded, size: 17, color: Colors.white),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(tabTitles[_selectedIndex], style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.7)),
+                    ],
+                  ),
+              actions: [
+                IconButton(
+                  icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
+                  onPressed: () {
+                    setState(() {
+                      _isSearching = !_isSearching;
+                      if (!_isSearching) {
+                        _searchController.clear();
+                        _filteredSongs = _songs;
+                      }
+                    });
+                  },
+                ),
+                IconButton(
+                  tooltip: 'Playback Queue',
+                  icon: Badge(
+                    isLabelVisible: _playNextQueue.isNotEmpty,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    label: Text('${_playNextQueue.length}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    child: const Icon(Icons.queue_music_rounded),
+                  ),
+                  onPressed: () => _showQueueBottomSheet(context),
+                ),
+                IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
+              ],
+            ),
+      body: Stack(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: KeyedSubtree(
+              key: ValueKey<int>(_selectedIndex),
+              child: pages[_selectedIndex],
+            ),
+          ),
+          if (_isSelectionMode)
+            Positioned(left: 10, right: 10, bottom: 86, child: _buildBatchSelectionBar()),
+          Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.white.withOpacity(0.08), width: 0.8),
+          ),
+        ),
+        child: NavigationBarTheme(
+          data: NavigationBarThemeData(
+            labelTextStyle: MaterialStateProperty.all(
+              const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+          child: NavigationBar(
+            height: 64,
+            backgroundColor: const Color(0xFF07070B),
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            indicatorColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+            indicatorShape: const StadiumBorder(),
+            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (idx) {
+              HapticFeedback.selectionClick();
+              setState(() => _selectedIndex = idx);
+            },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.home_rounded, color: Colors.white, size: 23),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.library_music_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.library_music_rounded, color: Colors.white, size: 23),
+              label: 'Tracks',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.people_outline_rounded, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.people_rounded, color: Colors.white, size: 23),
+              label: 'Artists',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.queue_music_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.queue_music_rounded, color: Colors.white, size: 23),
+              label: 'Playlists',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.extension_outlined, color: Colors.white60, size: 23),
+              selectedIcon: Icon(Icons.extension_rounded, color: Colors.white, size: 23),
+              label: 'Mornye',
+            ),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+}
 
 class MainSettingsScreen extends StatefulWidget {
   final bool usbDacExclusive;
@@ -8023,6 +8246,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             },
             child: const Text('Add'),
           ),
+        ],
       ),
     );
   }
@@ -8096,6 +8320,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
+            ],
           ),
         ),
       ),
@@ -8114,6 +8339,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             title.toUpperCase(),
             style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: accent),
           ),
+        ],
       ),
     );
   }
@@ -8312,8 +8538,10 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                           children: [
                             Text('ReplayGain Normalization', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                             Text('Balance loudness across tracks or albums', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                          ],
                         ),
                       ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
@@ -8328,6 +8556,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                         ButtonSegment(value: 'Off', label: Text('Off')),
                         ButtonSegment(value: 'Track', label: Text('Track')),
                         ButtonSegment(value: 'Album', label: Text('Album')),
+                      ],
                       selected: {_rgMode},
                       onSelectionChanged: (sel) {
                         final mode = sel.first;
@@ -8336,6 +8565,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       },
                     ),
                   ),
+                ],
               ),
             ),
           ]),
@@ -8395,6 +8625,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       _settingsBadge(Icons.replay_10_rounded, themeColor),
                       const SizedBox(width: 14),
                       const Expanded(child: Text('Timestamp Double-Tap Seek', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600))),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
@@ -8409,6 +8640,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                         ButtonSegment(value: 5, label: Text('5s')),
                         ButtonSegment(value: 10, label: Text('10s')),
                         ButtonSegment(value: 15, label: Text('15s')),
+                      ],
                       selected: {_seekSec},
                       onSelectionChanged: (sel) {
                         setState(() => _seekSec = sel.first);
@@ -8416,6 +8648,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       },
                     ),
                   ),
+                ],
               ),
             ),
             SwitchListTile(
@@ -8505,7 +8738,9 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                           backgroundColor: themeColor.withOpacity(0.16),
                           onPressed: _showAddSeparatorDialog,
                         ),
+                      ],
                     ),
+                  ],
                 ),
               ),
           ]),
@@ -8540,12 +8775,14 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                         ButtonSegment(value: 15, label: Text('15s')),
                         ButtonSegment(value: 30, label: Text('30s')),
                         ButtonSegment(value: 60, label: Text('60s')),
+                      ],
                       selected: {_minSec},
                       onSelectionChanged: (sel) {
                         setState(() => _minSec = sel.first);
                         widget.onMinTrackSecondsChanged(sel.first);
                       },
                     ),
+                  ],
                 ),
               ),
             const Divider(color: Colors.white10, height: 1),
@@ -8588,10 +8825,12 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                                   },
                                   child: const Text('Add'),
                                 ),
+                              ],
                             ),
                           );
                         },
                       ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   ..._folders.map((folder) => Container(
@@ -8622,8 +8861,10 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                                 },
                                 child: const Icon(Icons.close_rounded, size: 16, color: Colors.white54),
                               ),
+                          ],
                         ),
                       )),
+                ],
               ),
             ),
             const Divider(color: Colors.white10, height: 1),
@@ -8701,6 +8942,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               ),
             ),
           ]),
+        ],
       ),
     );
   }
@@ -8871,6 +9113,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                   widget.onOpenMoreMenu();
                 },
               ),
+            ],
           ),
         ),
       ),
@@ -8934,6 +9177,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                         const Color(0xFF07070B).withOpacity(0.68),
                         const Color(0xFF07070B).withOpacity(0.84),
                         const Color(0xFF07070B),
+                      ],
                     ),
                   ),
                 ),
@@ -8979,6 +9223,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             Text('$dynamicIdx/$totalCount', style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 2),
                             Text((song?.album ?? 'ALBUM'), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ],
                         ),
                       ),
                       GestureDetector(
@@ -8990,6 +9235,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
                         ),
                       ),
+                    ],
                   ),
 
                   const Spacer(flex: 3),
@@ -9032,6 +9278,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                           blurRadius: isP ? 28 : 20,
                                           spreadRadius: isP ? 2 : 1,
                                         ),
+                                      ],
                                     ),
                                     child: Hero(
                                       tag: 'nami_np_art_${song?.path ?? ""}',
@@ -9071,6 +9318,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                           icon: const Icon(Icons.add_circle_outline_rounded, size: 16, color: Colors.white60),
                                           onPressed: () => setState(() => _lyricsShiftSec = (_lyricsShiftSec + 0.5).clamp(-5.0, 5.0)),
                                         ),
+                                      ],
                                     ),
                                     TextButton.icon(
                                       style: TextButton.styleFrom(
@@ -9082,6 +9330,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       label: const Text('Edit LRC', style: TextStyle(fontSize: 11)),
                                       onPressed: widget.onOpenLyricsManager,
                                     ),
+                                  ],
                                 ),
                                 SizedBox(
                                   height: _lyricLineExtent * 9,
@@ -9102,6 +9351,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                                 onPressed: widget.onOpenLyricsManager,
                                                 child: const Text('Search or Add Lyrics'),
                                               ),
+                                            ],
                                           ),
                                         );
                                       }
@@ -9160,6 +9410,7 @@ return GestureDetector(
                                     },
                                   ),
                                 ),
+                              ],
                             ),
                           ),
                   ),
@@ -9178,6 +9429,7 @@ return GestureDetector(
                               Text(song?.title ?? 'Not Playing', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                               const SizedBox(height: 4),
                               Text(cleanArtistStr(song?.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white70)),
+                            ],
                           ),
                         ),
                         IconButton(
@@ -9187,6 +9439,7 @@ return GestureDetector(
                             setState(() {});
                           },
                         ),
+                      ],
                     ),
                   ),
 
@@ -9296,6 +9549,7 @@ return GestureDetector(
                                           blurRadius: 18,
                                           spreadRadius: 1,
                                         ),
+                                      ],
                                     ),
                                     child: AnimatedSwitcher(
                                       duration: const Duration(milliseconds: 180),
@@ -9310,6 +9564,7 @@ return GestureDetector(
                                 ),
                                 const SizedBox(width: 8.0),
                                 IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: widget.onNext),
+                              ],
                             );
                           },
                         ),
@@ -9327,6 +9582,7 @@ return GestureDetector(
                             ),
                           ),
                         ),
+                      ],
                     ),
                   ),
 
@@ -9359,6 +9615,7 @@ return GestureDetector(
                                         children: [
                                           const TextSpan(text: 'Audio ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white)),
                                           TextSpan(text: '• $ext • $bitrate kb/s • $kHz kHz', style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                                        ],
                                       ),
                                     ),
                                     const SizedBox(height: 2),
@@ -9375,8 +9632,11 @@ return GestureDetector(
                                           '${song?.bitDepth ?? 24}-Bit • Bit-Perfect Path',
                                           style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: accent),
                                         ),
+                                      ],
                                     ),
+                                  ],
                                 ),
+                              ],
                             ),
                           ),
                         ),
@@ -9448,12 +9708,16 @@ return GestureDetector(
                               icon: const Icon(Icons.queue_music_rounded, size: 20, color: Colors.white70),
                               onPressed: widget.onOpenQueue,
                             ),
+                          ],
                         ),
+                      ],
                     ),
                   ),
+                ],
               ),
             ),
           ),
+            ],
           ),
         );
       },
@@ -9599,8 +9863,10 @@ class YoutubeSkeletonLoader extends StatelessWidget {
                   Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(4))),
                   const SizedBox(height: 10),
                   Container(width: 140, height: 12, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(4))),
+                ],
               ),
             ),
+          ],
         ),
       ),
     );
@@ -9631,6 +9897,3 @@ Future<void> requestNotificationPermission() async {
     await Permission.notification.request();
   }
 }
-
-}
-// build trigger
