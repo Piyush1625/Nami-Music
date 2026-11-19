@@ -4303,8 +4303,8 @@ _buildCoverArt(song, 46, 8),
                           gradient: LinearGradient(
                             colors: [
                               Theme.of(context).colorScheme.primary,
-                              Theme.of(context).colorScheme.primary.withOpacity(0.55),
-                            begin: Alignment.topLeft,
+                              Theme.of(context).colorScheme.primary.withOpacity(0.55),],
+                begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(8),
@@ -5631,7 +5631,7 @@ _buildCoverArt(song, 46, 8),
               gradient: LinearGradient(
                 colors: [
                   Color.alphaBlend(accent.withOpacity(0.18), const Color(0xFF13131E)),
-                  const Color(0xFF0E0E16),
+                  const Color(0xFF0E0E16),],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
