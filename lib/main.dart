@@ -864,6 +864,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     "Amazon Music",
     "YouTube Music"
   ];
+  String _mornyeFilterType = "All";
+  String? _activePreviewTitle;
 
   final List<MornyeExtension> _extensions = [
     MornyeExtension(
@@ -3794,44 +3796,111 @@ _buildCoverArt(song, 46, 8),
   }
 
   void _openExtensionRepoScreen() {
+    String catFilter = 'All';
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => StatefulBuilder(
-          builder: (context, setRepoState) => Scaffold(
-            appBar: AppBar(
-              title: const Text('Mornye Extension Repo'),
-              actions: [
-                TextButton.icon(
-                  icon: const Icon(Icons.file_open_rounded, size: 18),
-                  label: const Text('Import .sflx'),
-                  onPressed: () async {
-                    await _importSflxManifest();
-                    setRepoState(() {});
-                  },
-                ),
-              ],
-            ),
-            body: ListView.builder(
-              itemCount: _extensions.length,
-              itemBuilder: (ctx, idx) {
-                final ext = _extensions[idx];
-                return ListTile(
-                  leading: Icon(Icons.extension_rounded, color: ext.isInstalled ? Theme.of(context).colorScheme.primary : Colors.grey),
-                  title: Text('${ext.name} (${ext.version})'),
-                  subtitle: Text('${ext.format} • ${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis),
-                  trailing: Switch(
-                    value: ext.isInstalled,
-                    activeColor: Theme.of(context).colorScheme.primary,
-                    onChanged: (v) {
-                      setRepoState(() => ext.isInstalled = v);
-                      setState(() {});
+          builder: (context, setRepoState) {
+            final accent = Theme.of(context).colorScheme.primary;
+            final filteredExts = _extensions.where((e) => catFilter == 'All' || e.category == catFilter).toList();
+            return Scaffold(
+              appBar: AppBar(
+                title: Text('Mornye Repo (${_extensions.where((e) => e.isInstalled).length}/${_extensions.length})'),
+                actions: [
+                  IconButton(
+                    tooltip: 'Create Sample .sflx in /Download',
+                    icon: const Icon(Icons.note_add_outlined, size: 20),
+                    onPressed: () async {
+                      try {
+                        final f = File('/storage/emulated/0/Download/nami_custom_provider.sflx');
+                        await f.writeAsString(jsonEncode({
+                          'name': 'Custom Lossless Feed',
+                          'version': 'v1.0.0',
+                          'author': _userName,
+                          'format': '24-Bit FLAC',
+                          'category': 'Download',
+                          'description': 'Custom Mornye provider manifest',
+                        }));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Created /Download/nami_custom_provider.sflx')),
+                          );
+                        }
+                      } catch (_) {}
                     },
                   ),
-                );
-              },
-            ),
-          ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.file_open_rounded, size: 18),
+                    label: const Text('Import .sflx'),
+                    onPressed: () async {
+                      await _importSflxManifest();
+                      setRepoState(() {});
+                    },
+                  ),
+                ],
+              ),
+              body: Column(
+                children: [
+                  SizedBox(
+                    height: 42,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 4),
+                      children: ['All', 'Download', 'Metadata', 'Utility'].map((cat) {
+                        final sel = catFilter == cat;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(cat, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.white70)),
+                            selected: sel,
+                            selectedColor: accent,
+                            backgroundColor: const Color(0xFF14141E),
+                            onSelected: (_) => setRepoState(() => catFilter = cat),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 24),
+                      itemCount: filteredExts.length,
+                      itemBuilder: (ctx, idx) {
+                        final ext = filteredExts[idx];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0E0E15),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: ext.isInstalled ? accent.withOpacity(0.35) : Colors.white10),
+                          ),
+                          child: ListTile(
+                            leading: Icon(Icons.extension_rounded, color: ext.isInstalled ? accent : Colors.white38),
+                            title: Text('${ext.name} • ${ext.version}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                            subtitle: Text('${ext.category} • ${ext.format}
+${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                            isThreeLine: true,
+                            trailing: Switch(
+                              value: ext.isInstalled,
+                              activeColor: accent,
+                              onChanged: (v) {
+                                setRepoState(() {
+                                  ext.isInstalled = v;
+                                  ext.isEnabled = v;
+                                });
+                                setState(() {});
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -3871,29 +3940,81 @@ _buildCoverArt(song, 46, 8),
     );
   }
 
+  Future<void> _playMornyePreview(MornyeCatalogItem item) async {
+    if (item.previewUrl == null || item.previewUrl!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No audio preview available for this item.')),
+        );
+      }
+      return;
+    }
+    try {
+      setState(() => _activePreviewTitle = item.title);
+      await _audioPlayer.stop();
+      await _audioPlayer.open(Media(item.previewUrl!));
+      await _audioPlayer.play();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _activePreviewTitle = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Preview error: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _searchMornyeCatalog(String query) async {
     if (query.trim().isEmpty) return;
     setState(() => _isMornyeSearching = true);
     try {
-      final uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&entity=song&limit=20');
-      final res = await http.get(uri).timeout(const Duration(seconds: 6));
+      final uri = Uri.parse(
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&entity=song,album,musicArtist&limit=28');
+      final res = await http.get(uri, headers: _httpHeaders).timeout(const Duration(seconds: 7));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final results = (data['results'] as List?) ?? [];
+        final parsed = <MornyeCatalogItem>[];
+        for (final r in results) {
+          if (r is! Map) continue;
+          final wrapper = (r['wrapperType'] ?? '').toString();
+          if (wrapper == 'track') {
+            parsed.add(MornyeCatalogItem(
+              title: (r['trackName'] ?? 'Unknown').toString(),
+              artist: (r['artistName'] ?? 'Unknown Artist').toString(),
+              album: (r['collectionName'] ?? 'Single').toString(),
+              subtitle: '${r['primaryGenreName'] ?? 'Music'} • $_selectedMornyeService',
+              type: 'Track',
+              service: _selectedMornyeService,
+              previewUrl: r['previewUrl']?.toString(),
+              artworkUrl: r['artworkUrl100']?.toString().replaceAll('100x100', '600x600'),
+              durationSeconds: ((r['trackTimeMillis'] ?? 210000) as int) ~/ 1000,
+              collectionId: r['collectionId']?.toString(),
+            ));
+          } else if (wrapper == 'collection') {
+            parsed.add(MornyeCatalogItem(
+              title: (r['collectionName'] ?? 'Unknown Album').toString(),
+              artist: (r['artistName'] ?? 'Unknown Artist').toString(),
+              album: (r['collectionName'] ?? 'Album').toString(),
+              subtitle: '${r['trackCount'] ?? 0} tracks • ${r['primaryGenreName'] ?? 'Album'}',
+              type: 'Album',
+              service: _selectedMornyeService,
+              artworkUrl: r['artworkUrl100']?.toString().replaceAll('100x100', '600x600'),
+              collectionId: r['collectionId']?.toString(),
+            ));
+          } else if (wrapper == 'artist') {
+            parsed.add(MornyeCatalogItem(
+              title: (r['artistName'] ?? 'Unknown Artist').toString(),
+              artist: (r['artistName'] ?? 'Unknown Artist').toString(),
+              album: 'Artist Catalog',
+              subtitle: '${r['primaryGenreName'] ?? 'Artist'} • $_selectedMornyeService',
+              type: 'Artist',
+              service: _selectedMornyeService,
+            ));
+          }
+        }
         setState(() {
-          _mornyeResults = results
-              .map((r) => MornyeCatalogItem(
-                    title: r['trackName'] ?? 'Unknown',
-                    artist: r['artistName'] ?? 'Unknown Artist',
-                    album: r['collectionName'] ?? 'Single',
-                    subtitle: '${r['primaryGenreName'] ?? 'Music'} • $_selectedMornyeService',
-                    type: 'track',
-                    service: _selectedMornyeService,
-                    previewUrl: r['previewUrl'],
-                    artworkUrl: r['artworkUrl100']?.toString().replaceAll('100x100', '600x600'),
-                    durationSeconds: ((r['trackTimeMillis'] ?? 210000) as int) ~/ 1000,
-                  ))
-              .toList();
+          _mornyeResults = parsed;
           _isMornyeSearching = false;
         });
       } else {
@@ -3905,16 +4026,27 @@ _buildCoverArt(song, 46, 8),
   }
 
   Future<void> _downloadMornyeItem(MornyeCatalogItem item) async {
-    if (item.previewUrl == null) return;
+    if (item.previewUrl == null || item.previewUrl!.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No direct audio file for "${item.title}" — try searching a track.')),
+        );
+      }
+      return;
+    }
     setState(() => _downloadingTitles.add(item.title));
     try {
+      final outDir = Directory(_mornyeDownloadFolder);
+      if (!await outDir.exists()) await outDir.create(recursive: true);
       final res = await http.get(Uri.parse(item.previewUrl!)).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
-        final safeName = '${item.artist} - ${item.title}'.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+        final safeName = '${item.artist} - ${item.title}'.replaceAll(RegExp(r'[/\:*?"<>|]'), '_');
         final outFile = File('$_mornyeDownloadFolder/$safeName.m4a');
         await outFile.writeAsBytes(res.bodyBytes);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved ${item.title} to Music folder')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saved "$safeName.m4a" to $_mornyeDownloadFolder')),
+          );
         }
         await _fastScanDeviceMusic();
       }
@@ -7545,20 +7677,50 @@ void _showCreatePlaylistDialog() {
       _buildArtistsPageBody(),
       _buildNamiPlaylistsPage(),
       ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 115),
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Mornye Catalog & Extensions', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-              TextButton.icon(
-                icon: const Icon(Icons.extension_rounded, size: 16),
-                label: const Text('Repo'),
-                onPressed: _openExtensionRepoScreen,
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0E0E15),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.16),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Icon(Icons.travel_explore_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Mornye Catalog & Repo', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800)),
+                      Text(
+                        '${_extensions.where((e) => e.isInstalled).length} active extensions • Save -> $_mornyeDownloadFolder',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.extension_rounded, size: 16),
+                  label: const Text('Repo'),
+                  onPressed: _openExtensionRepoScreen,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -7566,21 +7728,22 @@ void _showCreatePlaylistDialog() {
                   .map((srv) => Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
-                          label: Text(srv, style: const TextStyle(fontSize: 11.5)),
+                          label: Text(srv, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
                           selected: _selectedMornyeService == srv,
                           selectedColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor: const Color(0xFF12121B),
                           onSelected: (_) => setState(() => _selectedMornyeService = srv),
                         ),
                       ))
                   .toList(),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           TextField(
             controller: _mornyeSearchController,
             onSubmitted: _searchMornyeCatalog,
             decoration: InputDecoration(
-              hintText: 'Search $_selectedMornyeService catalog...',
+              hintText: 'Search $_selectedMornyeService tracks, albums, artists...',
               filled: true,
               fillColor: const Color(0xFF14141F),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
@@ -7590,23 +7753,126 @@ void _showCreatePlaylistDialog() {
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: ['All', 'Track', 'Album', 'Artist'].map((tFilter) {
+                final sel = _mornyeFilterType == tFilter;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 7),
+                  child: ChoiceChip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(tFilter, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.white70)),
+                    selected: sel,
+                    selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.85),
+                    backgroundColor: const Color(0xFF0E0E15),
+                    onSelected: (_) => setState(() => _mornyeFilterType = tFilter),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
           if (_isMornyeSearching)
-            Center(child: Padding(padding: const EdgeInsets.all(20), child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)))
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+              ),
+            )
+          else if (_mornyeResults.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E0E15),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                children: [
+                  const Text('Trending Quick Searches', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['Lo-Fi Beats', 'Acoustic Sessions', 'Synthwave', 'Cello Suites', 'Jazz Quartet']
+                        .map((sampleQ) => ActionChip(
+                              label: Text(sampleQ, style: const TextStyle(fontSize: 11.5)),
+                              backgroundColor: const Color(0xFF161622),
+                              onPressed: () {
+                                _mornyeSearchController.text = sampleQ;
+                                _searchMornyeCatalog(sampleQ);
+                              },
+                            ))
+                        .toList(),
+                  ),
+                ],
+              ),
+            )
           else
-            ..._mornyeResults.map((item) => ListTile(
-                  leading: item.artworkUrl != null
-                      ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(item.artworkUrl!, width: 46, height: 46, fit: BoxFit.cover))
-                      : const Icon(Icons.music_note_rounded),
-                  title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
-                  subtitle: Text('${item.artist} • ${item.subtitle}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11)),
-                  trailing: _downloadingTitles.contains(item.title)
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : IconButton(
-                          icon: const Icon(Icons.download_rounded),
-                          onPressed: () => _downloadMornyeItem(item),
-                        ),
-                )),
+            ..._mornyeResults
+                .where((item) => _mornyeFilterType == 'All' || item.type == _mornyeFilterType)
+                .map((item) {
+                  final isPlayingPreview = _activePreviewTitle == item.title && _audioPlayer.state.playing;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0E0E15),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: ListTile(
+                      leading: item.artworkUrl != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(9),
+                              child: Image.network(item.artworkUrl!, width: 48, height: 48, fit: BoxFit.cover),
+                            )
+                          : Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(9)),
+                              child: Icon(
+                                item.type == 'Artist'
+                                    ? Icons.person_rounded
+                                    : (item.type == 'Album' ? Icons.album_rounded : Icons.music_note_rounded),
+                                color: Colors.white60,
+                              ),
+                            ),
+                      title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                      subtitle: Text('${item.type} • ${item.artist} • ${item.subtitle}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
+                            IconButton(
+                              tooltip: isPlayingPreview ? 'Pause Preview' : 'Preview Track',
+                              icon: Icon(
+                                isPlayingPreview ? Icons.pause_circle_filled_rounded : Icons.play_circle_outline_rounded,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              onPressed: () {
+                                if (isPlayingPreview) {
+                                  _audioPlayer.pause();
+                                  setState(() => _activePreviewTitle = null);
+                                } else {
+                                  _playMornyePreview(item);
+                                }
+                              },
+                            ),
+                          if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
+                            _downloadingTitles.contains(item.title)
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                : IconButton(
+                                    tooltip: 'Download to Music',
+                                    icon: const Icon(Icons.download_rounded),
+                                    onPressed: () => _downloadMornyeItem(item),
+                                  ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
         ],
       ),
     ];
