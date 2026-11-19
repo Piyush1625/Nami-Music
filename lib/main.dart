@@ -1189,6 +1189,29 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           if (data['scanFolders'] is List && (data['scanFolders'] as List).isNotEmpty) {
             _scanFolders = List<String>.from(data['scanFolders']);
           }
+          if (data['customMornyeExtensions'] is List) {
+            for (final raw in (data['customMornyeExtensions'] as List)) {
+              if (raw is Map && raw['name'] != null) {
+                final eName = raw['name'].toString();
+                if (!_extensions.any((e) => e.name.toLowerCase() == eName.toLowerCase())) {
+                  _extensions.add(MornyeExtension(
+                    name: eName,
+                    version: (raw['version'] ?? 'v1.0.0').toString(),
+                    author: (raw['author'] ?? 'Mornye').toString(),
+                    format: (raw['format'] ?? 'Manifest').toString(),
+                    category: (raw['category'] ?? 'Metadata').toString(),
+                    description: (raw['description'] ?? 'Imported extension manifest').toString(),
+                    endpointUrl: raw['endpointUrl']?.toString(),
+                    isInstalled: raw['isInstalled'] != false,
+                    isEnabled: raw['isEnabled'] != false,
+                  ));
+                }
+                if (!_mornyeServices.contains(eName)) {
+                  _mornyeServices.add(eName);
+                }
+              }
+            }
+          }
           if (cachedSongs.isNotEmpty && mounted) {
             final byPath = {for (final t in cachedSongs) t.path: t};
             if (data['customPlaylists'] is List) {
@@ -1266,6 +1289,19 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'replayGainMode': _replayGainMode,
         'defaultStartupTab': _defaultStartupTab,
         'scanFolders': _scanFolders,
+        'customMornyeExtensions': _extensions
+            .map((e) => {
+                  'name': e.name,
+                  'version': e.version,
+                  'author': e.author,
+                  'format': e.format,
+                  'category': e.category,
+                  'description': e.description,
+                  'endpointUrl': e.endpointUrl,
+                  'isInstalled': e.isInstalled,
+                  'isEnabled': e.isEnabled,
+                })
+            .toList(),
         'customPlaylists': _customPlaylists.map((p) => p.toJson()).toList(),
         'lastSongPath': _currentSong?.path,
         'lastPositionMs': _audioPlayer.state.position.inMilliseconds,
@@ -3743,6 +3779,104 @@ _buildCoverArt(song, 46, 8),
     );
   }
 
+  Map<String, dynamic>? _extractManifestFromBytes(Uint8List bytes) {
+    if (bytes.isEmpty) return null;
+
+    // Case A: Standard JSON manifest
+    try {
+      final text = utf8.decode(bytes, allowMalformed: true).trim();
+      if (text.startsWith('{')) {
+        final decoded = jsonDecode(text);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {}
+
+    // Case B: ZIP archive (.sflx bundle containing manifest.json or *.json)
+    if (bytes.length >= 22 && bytes[0] == 0x50 && bytes[1] == 0x4B) {
+      final bd = ByteData.sublistView(bytes);
+      // Locate End of Central Directory (PK\x05\x06)
+      int eocdOffset = -1;
+      final minSearch = math.max(0, bytes.length - 65557);
+      for (int i = bytes.length - 22; i >= minSearch; i--) {
+        if (bytes[i] == 0x50 && bytes[i + 1] == 0x4B && bytes[i + 2] == 0x05 && bytes[i + 3] == 0x06) {
+          eocdOffset = i;
+          break;
+        }
+      }
+      if (eocdOffset >= 0) {
+        final entryCount = bd.getUint16(eocdOffset + 10, Endian.little);
+        int cdOffset = bd.getUint32(eocdOffset + 16, Endian.little);
+        for (int idx = 0; idx < entryCount && cdOffset + 46 <= bytes.length; idx++) {
+          final sig = bd.getUint32(cdOffset, Endian.little);
+          if (sig != 0x02014B50) break;
+          final method = bd.getUint16(cdOffset + 10, Endian.little);
+          final compSize = bd.getUint32(cdOffset + 20, Endian.little);
+          final nameLen = bd.getUint16(cdOffset + 28, Endian.little);
+          final extraLen = bd.getUint16(cdOffset + 30, Endian.little);
+          final commentLen = bd.getUint16(cdOffset + 32, Endian.little);
+          final localHdrOffset = bd.getUint32(cdOffset + 42, Endian.little);
+
+          final nameStart = cdOffset + 46;
+          final nameEnd = math.min(bytes.length, nameStart + nameLen);
+          final entryName = latin1.decode(bytes.sublist(nameStart, nameEnd), allowInvalid: true).toLowerCase();
+
+          if (entryName.endsWith('.json') &&
+              (entryName == 'manifest.json' || entryName.endsWith('/manifest.json') || entryName.contains('manifest')) &&
+              method == 0 &&
+              localHdrOffset + 30 <= bytes.length) {
+            final lNameLen = bd.getUint16(localHdrOffset + 26, Endian.little);
+            final lExtraLen = bd.getUint16(localHdrOffset + 28, Endian.little);
+            final dataStart = localHdrOffset + 30 + lNameLen + lExtraLen;
+            final dataEnd = math.min(bytes.length, dataStart + compSize);
+            if (dataStart >= 0 && dataEnd > dataStart) {
+              try {
+                final rawJson = utf8.decode(bytes.sublist(dataStart, dataEnd), allowMalformed: true).trim();
+                final decoded = jsonDecode(rawJson);
+                if (decoded is Map<String, dynamic>) return decoded;
+                if (decoded is Map) return Map<String, dynamic>.from(decoded);
+              } catch (_) {}
+            }
+          }
+          cdOffset += 46 + nameLen + extraLen + commentLen;
+        }
+      }
+    }
+    return null;
+  }
+
+  int _registerManifestMap(Map<String, dynamic> parsed, {String fallbackName = 'Custom Extension'}) {
+    final rawName = (parsed['displayName'] ?? parsed['name'] ?? '').toString().trim();
+    final extName = rawName.isNotEmpty ? rawName : fallbackName;
+    if (extName.isEmpty) return 0;
+
+    final exists = _extensions.any((e) => e.name.toLowerCase() == extName.toLowerCase());
+    if (!exists) {
+      final typesVal = parsed['type'];
+      final typeStr = typesVal is List ? typesVal.join(', ') : (typesVal?.toString() ?? 'Extension');
+      final catVal = (parsed['category'] ?? '').toString().trim();
+      final resolvedCat = catVal.isNotEmpty
+          ? catVal
+          : (typeStr.toLowerCase().contains('download') ? 'Download' : 'Metadata');
+      _extensions.add(MornyeExtension(
+        name: extName,
+        version: (parsed['version'] ?? 'v1.0.0').toString(),
+        author: (parsed['author'] ?? 'Mornye Bundle').toString(),
+        format: (parsed['format'] ?? typeStr).toString(),
+        category: resolvedCat,
+        description: (parsed['description'] ?? 'Imported .sflx manifest').toString(),
+        endpointUrl: (parsed['endpointUrl'] ?? parsed['endpoint'] ?? parsed['homepage'])?.toString(),
+        isInstalled: true,
+        isEnabled: true,
+      ));
+      if (!_mornyeServices.contains(extName)) {
+        _mornyeServices.add(extName);
+      }
+      return 1;
+    }
+    return 0;
+  }
+
   Future<void> _importSflxManifest() async {
     try {
       final dlDir = Directory('/storage/emulated/0/Download');
@@ -3750,49 +3884,144 @@ _buildCoverArt(song, 46, 8),
       final sflxFiles = dlDir
           .listSync()
           .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.sflx') || f.path.toLowerCase().endsWith('.json'))
           .where((f) => f.path.toLowerCase().endsWith('.sflx'))
           .toList();
       if (sflxFiles.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No .sflx files found in /Download')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No .sflx files found in /storage/emulated/0/Download')));
         }
         return;
       }
       int imported = 0;
       for (var file in sflxFiles) {
         try {
-          final parsed = jsonDecode(await file.readAsString());
-          if (parsed is Map<String, dynamic> && parsed['name'] != null) {
-            final extName = parsed['name'].toString();
-            final exists = _extensions.any((e) => e.name.toLowerCase() == extName.toLowerCase());
-            if (!exists) {
-              _extensions.add(MornyeExtension(
-                name: extName,
-                version: parsed['version']?.toString() ?? 'v1.0.0',
-                author: parsed['author']?.toString() ?? 'External .sflx',
-                format: parsed['format']?.toString() ?? 'FLAC / Stream',
-                category: parsed['category']?.toString() ?? 'Download',
-                description: parsed['description']?.toString() ?? 'Imported via .sflx manifest',
-                endpointUrl: parsed['endpoint']?.toString(),
-                isInstalled: true,
-              ));
-              if (!_mornyeServices.contains(extName)) {
-                _mornyeServices.add(extName);
-              }
-              imported++;
-            }
+          final bytes = await file.readAsBytes();
+          final parsed = _extractManifestFromBytes(bytes);
+          if (parsed != null) {
+            final baseFile = file.uri.pathSegments.last.replaceAll(RegExp(r'\.sflx$', caseSensitive: false), '');
+            imported += _registerManifestMap(parsed, fallbackName: baseFile);
           }
         } catch (_) {}
       }
       setState(() {});
+      await _saveStateCache();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Imported $imported .sflx extension(s)')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Imported $imported .sflx extension(s) from Download')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
     }
+  }
+
+  Future<void> _showAddExtensionFromUrlDialog(StateSetter setRepoState) async {
+    final urlCtrl = TextEditingController();
+    bool isFetchingUrl = false;
+
+    await showDialog(
+      context: context,
+      builder: (dCtx) => StatefulBuilder(
+        builder: (dCtx, setDlgState) => AlertDialog(
+          backgroundColor: const Color(0xFF14141F),
+          title: const Text('Add Extension from URL', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Paste a direct URL to a .sflx bundle, manifest.json, or JSON extension list:',
+                style: TextStyle(fontSize: 12, color: Colors.white60),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: urlCtrl,
+                autofocus: true,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'https://.../extension.sflx or registry.json',
+                  filled: true,
+                  fillColor: const Color(0xFF0E0E15),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              if (isFetchingUrl) ...[
+                const SizedBox(height: 12),
+                Center(child: CircularProgressIndicator(color: Theme.of(dCtx).colorScheme.primary)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(dCtx).colorScheme.primary),
+              onPressed: isFetchingUrl
+                  ? null
+                  : () async {
+                      final rawUrl = urlCtrl.text.trim();
+                      if (rawUrl.isEmpty) return;
+                      setDlgState(() => isFetchingUrl = true);
+                      try {
+                        final res = await http
+                            .get(Uri.parse(rawUrl), headers: _httpHeaders)
+                            .timeout(const Duration(seconds: 12));
+                        int added = 0;
+                        if (res.statusCode == 200) {
+                          final bodyStr = utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+                          if (bodyStr.startsWith('[')) {
+                            final list = jsonDecode(bodyStr) as List;
+                            for (final entry in list) {
+                              if (entry is Map) {
+                                added += _registerManifestMap(Map<String, dynamic>.from(entry));
+                              }
+                            }
+                          } else {
+                            final single = _extractManifestFromBytes(res.bodyBytes);
+                            if (single != null) {
+                              if (single['extensions'] is List) {
+                                for (final entry in (single['extensions'] as List)) {
+                                  if (entry is Map) {
+                                    added += _registerManifestMap(Map<String, dynamic>.from(entry));
+                                  }
+                                }
+                              } else {
+                                final slug = Uri.tryParse(rawUrl)?.pathSegments.last.replaceAll(RegExp(r'\.(sflx|json)$', caseSensitive: false), '') ?? 'Remote Extension';
+                                added += _registerManifestMap(single, fallbackName: slug);
+                              }
+                            }
+                          }
+                        }
+                        if (mounted) setState(() {});
+                        setRepoState(() {});
+                        await _saveStateCache();
+                        if (dCtx.mounted) Navigator.pop(dCtx);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(added > 0
+                                  ? 'Added $added extension(s) from URL!'
+                                  : 'No valid manifest found at URL (HTTP ${res.statusCode})'),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDlgState(() => isFetchingUrl = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to fetch URL: $e')),
+                          );
+                        }
+                      }
+                    },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _openExtensionRepoScreen() {
@@ -3809,26 +4038,9 @@ _buildCoverArt(song, 46, 8),
                 title: Text('Mornye Repo (${_extensions.where((e) => e.isInstalled).length}/${_extensions.length})'),
                 actions: [
                   IconButton(
-                    tooltip: 'Create Sample .sflx in /Download',
-                    icon: const Icon(Icons.note_add_outlined, size: 20),
-                    onPressed: () async {
-                      try {
-                        final f = File('/storage/emulated/0/Download/nami_custom_provider.sflx');
-                        await f.writeAsString(jsonEncode({
-                          'name': 'Custom Lossless Feed',
-                          'version': 'v1.0.0',
-                          'author': _userName,
-                          'format': '24-Bit FLAC',
-                          'category': 'Download',
-                          'description': 'Custom Mornye provider manifest',
-                        }));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Created /Download/nami_custom_provider.sflx')),
-                          );
-                        }
-                      } catch (_) {}
-                    },
+                    tooltip: 'Add from URL',
+                    icon: const Icon(Icons.link_rounded, size: 22),
+                    onPressed: () => _showAddExtensionFromUrlDialog(setRepoState),
                   ),
                   TextButton.icon(
                     icon: const Icon(Icons.file_open_rounded, size: 18),
@@ -3890,6 +4102,7 @@ ${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const 
                                   ext.isEnabled = v;
                                 });
                                 setState(() {});
+                                _saveStateCache();
                               },
                             ),
                           ),
@@ -3905,6 +4118,7 @@ ${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const 
       ),
     );
   }
+}]
 
   void _openStatisticsScreen() {
     final topPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
