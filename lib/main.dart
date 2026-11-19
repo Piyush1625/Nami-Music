@@ -575,6 +575,8 @@ class MornyeCatalogItem {
   final int durationSeconds;
   final String? collectionId;
 
+  String get itemKey => '${title}__${artist}__${album}__${previewUrl ?? ''}';
+
   MornyeCatalogItem({
     required this.title,
     required this.artist,
@@ -865,7 +867,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     "YouTube Music"
   ];
   String _mornyeFilterType = "All";
-  String? _activePreviewTitle;
+  String? _activePreviewKey;
 
   final List<MornyeExtension> _extensions = [
     MornyeExtension(
@@ -3949,13 +3951,13 @@ _buildCoverArt(song, 46, 8),
       return;
     }
     try {
-      setState(() => _activePreviewTitle = item.title);
+      setState(() => _activePreviewKey = item.itemKey);
       await _audioPlayer.stop();
       await _audioPlayer.open(Media(item.previewUrl!));
       await _audioPlayer.play();
     } catch (e) {
       if (mounted) {
-        setState(() => _activePreviewTitle = null);
+        setState(() => _activePreviewKey = null);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Preview error: $e')),
         );
@@ -4024,37 +4026,101 @@ _buildCoverArt(song, 46, 8),
     }
   }
 
-  Future<void> _downloadMornyeItem(MornyeCatalogItem item) async {
-    if (item.previewUrl == null || item.previewUrl!.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No direct audio file for "${item.title}" — try searching a track.')),
-        );
-      }
-      return;
+  Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async {
+    final activeExts = _extensions
+        .where((e) =>
+            e.isInstalled &&
+            e.isEnabled &&
+            e.endpointUrl != null &&
+            e.endpointUrl!.trim().isNotEmpty)
+        .toList();
+
+    for (final ext in activeExts) {
+      try {
+        final base = ext.endpointUrl!.trim();
+        final sep = base.contains('?') ? '&' : '?';
+        final qUrl =
+            '$base${sep}title=${Uri.encodeComponent(item.title)}&artist=${Uri.encodeComponent(item.artist)}&album=${Uri.encodeComponent(item.album)}';
+        final res = await http
+            .get(Uri.parse(qUrl), headers: _httpHeaders)
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          final body = res.body.trim();
+          if (body.startsWith('http')) {
+            return body;
+          }
+          if (body.startsWith('{')) {
+            final decoded = jsonDecode(body);
+            if (decoded is Map) {
+              for (final k in ['streamUrl', 'downloadUrl', 'url', 'audioUrl', 'flacUrl', 'trackUrl']) {
+                final cand = decoded[k]?.toString().trim();
+                if (cand != null && cand.startsWith('http')) {
+                  return cand;
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
     }
-    setState(() => _downloadingTitles.add(item.title));
+    return null;
+  }
+
+  Future<void> _downloadMornyeItem(MornyeCatalogItem item) async {
+    setState(() => _downloadingTitles.add(item.itemKey));
     try {
+      final fullUrl = await _resolveFullTrackUrlFromExtensions(item);
+      final targetUrl = (fullUrl != null && fullUrl.isNotEmpty) ? fullUrl : item.previewUrl;
+      final isFullStream = fullUrl != null && fullUrl.isNotEmpty;
+
+      if (targetUrl == null || targetUrl.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'No direct audio stream for "${item.title}". Add a Mornye extension URL in Repo or search a track.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       final outDir = Directory(_mornyeDownloadFolder);
-      if (!await outDir.exists()) await outDir.create(recursive: true);
-      final res = await http.get(Uri.parse(item.previewUrl!)).timeout(const Duration(seconds: 15));
-      if (res.statusCode == 200) {
-        final safeName = '${item.artist} - ${item.title}'.replaceAll(RegExp(r'[/\:*?"<>|]'), '_');
-        final outFile = File('$_mornyeDownloadFolder/$safeName.m4a');
+      if (!await outDir.exists()) {
+        await outDir.create(recursive: true);
+      }
+      final res = await http
+          .get(Uri.parse(targetUrl), headers: _httpHeaders)
+          .timeout(const Duration(seconds: 25));
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        final safeName = '${item.artist} - ${item.title}'
+            .replaceAll(RegExp(r'[/\:*?"<>|]'), '_');
+        final suffix = isFullStream ? '' : '_30s_preview';
+        final outFile = File('$_mornyeDownloadFolder/$safeName$suffix.m4a');
         await outFile.writeAsBytes(res.bodyBytes);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Saved "$safeName.m4a" to $_mornyeDownloadFolder')),
+            SnackBar(
+              content: Text(
+                isFullStream
+                    ? 'Saved full track "$safeName.m4a" to $_mornyeDownloadFolder'
+                    : 'Saved 30s preview "$safeName$suffix.m4a" (public catalog preview limit; add an extension endpoint URL in Repo for full streams)',
+              ),
+            ),
           );
         }
         await _fastScanDeviceMusic();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Download failed: $e')));
       }
     } finally {
-      if (mounted) setState(() => _downloadingTitles.remove(item.title));
+      if (mounted) {
+        setState(() => _downloadingTitles.remove(item.itemKey));
+      }
     }
   }
 
@@ -7813,7 +7879,7 @@ void _showCreatePlaylistDialog() {
             ..._mornyeResults
                 .where((item) => _mornyeFilterType == 'All' || item.type == _mornyeFilterType)
                 .map((item) {
-                  final isPlayingPreview = _activePreviewTitle == item.title && _audioPlayer.state.playing;
+                  final isPlayingPreview = _activePreviewKey == item.itemKey && _audioPlayer.state.playing;
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
@@ -7853,14 +7919,14 @@ void _showCreatePlaylistDialog() {
                               onPressed: () {
                                 if (isPlayingPreview) {
                                   _audioPlayer.pause();
-                                  setState(() => _activePreviewTitle = null);
+                                  setState(() => _activePreviewKey = null);
                                 } else {
                                   _playMornyePreview(item);
                                 }
                               },
                             ),
                           if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
-                            _downloadingTitles.contains(item.title)
+                            _downloadingTitles.contains(item.itemKey)
                                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                                 : IconButton(
                                     tooltip: 'Download to Music',
@@ -9895,4 +9961,6 @@ Future<void> requestNotificationPermission() async {
   if (await Permission.notification.isDenied) {
     await Permission.notification.request();
   }
+}
+
 }
