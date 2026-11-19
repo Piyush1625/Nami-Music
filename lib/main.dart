@@ -4482,7 +4482,6 @@ _buildCoverArt(song, 46, 8),
       ),
     );
   }
-}
 ]
 
   void _openStatisticsScreen() {
@@ -8246,6 +8245,7 @@ void _showCreatePlaylistDialog() {
   }
 
 
+}
 }
 
 
