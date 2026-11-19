@@ -9633,3 +9633,4 @@ Future<void> requestNotificationPermission() async {
 }
 
 }
+// build trigger
