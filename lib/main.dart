@@ -3978,8 +3978,6 @@ _buildCoverArt(song, 46, 8),
               if (isFetchingUrl) ...[
                 const SizedBox(height: 12),
                 Center(child: CircularProgressIndicator(color: Theme.of(dCtx).colorScheme.primary)),
-              ],
-            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
@@ -4045,7 +4043,6 @@ _buildCoverArt(song, 46, 8),
                     },
               child: const Text('Add'),
             ),
-          ],
         ),
       ),
     );
@@ -4077,7 +4074,6 @@ _buildCoverArt(song, 46, 8),
                       setRepoState(() {});
                     },
                   ),
-                ],
               ),
               body: Column(
                 children: [
@@ -4136,7 +4132,6 @@ _buildCoverArt(song, 46, 8),
                       },
                     ),
                   ),
-                ],
               ),
             );
           },
