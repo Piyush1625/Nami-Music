@@ -4066,6 +4066,46 @@ _buildCoverArt(song, 46, 8),
     return null;
   }
 
+  Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async {
+    final activeExts = _extensions
+        .where((e) =>
+            e.isInstalled &&
+            e.isEnabled &&
+            e.endpointUrl != null &&
+            e.endpointUrl!.trim().isNotEmpty)
+        .toList();
+
+    for (final ext in activeExts) {
+      try {
+        final base = ext.endpointUrl!.trim();
+        final sep = base.contains('?') ? '&' : '?';
+        final qUrl =
+            '$base${sep}title=${Uri.encodeComponent(item.title)}&artist=${Uri.encodeComponent(item.artist)}&album=${Uri.encodeComponent(item.album)}';
+        final res = await http
+            .get(Uri.parse(qUrl), headers: _httpHeaders)
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          final body = res.body.trim();
+          if (body.startsWith('http')) {
+            return body;
+          }
+          if (body.startsWith('{')) {
+            final decoded = jsonDecode(body);
+            if (decoded is Map) {
+              for (final k in ['streamUrl', 'downloadUrl', 'url', 'audioUrl', 'flacUrl', 'trackUrl']) {
+                final cand = decoded[k]?.toString().trim();
+                if (cand != null && cand.startsWith('http')) {
+                  return cand;
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   Future<void> _downloadMornyeItem(MornyeCatalogItem item) async {
     setState(() => _downloadingTitles.add(item.itemKey));
     try {
@@ -9961,6 +10001,8 @@ Future<void> requestNotificationPermission() async {
   if (await Permission.notification.isDenied) {
     await Permission.notification.request();
   }
+}
+
 }
 
 }
