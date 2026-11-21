@@ -7045,7 +7045,6 @@ void _showCreatePlaylistDialog() {
       ),
     );
   }
-}
 
 
 
@@ -7074,10 +7073,11 @@ void _showCreatePlaylistDialog() {
 
 
 
-      } catch (_) {}
-    }
+
+       catch (_) {}
+    
     return null;
-  }
+  
 
   Future<void> _downloadMornyeItem(MornyeCatalogItem item) async {
     setState(() => _downloadingTitles.add(item.itemKey));
@@ -10063,3 +10063,11 @@ Future<void> requestNotificationPermission() async {
     await Permission.notification.request();
 
 
+
+}
+
+}
+
+}
+
+}
