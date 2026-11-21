@@ -7490,8 +7490,7 @@ _buildCoverArt(song, 46, 8),
                   final shuffled = List<AudioTrack>.from(artistTracks)..shuffle();
                   if (shuffled.isNotEmpty) _playSong(shuffled.first);
                 },
-              ),
-            , _buildArtistOptionsMenuButton(context, artistName, const [])],
+              ), _buildArtistOptionsMenuButton(context, artistName, const [])],
           ),
           body: Stack(
             children: [
@@ -8619,230 +8618,10 @@ void _showCreatePlaylistDialog() {
 
   String? _profileImagePath;
 
-  List<String> _getSmartMornyeQuickSearches() {
-    final counts = <String, int>{};
-    for (final s in _songs) {
-      final raw = s.artist.toString().trim();
-      if (raw.isEmpty || raw.toLowerCase() == 'unknown artist') continue;
-      final primary = raw.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
-      if (primary.isNotEmpty) counts[primary] = (counts[primary] ?? 0) + 1;
-    }
-    final sorted = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final picks = sorted.take(5).map((e) => e.key).toList();
-    if (picks.length < 5) {
-      for (final fb in ['FLAC Lossless', '24-Bit Hi-Res', 'Instrumental', 'Acoustic Sessions', 'Live Performance']) {
-        if (!picks.contains(fb)) picks.add(fb);
-        if (picks.length == 5) break;
-      }
-    }
-    return picks;
-  }
 
-  Future<String?> _fetchArtistPhotoOnline(String artistName) async {
-    try {
-      final q = Uri.encodeComponent(artistName.trim());
-      final res = await http
-          .get(Uri.parse('https://api.deezer.com/search/artist?q=$q&limit=1'), headers: _httpHeaders)
-          .timeout(const Duration(seconds: 12));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data is Map && data['data'] is List && (data['data'] as List).isNotEmpty) {
-          final first = (data['data'] as List).first;
-          if (first is Map) {
-            final picUrl = (first['picture_xl'] ?? first['picture_big'] ?? first['picture_medium'] ?? '').toString().trim();
-            if (picUrl.startsWith('http')) {
-              final imgRes = await http.get(Uri.parse(picUrl), headers: _httpHeaders).timeout(const Duration(seconds: 15));
-              if (imgRes.statusCode == 200 && imgRes.bodyBytes.isNotEmpty) {
-                final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
-                if (!await dir.exists()) await dir.create(recursive: true);
-                final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-                final savedFile = File('${dir.path}/$safe.jpg');
-                await savedFile.writeAsBytes(imgRes.bodyBytes);
-                setState(() {
-                  _artistImagePaths[artistName] = savedFile.path;
-                  _artworkTick.value++;
-                });
-                await _saveStateCache();
-                return savedFile.path;
-              }
-            }
-          }
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
 
-  Future<String?> _showLocalImagePickerSheet(BuildContext parentCtx, {String title = 'Select Photo'}) async {
-    final images = <File>[];
-    for (final folder in [
-      '/storage/emulated/0/Download',
-      '/storage/emulated/0/Pictures',
-      '/storage/emulated/0/DCIM/Camera',
-      '/storage/emulated/0/DCIM',
-    ]) {
-      try {
-        final d = Directory(folder);
-        if (await d.exists()) {
-          await for (final ent in d.list(followLinks: false)) {
-            if (ent is File) {
-              final l = ent.path.toLowerCase();
-              if (l.endsWith('.jpg') || l.endsWith('.jpeg') || l.endsWith('.png') || l.endsWith('.webp')) {
-                images.add(ent);
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-    images.sort((a, b) {
-      try { return b.lastModifiedSync().compareTo(a.lastModifiedSync()); } catch (_) { return 0; }
-    });
-    if (!mounted) return null;
-    final pathCtrl = TextEditingController();
-    return showModalBottomSheet<String>(
-      context: parentCtx,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141C),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            if (images.isNotEmpty) ...[
-              const Text('Recent photos on device (tap to apply):', style: TextStyle(fontSize: 12, color: Colors.white70)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 110,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: images.length > 20 ? 20 : images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, idx) {
-                    final img = images[idx];
-                    return GestureDetector(
-                      onTap: () => Navigator.of(ctx).pop(img.path),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(img, width: 100, height: 100, fit: BoxFit.cover),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            TextField(
-              controller: pathCtrl,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: 'Or enter image file path / https:// URL',
-                hintText: '/storage/emulated/0/Download/avatar.png',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
-                const SizedBox(width: 8),
-                FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
-                  onPressed: () => Navigator.of(ctx).pop(pathCtrl.text.trim()),
-                  child: const Text('Apply'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildArtistOptionsMenuButton(BuildContext ctx, String artistName, List<dynamic> artistSongs) {
-    return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-      tooltip: 'Artist Photo & Options',
-      color: const Color(0xFF181822),
-      onSelected: (val) => _handleArtistMenuAction(ctx, artistName, artistSongs, val),
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: 'fetch_photo',
-          child: Row(children: [Icon(Icons.cloud_download_outlined, size: 18, color: Color(0xFFE53935)), SizedBox(width: 10), Text('Auto-Fetch Artist Photo')]),
-        ),
-        PopupMenuItem(
-          value: 'pick_photo',
-          child: Row(children: [Icon(Icons.photo_library_outlined, size: 18), SizedBox(width: 10), Text('Pick Custom Artist Photo')]),
-        ),
-        PopupMenuItem(
-          value: 'reset_photo',
-          child: Row(children: [Icon(Icons.restore_rounded, size: 18), SizedBox(width: 10), Text('Reset Artist Photo')]),
-        ),
-        PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'queue_all',
-          child: Row(children: [Icon(Icons.queue_music_rounded, size: 18), SizedBox(width: 10), Text('Add All Tracks to Queue')]),
-        ),
-      ],
-    );
-  }
 
-  Future<void> _handleArtistMenuAction(BuildContext ctx, String artistName, List<dynamic> artistSongs, String action) async {
-    if (action == 'fetch_photo') {
-      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Fetching artist photo for $artistName...')));
-      final saved = await _fetchArtistPhotoOnline(artistName);
-      if (mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text(saved != null ? 'Updated artist photo for $artistName' : 'Could not find online photo — try Pick Custom Photo')),
-        );
-      }
-    } else if (action == 'pick_photo') {
-      final picked = await _showLocalImagePickerSheet(ctx, title: 'Set Artist Photo ($artistName)');
-      if (picked != null && picked.isNotEmpty) {
-        String finalPath = picked;
-        if (picked.startsWith('http://') || picked.startsWith('https://')) {
-          try {
-            final res = await http.get(Uri.parse(picked), headers: _httpHeaders).timeout(const Duration(seconds: 15));
-            if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-              final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
-              if (!await dir.exists()) await dir.create(recursive: true);
-              final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-              final savedFile = File('${dir.path}/$safe.jpg');
-              await savedFile.writeAsBytes(res.bodyBytes);
-              finalPath = savedFile.path;
-            }
-          } catch (_) {}
-        }
-        if (File(finalPath).existsSync()) {
-          setState(() {
-            final savedFile = File(finalPath);
-            _artistImagePaths[artistName] = savedFile.path;
-            _artworkTick.value++;
-          });
-          await _saveStateCache();
-        }
-      }
-    } else if (action == 'reset_photo') {
-      setState(() {
-        _artistImagePaths.remove(artistName);
-        _artworkTick.value++;
-      });
-      await _saveStateCache();
-      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Reset artist photo for $artistName')));
-    } else if (action == 'queue_all') {
-      setState(() {
-        for (final s in artistSongs) {
-          if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
-        }
-      });
-      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Added ${artistSongs.length} tracks to Play Next queue')));
-    }
-  }
 
 
   String? _getArtistCustomImagePath(String artistName) {
@@ -9108,7 +8887,7 @@ void _showCreatePlaylistDialog() {
         final f = File(s.path.toString());
         if (f.existsSync()) totalBytes += f.lengthSync();
       } catch (_) {}
-      try { totalDurationMs += (s.durationMs as int? ?? 0); } catch (_) {}
+      try { totalDurationMs += (s.duration?.inMilliseconds ?? 0); } catch (_) {}
       try { if (s.isFavorite == true) favCount++; } catch (_) {}
       try {
         final alb = s.album.toString().trim();
@@ -9163,7 +8942,7 @@ void _showCreatePlaylistDialog() {
 
     int historyDurSec = 0;
     for (final h in _historyTracks) {
-      try { historyDurSec += ((h.durationMs as int? ?? 0) ~/ 1000); } catch (_) {}
+      try { historyDurSec += ((h.duration?.inMilliseconds ?? 0) ~/ 1000); } catch (_) {}
     }
     final listenHours = historyDurSec ~/ 3600;
     final listenMins = (historyDurSec % 3600) ~/ 60;
