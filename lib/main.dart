@@ -5467,7 +5467,7 @@ _buildCoverArt(song, 46, 8),
                             backgroundColor: accent.withOpacity(0.18),
                             child: GestureDetector(
                       onTap: () async {
-                        final chosen = await _showLocalImagePickerSheet(context, title: 'Choose Profile Photo');
+                        final chosen = await _pickPhotoDirectlyFromGallery(context, title: 'Choose Profile Photo');
                         if (chosen != null && chosen.isNotEmpty && File(chosen).existsSync()) {
                           setState(() => _profileImagePath = chosen);
                         }
