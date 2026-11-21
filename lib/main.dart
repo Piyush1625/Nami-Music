@@ -5477,7 +5477,29 @@ _buildCoverArt(song, 46, 8),
                         children: [
                           _profileImagePath != null && File(_profileImagePath!).existsSync()
                               ? ClipOval(child: Image.file(File(_profileImagePath!), width: 56, height: 56, fit: BoxFit.cover))
-                              : Icon(Icons.headphones_rounded, color: accent, size: 28),
+                              : GestureDetector(
+              onTap: () async {
+                final chosen = await _pickPhotoDirectlyFromGallery(context, title: 'Choose Profile Photo from Gallery');
+                if (chosen != null && chosen.isNotEmpty && File(chosen).existsSync()) {
+                  setState(() => _profileImagePath = chosen);
+                  
+                  await _saveStateCache();
+                }
+              },
+              child: Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  _profileImagePath != null && File(_profileImagePath!).existsSync()
+                      ? ClipOval(child: Image.file(File(_profileImagePath!), width: 48, height: 48, fit: BoxFit.cover))
+                      : Icon(Icons.headphones_rounded, color: accent, size: 28),
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(color: _namiAccentColor, shape: BoxShape.circle),
+                    child: const Icon(Icons.camera_alt_rounded, size: 10, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
                           Container(
                             padding: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(color: Color(0xFFE53935), shape: BoxShape.circle),
@@ -5925,39 +5947,7 @@ _buildCoverArt(song, 46, 8),
                       children: [
                         GestureDetector(
                           onTap: () => _openNamidaStatisticsScreen(context),
-                          child: Row(
-          children: [
-            Expanded(
-              child: _buildBentoMetricCard(
-                icon: Icons.album_outlined,
-                label: 'FLAC Lossless',
-                value: '$flacCount',
-                sub: '${_songs.isNotEmpty ? ((flacCount * 100) ~/ _songs.length) : 0}% of library',
-                color: accent,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildBentoMetricCard(
-                icon: Icons.graphic_eq_rounded,
-                label: '24-Bit Hi-Res',
-                value: '${hiResTracks.length}',
-                sub: 'Studio Master',
-                color: Colors.cyanAccent,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildBentoMetricCard(
-                icon: Icons.schedule_rounded,
-                label: 'Listen Time',
-                value: '${_totalListenSeconds ~/ 60}m',
-                sub: '${uniqueArtists.length} Artists',
-                color: Colors.amberAccent,
-              ),
-            ),
-          ],
-        ),
+                          child: _buildNamidaHomeStatisticsSection(context),
                         ),
                         const SizedBox(height: 6),
                         Align(
@@ -7477,20 +7467,7 @@ _buildCoverArt(song, 46, 8),
         builder: (context) => Scaffold(
           appBar: AppBar(
             backgroundColor: Colors.transparent,
-            actions: [
-              IconButton(
-                tooltip: 'Play Artist',
-                icon: const Icon(Icons.play_arrow_rounded),
-                onPressed: () => _playSong(artistTracks.first),
-              ),
-              IconButton(
-                tooltip: 'Shuffle Artist',
-                icon: const Icon(Icons.shuffle_rounded),
-                onPressed: () {
-                  final shuffled = List<AudioTrack>.from(artistTracks)..shuffle();
-                  if (shuffled.isNotEmpty) _playSong(shuffled.first);
-                },
-              ), _buildArtistOptionsMenuButton(context, artistName, const [])],
+            actions: [],
           ),
           body: Stack(
             children: [
@@ -7514,7 +7491,7 @@ _buildCoverArt(song, 46, 8),
         Text(artistName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
         const SizedBox(height: 4),
         Text('${artistTracks.length} Tracks • ${albumsMap.length} Albums • $formattedTotal', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-      ])),
+      ])), _buildArtistHeroThreeDotsButton(context, artistName, const [], onUpdated: () => setState(() {})),
     ]),
     const SizedBox(height: 14),
     Row(children: [
@@ -8624,6 +8601,39 @@ void _showCreatePlaylistDialog() {
 
 
 
+
+
+
+
+
+
+
+
+  int _homeStatsChartMode = 0;
+  int _homeStatsSelectedSlice = -1;
+  double _lyricsOffsetSeconds = 0.0;
+  double _lyricsFontSize = 21.0;
+  bool _lyricsCenterAlign = true;
+  bool _autoFetchLyricsEnabled = true;
+  bool _gaplessPlaybackEnabled = true;
+  int _crossfadeSeconds = 0;
+  int _minTrackDurationSec = 0;
+  int _sleepTimerMinutes = 0;
+  Color _namiAccentColor = const Color(0xFFE53935);
+
+  int _trackDurationMs(dynamic track) {
+    try {
+      final d = (track as dynamic).duration;
+      if (d is Duration) return d.inMilliseconds;
+      if (d is int) return d > 10000 ? d : d * 1000;
+    } catch (_) {}
+    try {
+      final ms = (track as dynamic).durationMs;
+      if (ms is int) return ms;
+    } catch (_) {}
+    return 0;
+  }
+
   String? _getArtistCustomImagePath(String artistName) {
     final p = _artistImagePaths[artistName];
     if (p != null && p.isNotEmpty && File(p).existsSync()) return p;
@@ -8652,225 +8662,478 @@ void _showCreatePlaylistDialog() {
     return picks;
   }
 
-  Future<String?> _fetchArtistPhotoOnline(String artistName) async {
+  /// Fetches multiple artist photo options from Deezer + iTunes so user can select which one they want
+  Future<List<Map<String, String>>> _fetchArtistPhotoCandidates(String artistName) async {
+    final candidates = <Map<String, String>>[];
+    final seenUrls = <String>{};
+    final q = Uri.encodeComponent(artistName.trim());
+
     try {
-      final q = Uri.encodeComponent(artistName.trim());
       final res = await http
-          .get(Uri.parse('https://api.deezer.com/search/artist?q=$q&limit=1'), headers: _httpHeaders)
+          .get(Uri.parse('https://api.deezer.com/search/artist?q=$q&limit=10'), headers: _httpHeaders)
           .timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        if (data is Map && data['data'] is List && (data['data'] as List).isNotEmpty) {
-          final first = (data['data'] as List).first;
-          if (first is Map) {
-            final picUrl = (first['picture_xl'] ?? first['picture_big'] ?? first['picture_medium'] ?? '').toString().trim();
-            if (picUrl.startsWith('http')) {
-              final imgRes = await http.get(Uri.parse(picUrl), headers: _httpHeaders).timeout(const Duration(seconds: 15));
-              if (imgRes.statusCode == 200 && imgRes.bodyBytes.isNotEmpty) {
-                final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
-                if (!await dir.exists()) await dir.create(recursive: true);
-                final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-                final savedFile = File('${dir.path}/$safe.jpg');
-                await savedFile.writeAsBytes(imgRes.bodyBytes);
-                setState(() {
-                  _artistImagePaths[artistName] = savedFile.path;
-                  _artworkTick.value++;
-                });
-                await _saveStateCache();
-                return savedFile.path;
+        if (data is Map && data['data'] is List) {
+          for (final item in (data['data'] as List)) {
+            if (item is Map) {
+              final url = (item['picture_xl'] ?? item['picture_big'] ?? item['picture_medium'] ?? '').toString().trim();
+              final name = (item['name'] ?? artistName).toString().trim();
+              if (url.startsWith('http') && !url.contains('/artist//') && seenUrls.add(url)) {
+                candidates.add({'url': url, 'label': '$name (Artist Portrait)'});
               }
             }
           }
         }
       }
     } catch (_) {}
-    return null;
+
+    try {
+      final albRes = await http
+          .get(Uri.parse('https://api.deezer.com/search/album?q=$q&limit=8'), headers: _httpHeaders)
+          .timeout(const Duration(seconds: 12));
+      if (albRes.statusCode == 200) {
+        final data = jsonDecode(albRes.body);
+        if (data is Map && data['data'] is List) {
+          for (final item in (data['data'] as List)) {
+            if (item is Map) {
+              final url = (item['cover_xl'] ?? item['cover_big'] ?? item['cover_medium'] ?? '').toString().trim();
+              final title = (item['title'] ?? 'Cover').toString().trim();
+              if (url.startsWith('http') && seenUrls.add(url)) {
+                candidates.add({'url': url, 'label': '$title (Cover Art)'});
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final itRes = await http
+          .get(Uri.parse('https://itunes.apple.com/search?term=$q&entity=album&limit=8'), headers: _httpHeaders)
+          .timeout(const Duration(seconds: 12));
+      if (itRes.statusCode == 200) {
+        final data = jsonDecode(itRes.body);
+        if (data is Map && data['results'] is List) {
+          for (final item in (data['results'] as List)) {
+            if (item is Map) {
+              final rawArt = (item['artworkUrl100'] ?? '').toString().trim();
+              final collName = (item['collectionName'] ?? 'Apple Music').toString().trim();
+              if (rawArt.startsWith('http')) {
+                final hiRes = rawArt.replaceAll('100x100bb', '600x600bb');
+                if (seenUrls.add(hiRes)) {
+                  candidates.add({'url': hiRes, 'label': '$collName (Hi-Res)'});
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    return candidates;
   }
 
-  Future<String?> _showLocalImagePickerSheet(BuildContext parentCtx, {String title = 'Select Photo'}) async {
-    final images = <File>[];
-    for (final folder in [
-      '/storage/emulated/0/Download',
-      '/storage/emulated/0/Pictures',
+  Future<void> _saveArtistImageFromUrlOrFile(String artistName, String sourcePathOrUrl, {VoidCallback? onUpdated}) async {
+    try {
+      final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final savedFile = File('${dir.path}/$safe.jpg');
+
+      if (sourcePathOrUrl.startsWith('http://') || sourcePathOrUrl.startsWith('https://')) {
+        final res = await http.get(Uri.parse(sourcePathOrUrl), headers: _httpHeaders).timeout(const Duration(seconds: 15));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          await savedFile.writeAsBytes(res.bodyBytes);
+        } else {
+          return;
+        }
+      } else {
+        final srcFile = File(sourcePathOrUrl);
+        if (!await srcFile.exists()) return;
+        await srcFile.copy(savedFile.path);
+      }
+
+      setState(() {
+        _artistImagePaths[artistName] = savedFile.path;
+        _artworkTick.value++;
+      });
+      await _saveStateCache();
+      if (onUpdated != null) onUpdated();
+    } catch (_) {}
+  }
+
+  Future<void> _showArtistFetchedPhotoSelector(BuildContext parentCtx, String artistName, {VoidCallback? onUpdated}) async {
+    bool loading = true;
+    List<Map<String, String>> options = [];
+    bool started = false;
+
+    await showModalBottomSheet<void>(
+      context: parentCtx,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF12121A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          if (!started) {
+            started = true;
+            _fetchArtistPhotoCandidates(artistName).then((res) {
+              if (ctx.mounted) {
+                setSheetState(() {
+                  options = res;
+                  loading = false;
+                });
+              }
+            });
+          }
+          return SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.68,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Select Artist Photo • $artistName',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.photo_library_outlined, size: 17),
+                        label: const Text('From Gallery', style: TextStyle(fontSize: 12)),
+                        onPressed: () async {
+                          Navigator.of(ctx).pop();
+                          final picked = await _pickPhotoDirectlyFromGallery(parentCtx, title: 'Choose Artist Photo');
+                          if (picked != null && picked.isNotEmpty) {
+                            await _saveArtistImageFromUrlOrFile(artistName, picked, onUpdated: onUpdated);
+                            if (mounted) {
+                              ScaffoldMessenger.of(parentCtx).showSnackBar(
+                                SnackBar(content: Text('Updated artist photo for $artistName')),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Tap the image you want to apply as artist avatar & cover:',
+                    style: TextStyle(fontSize: 12, color: Colors.white60),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: loading
+                        ? const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(color: Color(0xFFE53935)),
+                                SizedBox(height: 12),
+                                Text('Fetching artist photos...', style: TextStyle(color: Colors.white70)),
+                              ],
+                            ),
+                          )
+                        : options.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.image_not_supported_outlined, size: 40, color: Colors.white38),
+                                    const SizedBox(height: 10),
+                                    const Text('No online artist photos found.', style: TextStyle(color: Colors.white70)),
+                                    const SizedBox(height: 10),
+                                    FilledButton.icon(
+                                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
+                                      icon: const Icon(Icons.photo_library_rounded, size: 18),
+                                      label: const Text('Pick Photo from Gallery'),
+                                      onPressed: () async {
+                                        Navigator.of(ctx).pop();
+                                        final picked = await _pickPhotoDirectlyFromGallery(parentCtx, title: 'Choose Artist Photo');
+                                        if (picked != null && picked.isNotEmpty) {
+                                          await _saveArtistImageFromUrlOrFile(artistName, picked, onUpdated: onUpdated);
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : GridView.builder(
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 10,
+                                  childAspectRatio: 0.82,
+                                ),
+                                itemCount: options.length,
+                                itemBuilder: (_, idx) {
+                                  final item = options[idx];
+                                  return GestureDetector(
+                                    onTap: () async {
+                                      Navigator.of(ctx).pop();
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(parentCtx).showSnackBar(
+                                          SnackBar(content: Text('Applying selected photo for $artistName...')),
+                                        );
+                                      }
+                                      await _saveArtistImageFromUrlOrFile(artistName, item['url']!, onUpdated: onUpdated);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(parentCtx).showSnackBar(
+                                          SnackBar(content: Text('Updated artist photo for $artistName')),
+                                        );
+                                      }
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1A1A24),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: Colors.white12),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          Expanded(
+                                            child: ClipRRect(
+                                              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+                                              child: Image.network(
+                                                item['url']!,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                                              ),
+                                            ),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.all(5),
+                                            child: Text(
+                                              item['label'] ?? '',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 10, color: Colors.white70),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Picks a photo directly from Android Gallery (via native MethodChannel first, then visual device Gallery Grid — zero URL input!)
+  Future<String?> _pickPhotoDirectlyFromGallery(BuildContext parentCtx, {String title = 'Select Photo from Gallery'}) async {
+    try {
+      const channel = MethodChannel('com.nami.music/gallery_picker');
+      final nativePath = await channel.invokeMethod<String>('pickImageFromGallery');
+      if (nativePath != null && nativePath.isNotEmpty && File(nativePath).existsSync()) {
+        return nativePath;
+      }
+    } catch (_) {}
+
+    // Visual Device Gallery Grid (scans DCIM, Pictures, Download, Screenshots, WhatsApp Images — no URL field)
+    final galleryImages = <File>[];
+    final dirsToScan = [
       '/storage/emulated/0/DCIM/Camera',
+      '/storage/emulated/0/DCIM/Screenshots',
       '/storage/emulated/0/DCIM',
-    ]) {
+      '/storage/emulated/0/Pictures',
+      '/storage/emulated/0/Pictures/Screenshots',
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images',
+    ];
+    for (final dirPath in dirsToScan) {
       try {
-        final d = Directory(folder);
+        final d = Directory(dirPath);
         if (await d.exists()) {
           await for (final ent in d.list(followLinks: false)) {
             if (ent is File) {
               final l = ent.path.toLowerCase();
               if (l.endsWith('.jpg') || l.endsWith('.jpeg') || l.endsWith('.png') || l.endsWith('.webp')) {
-                images.add(ent);
+                galleryImages.add(ent);
               }
             }
           }
         }
       } catch (_) {}
     }
-    images.sort((a, b) {
-      try { return b.lastModifiedSync().compareTo(a.lastModifiedSync()); } catch (_) { return 0; }
+    galleryImages.sort((a, b) {
+      try {
+        return b.lastModifiedSync().compareTo(a.lastModifiedSync());
+      } catch (_) {
+        return 0;
+      }
     });
+
     if (!mounted) return null;
-    final pathCtrl = TextEditingController();
     return showModalBottomSheet<String>(
       context: parentCtx,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF14141C),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            if (images.isNotEmpty) ...[
-              const Text('Recent photos on device (tap to apply):', style: TextStyle(fontSize: 12, color: Colors.white70)),
+      backgroundColor: const Color(0xFF12121A),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(ctx).size.height * 0.65,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.photo_library_rounded, color: Color(0xFFE53935), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(ctx).pop(null),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
-              SizedBox(
-                height: 110,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: images.length > 20 ? 20 : images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, idx) {
-                    final img = images[idx];
-                    return GestureDetector(
-                      onTap: () => Navigator.of(ctx).pop(img.path),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(img, width: 100, height: 100, fit: BoxFit.cover),
+              Expanded(
+                child: galleryImages.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No photos found in DCIM, Pictures, or Download.\nGrant storage/media permission in Android Settings.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white60, fontSize: 13),
+                        ),
+                      )
+                    : GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                        ),
+                        itemCount: galleryImages.length > 90 ? 90 : galleryImages.length,
+                        itemBuilder: (_, idx) {
+                          final img = galleryImages[idx];
+                          return GestureDetector(
+                            onTap: () => Navigator.of(ctx).pop(img.path),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(img, fit: BoxFit.cover),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
-              const SizedBox(height: 12),
             ],
-            TextField(
-              controller: pathCtrl,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                labelText: 'Or enter image file path / https:// URL',
-                hintText: '/storage/emulated/0/Download/avatar.png',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
-                const SizedBox(width: 8),
-                FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
-                  onPressed: () => Navigator.of(ctx).pop(pathCtrl.text.trim()),
-                  child: const Text('Apply'),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildArtistOptionsMenuButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {VoidCallback? onUpdated}) {
+  Widget _buildArtistHeroThreeDotsButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {VoidCallback? onUpdated}) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-      tooltip: 'Artist Cover & Photo Settings',
+      icon: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.black45,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white24),
+        ),
+        child: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
+      ),
+      tooltip: 'Artist Photo & Options',
       color: const Color(0xFF181822),
       onSelected: (val) async {
-        await _handleArtistMenuAction(ctx, artistName, artistSongs, val);
-        if (onUpdated != null) onUpdated();
+        if (val == 'fetch_options') {
+          await _showArtistFetchedPhotoSelector(ctx, artistName, onUpdated: onUpdated);
+        } else if (val == 'pick_gallery') {
+          final picked = await _pickPhotoDirectlyFromGallery(ctx, title: 'Select Artist Photo ($artistName)');
+          if (picked != null && picked.isNotEmpty) {
+            await _saveArtistImageFromUrlOrFile(artistName, picked, onUpdated: onUpdated);
+            if (mounted) {
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(content: Text('Updated artist photo for $artistName')),
+              );
+            }
+          }
+        } else if (val == 'reset_photo') {
+          setState(() {
+            _artistImagePaths.remove(artistName);
+            _artworkTick.value++;
+          });
+          await _saveStateCache();
+          if (onUpdated != null) onUpdated();
+          if (mounted) {
+            ScaffoldMessenger.of(ctx).showSnackBar(
+              SnackBar(content: Text('Reset artist photo for $artistName')),
+            );
+          }
+        } else if (val == 'queue_all') {
+          setState(() {
+            for (final s in artistSongs) {
+              if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
+            }
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(ctx).showSnackBar(
+              SnackBar(content: Text('Added ${artistSongs.length} tracks to Play Next queue')),
+            );
+          }
+        }
       },
       itemBuilder: (_) => const [
         PopupMenuItem(
-          value: 'fetch_photo',
-          child: Row(children: [Icon(Icons.cloud_download_outlined, size: 18, color: Color(0xFFE53935)), SizedBox(width: 10), Text('Auto-Fetch Artist Photo')]),
+          value: 'fetch_options',
+          child: Row(
+            children: [
+              Icon(Icons.collections_outlined, size: 18, color: Color(0xFFE53935)),
+              SizedBox(width: 10),
+              Text('Choose Fetched Artist Photos'),
+            ],
+          ),
         ),
         PopupMenuItem(
-          value: 'pick_photo',
-          child: Row(children: [Icon(Icons.photo_library_outlined, size: 18), SizedBox(width: 10), Text('Set Custom Artist / Cover Photo')]),
+          value: 'pick_gallery',
+          child: Row(
+            children: [
+              Icon(Icons.photo_library_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('Pick Photo from Gallery'),
+            ],
+          ),
         ),
         PopupMenuItem(
           value: 'reset_photo',
-          child: Row(children: [Icon(Icons.restore_rounded, size: 18), SizedBox(width: 10), Text('Reset Artist Photo')]),
+          child: Row(
+            children: [
+              Icon(Icons.restore_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Reset Artist Photo'),
+            ],
+          ),
         ),
         PopupMenuDivider(),
         PopupMenuItem(
           value: 'queue_all',
-          child: Row(children: [Icon(Icons.queue_music_rounded, size: 18), SizedBox(width: 10), Text('Add All Tracks to Queue')]),
-        ),
-        PopupMenuItem(
-          value: 'stats',
-          child: Row(children: [Icon(Icons.pie_chart_outline_rounded, size: 18), SizedBox(width: 10), Text('Library & Listening Stats')]),
+          child: Row(
+            children: [
+              Icon(Icons.queue_music_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Add All Tracks to Queue'),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Future<void> _handleArtistMenuAction(BuildContext ctx, String artistName, List<dynamic> artistSongs, String action) async {
-    if (action == 'fetch_photo') {
-      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Fetching artist photo for $artistName...')));
-      final saved = await _fetchArtistPhotoOnline(artistName);
-      if (mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text(saved != null ? 'Updated artist photo for $artistName' : 'Could not find online photo — try Set Custom Artist Photo')),
-        );
-      }
-    } else if (action == 'pick_photo') {
-      final picked = await _showLocalImagePickerSheet(ctx, title: 'Set Artist / Cover Photo ($artistName)');
-      if (picked != null && picked.isNotEmpty) {
-        String finalPath = picked;
-        if (picked.startsWith('http://') || picked.startsWith('https://')) {
-          try {
-            final res = await http.get(Uri.parse(picked), headers: _httpHeaders).timeout(const Duration(seconds: 15));
-            if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-              final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
-              if (!await dir.exists()) await dir.create(recursive: true);
-              final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-              final savedFile = File('${dir.path}/$safe.jpg');
-              await savedFile.writeAsBytes(res.bodyBytes);
-              finalPath = savedFile.path;
-            }
-          } catch (_) {}
-        }
-        if (File(finalPath).existsSync()) {
-          setState(() {
-            final savedFile = File(finalPath);
-            _artistImagePaths[artistName] = savedFile.path;
-            _artworkTick.value++;
-          });
-          await _saveStateCache();
-        }
-      }
-    } else if (action == 'reset_photo') {
-      setState(() {
-        _artistImagePaths.remove(artistName);
-        _artworkTick.value++;
-      });
-      await _saveStateCache();
-      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Reset artist photo for $artistName')));
-    } else if (action == 'queue_all') {
-      setState(() {
-        for (final s in artistSongs) {
-          if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
-        }
-      });
-      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Added ${artistSongs.length} tracks to Play Next queue')));
-    } else if (action == 'stats') {
-      _openNamidaStatisticsScreen(ctx);
-    }
-  }
-
-  void _openNamidaStatisticsScreen(BuildContext parentCtx) {
-    int chartMode = 0; // 0 = Format / Bit-Depth, 1 = Top Artists, 2 = Release Era
-    int selectedSlice = -1;
-
+  /// Namida-style Home Screen Listening Statistics Card with Interactive Donut/Pie Chart & Heavy Detail
+  Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
     int totalBytes = 0;
     int totalDurationMs = 0;
     int flac24Count = 0;
@@ -8887,8 +9150,8 @@ void _showCreatePlaylistDialog() {
         final f = File(s.path.toString());
         if (f.existsSync()) totalBytes += f.lengthSync();
       } catch (_) {}
-      try { totalDurationMs += (s.duration?.inMilliseconds ?? 0); } catch (_) {}
-      try { if (s.isFavorite == true) favCount++; } catch (_) {}
+      totalDurationMs += _trackDurationMs(s);
+      try { if ((s as dynamic).isFavorite == true) favCount++; } catch (_) {}
       try {
         final alb = s.album.toString().trim();
         if (alb.isNotEmpty) albumSet.add(alb);
@@ -8896,7 +9159,7 @@ void _showCreatePlaylistDialog() {
 
       final pathLower = s.path.toString().toLowerCase();
       int bitDepth = 16;
-      try { bitDepth = (s.bitDepth as int? ?? 16); } catch (_) {}
+      try { bitDepth = ((s as dynamic).bitDepth as int? ?? 16); } catch (_) {}
       if (pathLower.endsWith('.flac')) {
         if (bitDepth >= 24) {
           flac24Count++;
@@ -8916,7 +9179,7 @@ void _showCreatePlaylistDialog() {
       }
 
       String yrStr = '';
-      try { yrStr = (s.year ?? '').toString(); } catch (_) {}
+      try { yrStr = ((s as dynamic).year ?? '').toString(); } catch (_) {}
       final yr = int.tryParse(yrStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
       if (yr >= 2020) {
         eraCounts['2020s'] = (eraCounts['2020s'] ?? 0) + 1;
@@ -8925,9 +9188,9 @@ void _showCreatePlaylistDialog() {
       } else if (yr >= 2000) {
         eraCounts['2000s'] = (eraCounts['2000s'] ?? 0) + 1;
       } else if (yr > 1900) {
-        eraCounts['Classic (<2000)'] = (eraCounts['Classic (<2000)'] ?? 0) + 1;
+        eraCounts['Classic'] = (eraCounts['Classic'] ?? 0) + 1;
       } else {
-        eraCounts['Untagged Year'] = (eraCounts['Untagged Year'] ?? 0) + 1;
+        eraCounts['Untagged'] = (eraCounts['Untagged'] ?? 0) + 1;
       }
     }
 
@@ -8935,286 +9198,306 @@ void _showCreatePlaylistDialog() {
     final totalHours = totalDurationMs ~/ 3600000;
     final totalMins = (totalDurationMs % 3600000) ~/ 60000;
     final totalGb = totalBytes / (1024 * 1024 * 1024);
-    final avgMb = _songs.isEmpty ? 0.0 : (totalBytes / (1024 * 1024)) / _songs.length;
-    final avgDurSec = _songs.isEmpty ? 0 : (totalDurationMs ~/ 1000) ~/ _songs.length;
     final avgBitrateKbps = totalDurationMs > 0 ? ((totalBytes * 8) ~/ totalDurationMs) : 0;
     final losslessPct = _songs.isEmpty ? 0 : (((flac24Count + flac16Count + otherLosslessCount) * 100) / _songs.length).round();
 
-    int historyDurSec = 0;
+    int historyDurMs = 0;
     for (final h in _historyTracks) {
-      try { historyDurSec += ((h.duration?.inMilliseconds ?? 0) ~/ 1000); } catch (_) {}
+      historyDurMs += _trackDurationMs(h);
     }
-    final listenHours = historyDurSec ~/ 3600;
-    final listenMins = (historyDurSec % 3600) ~/ 60;
+    final listenHours = historyDurMs ~/ 3600000;
+    final listenMins = (historyDurMs % 3600000) ~/ 60000;
 
+    List<_NamiPieSlice> slices;
+    String centerTop;
+    String centerSub;
+    if (_homeStatsChartMode == 0) {
+      slices = [
+        _NamiPieSlice(label: 'FLAC 24-Bit', value: flac24Count.toDouble(), color: _namiAccentColor),
+        _NamiPieSlice(label: 'FLAC 16-Bit', value: flac16Count.toDouble(), color: const Color(0xFF00ACC1)),
+        _NamiPieSlice(label: 'ALAC / WAV', value: otherLosslessCount.toDouble(), color: const Color(0xFF43A047)),
+        _NamiPieSlice(label: 'AAC / MP3', value: lossyCount.toDouble(), color: const Color(0xFFFFB300)),
+      ];
+      centerTop = '$losslessPct%';
+      centerSub = 'Lossless';
+    } else if (_homeStatsChartMode == 1) {
+      final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
+      final top4 = topArtists.take(4).toList();
+      final top4Sum = top4.fold<int>(0, (s, e) => s + e.value);
+      final restCount = (_songs.length - top4Sum).clamp(0, _songs.length);
+      slices = [
+        for (int i = 0; i < top4.length; i++)
+          _NamiPieSlice(label: top4[i].key, value: top4[i].value.toDouble(), color: palette[i % palette.length]),
+        if (restCount > 0)
+          _NamiPieSlice(label: 'Others', value: restCount.toDouble(), color: palette[5]),
+      ];
+      centerTop = '${artistCounts.length}';
+      centerSub = 'Artists';
+    } else {
+      final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFF546E7A)];
+      final entries = eraCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+      slices = [
+        for (int i = 0; i < entries.length; i++)
+          _NamiPieSlice(label: entries[i].key, value: entries[i].value.toDouble(), color: palette[i % palette.length]),
+      ];
+      centerTop = '${albumSet.length}';
+      centerSub = 'Albums';
+    }
+
+    final totalSliceVal = slices.fold<double>(0, (s, e) => s + e.value);
+    final activeSlice = (_homeStatsSelectedSlice >= 0 && _homeStatsSelectedSlice < slices.length)
+        ? slices[_homeStatsSelectedSlice]
+        : null;
+
+    Widget miniMetric(IconData icon, String value, String label, Color color) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161620),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(label, style: const TextStyle(fontSize: 10, color: Colors.white54), overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101017),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.pie_chart_rounded, color: _namiAccentColor, size: 18),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Listening & Library Statistics',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+              InkWell(
+                onTap: () => _openNamidaStatisticsScreen(context),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Full Details', style: TextStyle(fontSize: 11, color: _namiAccentColor, fontWeight: FontWeight.w600)),
+                      Icon(Icons.chevron_right_rounded, size: 16, color: _namiAccentColor),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final tab in [(0, 'Quality'), (1, 'Top Artists'), (2, 'Eras')])
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(tab.$2, style: const TextStyle(fontSize: 11)),
+                    selected: _homeStatsChartMode == tab.$1,
+                    selectedColor: _namiAccentColor,
+                    onSelected: (_) => setState(() {
+                      _homeStatsChartMode = tab.$1;
+                      _homeStatsSelectedSlice = -1;
+                    }),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 162,
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTapUp: (details) {
+                    const boxSize = 152.0;
+                    final dx = details.localPosition.dx - boxSize / 2;
+                    final dy = details.localPosition.dy - boxSize / 2;
+                    double angle = math.atan2(dy, dx) + math.pi / 2;
+                    if (angle < 0) angle += 2 * math.pi;
+                    if (totalSliceVal > 0) {
+                      double acc = 0;
+                      for (int i = 0; i < slices.length; i++) {
+                        final sw = (slices[i].value / totalSliceVal) * 2 * math.pi;
+                        if (angle >= acc && angle <= acc + sw) {
+                          setState(() => _homeStatsSelectedSlice = (_homeStatsSelectedSlice == i) ? -1 : i);
+                          break;
+                        }
+                        acc += sw;
+                      }
+                    }
+                  },
+                  child: SizedBox(
+                    width: 152,
+                    height: 152,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CustomPaint(
+                          size: const Size(152, 152),
+                          painter: _NamiPieChartPainter(slices: slices, selectedIndex: _homeStatsSelectedSlice),
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              activeSlice != null ? '${activeSlice.value.toInt()}' : centerTop,
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            Text(
+                              activeSlice != null ? activeSlice.label : centerSub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10, color: Colors.white60),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (int i = 0; i < slices.length; i++)
+                        if (slices[i].value > 0)
+                          InkWell(
+                            onTap: () => setState(() => _homeStatsSelectedSlice = (_homeStatsSelectedSlice == i) ? -1 : i),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3.5),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 9,
+                                    height: 9,
+                                    decoration: BoxDecoration(color: slices[i].color, shape: BoxShape.circle),
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Expanded(
+                                    child: Text(
+                                      slices[i].label,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: _homeStatsSelectedSlice == i ? FontWeight.bold : FontWeight.normal,
+                                        color: Colors.white,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${slices[i].value.toInt()} (${totalSliceVal > 0 ? ((slices[i].value * 100) / totalSliceVal).round() : 0}%)',
+                                    style: const TextStyle(fontSize: 10, color: Colors.white60),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              miniMetric(Icons.album_rounded, '${flac24Count + flac16Count}', 'FLAC ($losslessPct%)', const Color(0xFF00ACC1)),
+              const SizedBox(width: 8),
+              miniMetric(Icons.graphic_eq_rounded, '$flac24Count', '24-Bit Hi-Res', _namiAccentColor),
+              const SizedBox(width: 8),
+              miniMetric(Icons.headphones_rounded, '${listenHours}h ${listenMins}m', '${_historyTracks.length} Plays', const Color(0xFFFFB300)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              miniMetric(Icons.sd_storage_rounded, '${totalGb.toStringAsFixed(1)} GB', '$avgBitrateKbps kbps avg', const Color(0xFF43A047)),
+              const SizedBox(width: 8),
+              miniMetric(Icons.schedule_rounded, '${totalHours}h ${totalMins}m', '${albumSet.length} Albums', const Color(0xFF8E24AA)),
+              const SizedBox(width: 8),
+              miniMetric(Icons.favorite_rounded, '$favCount', '${artistCounts.length} Artists', _namiAccentColor),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openNamidaStatisticsScreen(BuildContext parentCtx) {
     Navigator.of(parentCtx).push(
       MaterialPageRoute(
         builder: (_) => StatefulBuilder(
           builder: (ctx, setStatsState) {
-            List<_NamiPieSlice> slices;
-            String centerTop;
-            String centerSub;
-            if (chartMode == 0) {
-              slices = [
-                _NamiPieSlice(label: 'FLAC 24-Bit Hi-Res', value: flac24Count.toDouble(), color: const Color(0xFFE53935), subtitle: 'Studio Master'),
-                _NamiPieSlice(label: 'FLAC 16-Bit CD', value: flac16Count.toDouble(), color: const Color(0xFF00ACC1), subtitle: 'Lossless RedBook'),
-                _NamiPieSlice(label: 'ALAC / WAV / Lossless', value: otherLosslessCount.toDouble(), color: const Color(0xFF43A047), subtitle: 'Uncompressed / ALAC'),
-                _NamiPieSlice(label: 'AAC / MP3 / Lossy', value: lossyCount.toDouble(), color: const Color(0xFFFFB300), subtitle: 'Compressed Audio'),
-              ];
-              centerTop = '$losslessPct%';
-              centerSub = 'Lossless';
-            } else if (chartMode == 1) {
-              final palette = [
-                const Color(0xFFE53935),
-                const Color(0xFF00ACC1),
-                const Color(0xFF8E24AA),
-                const Color(0xFF43A047),
-                const Color(0xFFFFB300),
-                const Color(0xFF546E7A),
-              ];
-              final top5 = topArtists.take(5).toList();
-              final top5Sum = top5.fold<int>(0, (s, e) => s + e.value);
-              final restCount = (_songs.length - top5Sum).clamp(0, _songs.length);
-              slices = [
-                for (int i = 0; i < top5.length; i++)
-                  _NamiPieSlice(label: top5[i].key, value: top5[i].value.toDouble(), color: palette[i % palette.length]),
-                if (restCount > 0)
-                  _NamiPieSlice(label: 'Other Artists', value: restCount.toDouble(), color: palette[5]),
-              ];
-              centerTop = '${artistCounts.length}';
-              centerSub = 'Artists';
-            } else {
-              final eraPalette = [
-                const Color(0xFFE53935),
-                const Color(0xFF00ACC1),
-                const Color(0xFF8E24AA),
-                const Color(0xFF43A047),
-                const Color(0xFF546E7A),
-              ];
-              final entries = eraCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-              slices = [
-                for (int i = 0; i < entries.length; i++)
-                  _NamiPieSlice(label: entries[i].key, value: entries[i].value.toDouble(), color: eraPalette[i % eraPalette.length]),
-              ];
-              centerTop = '${albumSet.length}';
-              centerSub = 'Albums';
+            final topArtists = <String, int>{};
+            for (final s in _songs) {
+              final raw = s.artist.toString().trim();
+              if (raw.isEmpty || raw.toLowerCase() == 'unknown artist') continue;
+              final primary = raw.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+              if (primary.isNotEmpty) topArtists[primary] = (topArtists[primary] ?? 0) + 1;
             }
-
-            final totalSliceVal = slices.fold<double>(0, (s, e) => s + e.value);
-            final activeSlice = (selectedSlice >= 0 && selectedSlice < slices.length) ? slices[selectedSlice] : null;
-
-            Widget statTile(IconData icon, String title, String val, String sub, Color accent) {
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF14141C),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(icon, size: 16, color: accent),
-                        const SizedBox(width: 6),
-                        Expanded(child: Text(title, style: const TextStyle(fontSize: 11, color: Colors.white60), overflow: TextOverflow.ellipsis)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(val, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                    const SizedBox(height: 2),
-                    Text(sub, style: const TextStyle(fontSize: 11, color: Colors.white54), overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              );
-            }
+            final sortedArtists = topArtists.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
 
             return Scaffold(
               backgroundColor: const Color(0xFF09090D),
               appBar: AppBar(
                 backgroundColor: const Color(0xFF09090D),
-                title: const Text('Library & Listening Statistics', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                title: const Text('Deep Library & Listening Stats', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
               ),
               body: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _buildNamidaHomeStatisticsSection(ctx),
+                  const SizedBox(height: 14),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF12121A),
+                      color: const Color(0xFF101017),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white10),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.pie_chart_rounded, color: Color(0xFFE53935), size: 20),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text('Distribution Breakdown', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                            ),
-                            Text('${_songs.length} Tracks', style: const TextStyle(fontSize: 12, color: Colors.white60)),
-                          ],
-                        ),
+                        const Text('Top Artists Leaderboard', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            for (final entry in [(0, 'Audio Quality'), (1, 'Top Artists'), (2, 'Release Era')])
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(entry.$2, style: const TextStyle(fontSize: 11)),
-                                  selected: chartMode == entry.$1,
-                                  selectedColor: const Color(0xFFE53935),
-                                  onSelected: (_) => setStatsState(() {
-                                    chartMode = entry.$1;
-                                    selectedSlice = -1;
-                                  }),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 210,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                flex: 5,
-                                child: GestureDetector(
-                                  onTapUp: (details) {
-                                    const boxSize = 190.0;
-                                    final dx = details.localPosition.dx - boxSize / 2;
-                                    final dy = details.localPosition.dy - boxSize / 2;
-                                    double angle = math.atan2(dy, dx) + math.pi / 2;
-                                    if (angle < 0) angle += 2 * math.pi;
-                                    if (totalSliceVal > 0) {
-                                      double acc = 0;
-                                      for (int i = 0; i < slices.length; i++) {
-                                        final sw = (slices[i].value / totalSliceVal) * 2 * math.pi;
-                                        if (angle >= acc && angle <= acc + sw) {
-                                          setStatsState(() => selectedSlice = (selectedSlice == i) ? -1 : i);
-                                          break;
-                                        }
-                                        acc += sw;
-                                      }
-                                    }
-                                  },
-                                  child: Center(
-                                    child: SizedBox(
-                                      width: 190,
-                                      height: 190,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          CustomPaint(
-                                            size: const Size(190, 190),
-                                            painter: _NamiPieChartPainter(slices: slices, selectedIndex: selectedSlice),
-                                          ),
-                                          Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                activeSlice != null ? '${activeSlice.value.toInt()}' : centerTop,
-                                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                                              ),
-                                              Text(
-                                                activeSlice != null ? activeSlice.label : centerSub,
-                                                textAlign: TextAlign.center,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(fontSize: 10, color: Colors.white60),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 5,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    for (int i = 0; i < slices.length; i++)
-                                      if (slices[i].value > 0)
-                                        InkWell(
-                                          onTap: () => setStatsState(() => selectedSlice = (selectedSlice == i) ? -1 : i),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(vertical: 4),
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 10,
-                                                  height: 10,
-                                                  decoration: BoxDecoration(color: slices[i].color, shape: BoxShape.circle),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    slices[i].label,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: selectedSlice == i ? FontWeight.bold : FontWeight.normal,
-                                                      color: Colors.white,
-                                                    ),
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '${slices[i].value.toInt()} (${totalSliceVal > 0 ? ((slices[i].value * 100) / totalSliceVal).round() : 0}%)',
-                                                  style: const TextStyle(fontSize: 10, color: Colors.white60),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.65,
-                    children: [
-                      statTile(Icons.sd_storage_rounded, 'Storage Footprint', '${totalGb.toStringAsFixed(2)} GB', 'Avg ${avgMb.toStringAsFixed(1)} MB / track', const Color(0xFFE53935)),
-                      statTile(Icons.graphic_eq_rounded, 'Average Bitrate', '$avgBitrateKbps kbps', '$flac24Count Hi-Res • $flac16Count CD', const Color(0xFF00ACC1)),
-                      statTile(Icons.schedule_rounded, 'Total Runtime', '${totalHours}h ${totalMins}m', 'Avg ${avgDurSec ~/ 60}m ${(avgDurSec % 60).toString().padLeft(2, '0')}s / track', const Color(0xFF43A047)),
-                      statTile(Icons.headphones_rounded, 'Listen Activity', '${listenHours}h ${listenMins}m', '${_historyTracks.length} played sessions', const Color(0xFFFFB300)),
-                      statTile(Icons.album_rounded, 'Albums & Artists', '${albumSet.length} Albums', '${artistCounts.length} unique artists', const Color(0xFF8E24AA)),
-                      statTile(Icons.favorite_rounded, 'Favorites & Queued', '$favCount Liked', '${_playNextQueue.length} in Play Next', const Color(0xFFE53935)),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF12121A),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Top Artists by Library Share', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
-                        for (final entry in topArtists.take(6))
+                        for (final entry in sortedArtists.take(10))
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Column(
@@ -9231,10 +9514,10 @@ void _showCreatePlaylistDialog() {
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
                                   child: LinearProgressIndicator(
-                                    value: _songs.isEmpty ? 0 : entry.value / topArtists.first.value,
+                                    value: sortedArtists.isEmpty ? 0 : entry.value / sortedArtists.first.value,
                                     minHeight: 6,
                                     backgroundColor: Colors.white10,
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFE53935)),
+                                    valueColor: AlwaysStoppedAnimation<Color>(_namiAccentColor),
                                   ),
                                 ),
                               ],
@@ -9245,6 +9528,339 @@ void _showCreatePlaylistDialog() {
                   ),
                 ],
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Parses [mm:ss.xx] LRC text into sorted timed lines
+  List<_NamiLyricEntry> _parseLrcLines(String rawLyrics) {
+    final entries = <_NamiLyricEntry>[];
+    final lineReg = RegExp(r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)');
+    for (final rawLine in rawLyrics.split('\n')) {
+      final matches = lineReg.allMatches(rawLine).toList();
+      if (matches.isEmpty) continue;
+      final lyricText = matches.last.group(4)?.trim() ?? '';
+      if (lyricText.isEmpty) continue;
+      for (final m in matches) {
+        final mins = int.tryParse(m.group(1) ?? '0') ?? 0;
+        final secs = int.tryParse(m.group(2) ?? '0') ?? 0;
+        final fracStr = (m.group(3) ?? '0').padRight(3, '0');
+        final millis = int.tryParse(fracStr.substring(0, 3)) ?? 0;
+        entries.add(_NamiLyricEntry(Duration(minutes: mins, seconds: secs, milliseconds: millis), lyricText));
+      }
+    }
+    entries.sort((a, b) => a.time.compareTo(b.time));
+    return entries;
+  }
+
+  Future<String> _loadOrFetchLyricsForTrack(dynamic song) async {
+    try {
+      final audioPath = song.path.toString();
+      final dotIdx = audioPath.lastIndexOf('.');
+      final lrcPath = dotIdx != -1 ? '${audioPath.substring(0, dotIdx)}.lrc' : '$audioPath.lrc';
+      final lrcFile = File(lrcPath);
+      if (await lrcFile.exists()) {
+        final cached = await lrcFile.readAsString();
+        if (cached.trim().isNotEmpty) return cached;
+      }
+      try {
+        final embedded = ((song as dynamic).lyrics ?? '').toString().trim();
+        if (embedded.isNotEmpty) return embedded;
+      } catch (_) {}
+
+      if (_autoFetchLyricsEnabled) {
+        final t = Uri.encodeComponent(song.title.toString().trim());
+        final a = Uri.encodeComponent(song.artist.toString().trim());
+        final res = await http
+            .get(Uri.parse('https://lrclib.net/api/get?artist_name=$a&track_name=$t'), headers: _httpHeaders)
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (data is Map) {
+            final synced = (data['syncedLyrics'] ?? '').toString().trim();
+            final plain = (data['plainLyrics'] ?? '').toString().trim();
+            final chosen = synced.isNotEmpty ? synced : plain;
+            if (chosen.isNotEmpty) {
+              try {
+                await lrcFile.writeAsString(chosen);
+              } catch (_) {}
+              return chosen;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Namida-Style Fullscreen Synced Lyrics Mode
+  Future<void> _openFullLyricsModeScreen(BuildContext parentCtx) async {
+    if (_songs.isEmpty || _currentIndex < 0 || _currentIndex >= _songs.length) return;
+    final currentSong = _songs[_currentIndex];
+    String rawLyrics = await _loadOrFetchLyricsForTrack(currentSong);
+    List<_NamiLyricEntry> syncedLines = _parseLrcLines(rawLyrics);
+    final scrollCtrl = ScrollController();
+    int lastAutoIdx = -1;
+    bool userScrolling = false;
+
+    if (!mounted) return;
+    await Navigator.of(parentCtx).push(
+      MaterialPageRoute(
+        builder: (_) => StatefulBuilder(
+          builder: (ctx, setLyricsState) {
+            return StreamBuilder<Duration>(
+              stream: _audioPlayer.stream.position,
+              builder: (ctx, posSnap) {
+                final pos = posSnap.data ?? _audioPlayer.state.position;
+                final adjustedMs = pos.inMilliseconds + (_lyricsOffsetSeconds * 1000).round();
+                int activeIdx = -1;
+                for (int i = 0; i < syncedLines.length; i++) {
+                  if (syncedLines[i].time.inMilliseconds <= adjustedMs) {
+                    activeIdx = i;
+                  } else {
+                    break;
+                  }
+                }
+
+                if (activeIdx != -1 && activeIdx != lastAutoIdx && !userScrolling && scrollCtrl.hasClients) {
+                  lastAutoIdx = activeIdx;
+                  final targetOffset = (activeIdx * 58.0 - 160.0).clamp(0.0, scrollCtrl.position.maxScrollExtent);
+                  scrollCtrl.animateTo(
+                    targetOffset,
+                    duration: const Duration(milliseconds: 360),
+                    curve: Curves.easeOutCubic,
+                  );
+                }
+
+                final plainLines = syncedLines.isEmpty
+                    ? rawLyrics.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
+                    : <String>[];
+
+                return Scaffold(
+                  backgroundColor: const Color(0xFF060609),
+                  appBar: AppBar(
+                    backgroundColor: const Color(0xFF060609),
+                    leading: IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          currentSong.title.toString(),
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${currentSong.artist} • ${syncedLines.isNotEmpty ? 'Synced LRC' : 'Lyrics Mode'}',
+                          style: const TextStyle(fontSize: 11, color: Colors.white60),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.format_align_center_rounded, size: 20),
+                        tooltip: 'Toggle Alignment',
+                        onPressed: () => setLyricsState(() => _lyricsCenterAlign = !_lyricsCenterAlign),
+                      ),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.tune_rounded, size: 20),
+                        color: const Color(0xFF161620),
+                        onSelected: (v) async {
+                          if (v == 'offset_minus') {
+                            setLyricsState(() => _lyricsOffsetSeconds -= 0.5);
+                          } else if (v == 'offset_plus') {
+                            setLyricsState(() => _lyricsOffsetSeconds += 0.5);
+                          } else if (v == 'offset_reset') {
+                            setLyricsState(() => _lyricsOffsetSeconds = 0.0);
+                          } else if (v == 'font_up') {
+                            setLyricsState(() => _lyricsFontSize = (_lyricsFontSize + 2).clamp(16.0, 30.0));
+                          } else if (v == 'font_down') {
+                            setLyricsState(() => _lyricsFontSize = (_lyricsFontSize - 2).clamp(16.0, 30.0));
+                          } else if (v == 'refetch') {
+                            final prevAuto = _autoFetchLyricsEnabled;
+                            _autoFetchLyricsEnabled = true;
+                            final fetched = await _loadOrFetchLyricsForTrack(currentSong);
+                            _autoFetchLyricsEnabled = prevAuto;
+                            setLyricsState(() {
+                              rawLyrics = fetched;
+                              syncedLines = _parseLrcLines(rawLyrics);
+                              lastAutoIdx = -1;
+                            });
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: 'offset_minus',
+                            child: Text('Sync Delay -0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
+                          ),
+                          PopupMenuItem(
+                            value: 'offset_plus',
+                            child: Text('Sync Advance +0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
+                          ),
+                          const PopupMenuItem(value: 'offset_reset', child: Text('Reset Sync Offset (0.0s)')),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(value: 'font_up', child: Text('Increase Lyrics Size')),
+                          const PopupMenuItem(value: 'font_down', child: Text('Decrease Lyrics Size')),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem(value: 'refetch', child: Text('Re-Fetch Synced Lyrics Online')),
+                        ],
+                      ),
+                    ],
+                  ),
+                  body: Column(
+                    children: [
+                      if (userScrolling && syncedLines.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: ActionChip(
+                            backgroundColor: _namiAccentColor,
+                            label: const Text('Sync to Active Line', style: TextStyle(fontSize: 11, color: Colors.white)),
+                            onPressed: () {
+                              setLyricsState(() {
+                                userScrolling = false;
+                                lastAutoIdx = -1;
+                              });
+                            },
+                          ),
+                        ),
+                      Expanded(
+                        child: rawLyrics.trim().isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.lyrics_outlined, size: 46, color: Colors.white24),
+                                    const SizedBox(height: 12),
+                                    const Text('No lyrics found for this track.', style: TextStyle(color: Colors.white60)),
+                                    const SizedBox(height: 12),
+                                    FilledButton.icon(
+                                      style: FilledButton.styleFrom(backgroundColor: _namiAccentColor),
+                                      icon: const Icon(Icons.cloud_download_rounded, size: 18),
+                                      label: const Text('Fetch Lyrics from LRCLIB'),
+                                      onPressed: () async {
+                                        final prevAuto = _autoFetchLyricsEnabled;
+                                        _autoFetchLyricsEnabled = true;
+                                        final fetched = await _loadOrFetchLyricsForTrack(currentSong);
+                                        _autoFetchLyricsEnabled = prevAuto;
+                                        setLyricsState(() {
+                                          rawLyrics = fetched;
+                                          syncedLines = _parseLrcLines(rawLyrics);
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : NotificationListener<UserScrollNotification>(
+                                onNotification: (notif) {
+                                  if (!userScrolling) {
+                                    setLyricsState(() => userScrolling = true);
+                                  }
+                                  return false;
+                                },
+                                child: syncedLines.isNotEmpty
+                                    ? ListView.builder(
+                                        controller: scrollCtrl,
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 140),
+                                        itemCount: syncedLines.length,
+                                        itemBuilder: (_, idx) {
+                                          final line = syncedLines[idx];
+                                          final isActive = idx == activeIdx;
+                                          return GestureDetector(
+                                            onTap: () {
+                                              _audioPlayer.seek(line.time);
+                                              setLyricsState(() {
+                                                userScrolling = false;
+                                                lastAutoIdx = -1;
+                                              });
+                                            },
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
+                                              child: AnimatedDefaultTextStyle(
+                                                duration: const Duration(milliseconds: 220),
+                                                style: TextStyle(
+                                                  fontSize: isActive ? _lyricsFontSize + 3 : _lyricsFontSize - 2,
+                                                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                                                  color: isActive ? Colors.white : Colors.white38,
+                                                  height: 1.35,
+                                                ),
+                                                child: Text(
+                                                  line.text,
+                                                  textAlign: _lyricsCenterAlign ? TextAlign.center : TextAlign.left,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      )
+                                    : ListView.builder(
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                                        itemCount: plainLines.length,
+                                        itemBuilder: (_, idx) => Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          child: Text(
+                                            plainLines[idx],
+                                            textAlign: _lyricsCenterAlign ? TextAlign.center : TextAlign.left,
+                                            style: TextStyle(fontSize: _lyricsFontSize - 1, color: Colors.white70, height: 1.4),
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                      ),
+                      // Bottom Mini Transport Controls
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 22),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0E0E15),
+                          border: Border(top: BorderSide(color: Colors.white10)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.skip_previous_rounded, size: 30),
+                              onPressed: () {
+                                if (_currentIndex > 0) {
+                                  _playSong(_songs[_currentIndex - 1]);
+                                  Navigator.of(ctx).pop();
+                                }
+                              },
+                            ),
+                            FloatingActionButton(
+                              heroTag: 'lyrics_play_pause_fab',
+                              backgroundColor: _namiAccentColor,
+                              foregroundColor: Colors.white,
+                              onPressed: () {
+                                _audioPlayer.playOrPause();
+                                setLyricsState(() {});
+                              },
+                              child: Icon(
+                                _audioPlayer.state.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                size: 30,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.skip_next_rounded, size: 30),
+                              onPressed: () {
+                                if (_currentIndex + 1 < _songs.length) {
+                                  _playSong(_songs[_currentIndex + 1]);
+                                  Navigator.of(ctx).pop();
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             );
           },
         ),
@@ -11120,6 +11736,11 @@ Future<void> requestNotificationPermission() async {
 }
 
 
+
+
+
+
+
 class _NamiPieSlice {
   final String label;
   final double value;
@@ -11194,4 +11815,10 @@ class _NamiPieChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _NamiPieChartPainter oldDelegate) {
     return oldDelegate.selectedIndex != selectedIndex || oldDelegate.slices != slices;
   }
+}
+
+class _NamiLyricEntry {
+  final Duration time;
+  final String text;
+  const _NamiLyricEntry(this.time, this.text);
 }
