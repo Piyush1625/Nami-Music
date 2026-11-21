@@ -9598,8 +9598,8 @@ void _showCreatePlaylistDialog() {
 
   /// Namida-Style Fullscreen Synced Lyrics Mode
   Future<void> _openFullLyricsModeScreen(BuildContext parentCtx) async {
-    if (_songs.isEmpty || _currentIndex < 0 || _currentIndex >= _songs.length) return;
-    final currentSong = _songs[_currentIndex];
+    if (_songs.isEmpty) return;
+    final currentSong = _currentSong ?? _songs.first;
     String rawLyrics = await _loadOrFetchLyricsForTrack(currentSong);
     List<_NamiLyricEntry> syncedLines = _parseLrcLines(rawLyrics);
     final scrollCtrl = ScrollController();
@@ -9826,8 +9826,9 @@ void _showCreatePlaylistDialog() {
                             IconButton(
                               icon: const Icon(Icons.skip_previous_rounded, size: 30),
                               onPressed: () {
-                                if (_currentIndex > 0) {
-                                  _playSong(_songs[_currentIndex - 1]);
+                                final curIdx = _songs.indexWhere((s) => s.path == currentSong.path);
+                                  if (curIdx > 0) {
+                                    _playSong(_songs[curIdx - 1]);
                                   Navigator.of(ctx).pop();
                                 }
                               },
@@ -9848,8 +9849,9 @@ void _showCreatePlaylistDialog() {
                             IconButton(
                               icon: const Icon(Icons.skip_next_rounded, size: 30),
                               onPressed: () {
-                                if (_currentIndex + 1 < _songs.length) {
-                                  _playSong(_songs[_currentIndex + 1]);
+                                final curIdx = _songs.indexWhere((s) => s.path == currentSong.path);
+                                  if (curIdx >= 0 && curIdx + 1 < _songs.length) {
+                                    _playSong(_songs[curIdx + 1]);
                                   Navigator.of(ctx).pop();
                                 }
                               },
