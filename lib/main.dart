@@ -3844,6 +3844,42 @@ _buildCoverArt(song, 46, 8),
               ),
               body: Column(
                 children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.folder_zip_outlined, size: 16),
+                                label: const Text('Import .sflx / ZIP', style: TextStyle(fontSize: 12)),
+                                onPressed: () => _showImportSflxBundleDialog(
+                                  context,
+                                  () {
+                                    if (mounted) setState(() {});
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFE53935),
+                                ),
+                                icon: const Icon(Icons.link_rounded, size: 16),
+                                label: const Text('Add from URL', style: TextStyle(fontSize: 12)),
+                                onPressed: () => _showAddSflxFromUrlDialog(
+                                  context,
+                                  () {
+                                    if (mounted) setState(() {});
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
                   SizedBox(
                     height: 42,
                     child: ListView(
@@ -4064,6 +4100,403 @@ _buildCoverArt(song, 46, 8),
       } catch (_) {}
     }
     return null;
+  }
+
+
+  List<String> _extractJsonPayloadsFromBytes(Uint8List bytes) {
+    final payloads = <String>[];
+    // Check for ZIP magic header PK\x03\x04 (0x50, 0x4B, 0x03, 0x04)
+    if (bytes.length >= 30 &&
+        bytes[0] == 0x50 &&
+        bytes[1] == 0x4B &&
+        bytes[2] == 0x03 &&
+        bytes[3] == 0x04) {
+      final bd = ByteData.sublistView(bytes);
+      int offset = 0;
+      while (offset + 30 <= bytes.length) {
+        final sig = bd.getUint32(offset, Endian.little);
+        if (sig != 0x04034b50) break;
+        final flags = bd.getUint16(offset + 6, Endian.little);
+        final method = bd.getUint16(offset + 8, Endian.little);
+        final compSize = bd.getUint32(offset + 18, Endian.little);
+        final nameLen = bd.getUint16(offset + 26, Endian.little);
+        final extraLen = bd.getUint16(offset + 28, Endian.little);
+        final nameStart = offset + 30;
+        final dataStart = nameStart + nameLen + extraLen;
+        if (nameStart + nameLen > bytes.length) break;
+        final entryName = utf8.decode(
+          bytes.sublist(nameStart, nameStart + nameLen),
+          allowMalformed: true,
+        ).toLowerCase();
+
+        if ((flags & 0x08) != 0 || compSize == 0) {
+          // Scan for next PK signature if data descriptor was used
+          int nextSig = -1;
+          for (int p = dataStart; p + 4 <= bytes.length; p++) {
+            if (bytes[p] == 0x50 &&
+                bytes[p + 1] == 0x4B &&
+                (bytes[p + 2] == 0x03 || bytes[p + 2] == 0x01)) {
+              nextSig = p;
+              break;
+            }
+          }
+          if (nextSig == -1) break;
+          final rawSlice = bytes.sublist(dataStart, nextSig);
+          if (!entryName.endsWith('/') &&
+              (entryName.endsWith('.sflx') ||
+                  entryName.endsWith('.json') ||
+                  entryName.contains('manifest'))) {
+            try {
+              final decodedBytes = method == 8
+                  ? ZLibDecoder(raw: true).convert(rawSlice)
+                  : rawSlice;
+              payloads.add(utf8.decode(decodedBytes, allowMalformed: true));
+            } catch (_) {}
+          }
+          offset = nextSig;
+          continue;
+        }
+
+        final dataEnd = dataStart + compSize;
+        if (dataEnd > bytes.length) break;
+        if (!entryName.endsWith('/') &&
+            (entryName.endsWith('.sflx') ||
+                entryName.endsWith('.json') ||
+                entryName.contains('manifest'))) {
+          try {
+            final compSlice = bytes.sublist(dataStart, dataEnd);
+            final decodedBytes = method == 8
+                ? ZLibDecoder(raw: true).convert(compSlice)
+                : compSlice;
+            payloads.add(utf8.decode(decodedBytes, allowMalformed: true));
+          } catch (_) {}
+        }
+        offset = dataEnd;
+      }
+    } else {
+      payloads.add(utf8.decode(bytes, allowMalformed: true));
+    }
+    return payloads;
+  }
+
+  List<MornyeExtension> _parseExtensionsFromJsonText(String rawText) {
+    final results = <MornyeExtension>[];
+    final trimmed = rawText.trim();
+    if (trimmed.isEmpty) return results;
+    final dynamic decoded = jsonDecode(trimmed);
+
+    void addFromMap(Map<dynamic, dynamic> m) {
+      final name = (m['name'] ?? m['title'] ?? m['id'] ?? '').toString().trim();
+      if (name.isEmpty) return;
+      final id = (m['id'] ?? name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_'))
+          .toString()
+          .trim();
+      final category = (m['category'] ?? m['source'] ?? 'Custom Provider').toString().trim();
+      final format = (m['format'] ?? m['quality'] ?? 'FLAC / M4A').toString().trim();
+      final description = (m['description'] ?? m['desc'] ?? 'Imported .sflx extension')
+          .toString()
+          .trim();
+      final version = (m['version'] ?? '1.0.0').toString().trim();
+      final author = (m['author'] ?? 'Community').toString().trim();
+      final endpointUrl = (m['endpointUrl'] ??
+              m['streamEndpoint'] ??
+              m['apiUrl'] ??
+              m['baseUrl'] ??
+              m['url'] ??
+              '')
+          .toString()
+          .trim();
+
+      results.add(MornyeExtension(
+        name: name,
+      category: category,
+      format: format,
+      description: description,
+      version: version,
+      author: author,
+      endpointUrl: endpointUrl,
+      isInstalled: true,
+      isEnabled: true,
+      ));
+    }
+
+    if (decoded is List) {
+      for (final item in decoded) {
+        if (item is Map) addFromMap(item);
+      }
+    } else if (decoded is Map) {
+      if (decoded['extensions'] is List) {
+        for (final item in (decoded['extensions'] as List)) {
+          if (item is Map) addFromMap(item);
+        }
+      } else if (decoded['providers'] is List) {
+        for (final item in (decoded['providers'] as List)) {
+          if (item is Map) addFromMap(item);
+        }
+      } else {
+        addFromMap(decoded);
+      }
+    }
+    return results;
+  }
+
+  Future<int> _importSflxFromBytes(Uint8List bytes, {String sourceLabel = 'bundle'}) async {
+    final payloads = _extractJsonPayloadsFromBytes(bytes);
+    final parsed = <MornyeExtension>[];
+    for (final p in payloads) {
+      try {
+        parsed.addAll(_parseExtensionsFromJsonText(p));
+      } catch (_) {}
+    }
+    if (parsed.isEmpty) return 0;
+
+    setState(() {
+      for (final ext in parsed) {
+        final idx = _extensions.indexWhere(
+          (e) => e.name.toLowerCase() == ext.name.toLowerCase(),
+        );
+        if (idx != -1) {
+          _extensions[idx] = ext;
+        } else {
+          _extensions.add(ext);
+        }
+      }
+    });
+    await _saveStateCache();
+    return parsed.length;
+  }
+
+  Future<void> _importSflxFromFilePath(String path) async {
+    try {
+      final file = File(path.trim());
+      if (!await file.exists()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('File not found: $path')),
+          );
+        }
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      final count = await _importSflxFromBytes(bytes, sourceLabel: file.path.split('/').last);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count > 0
+                  ? 'Imported $count .sflx extension(s) from ${file.path.split('/').last}'
+                  : 'No valid .sflx manifest found inside ${file.path.split('/').last}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Import failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importSflxFromUrl(String rawUrl) async {
+    final url = rawUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a valid http:// or https:// .sflx URL')),
+        );
+      }
+      return;
+    }
+    try {
+      final res = await http
+          .get(Uri.parse(url), headers: _httpHeaders)
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        final count = await _importSflxFromBytes(res.bodyBytes, sourceLabel: url);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                count > 0
+                    ? 'Added $count extension(s) from URL'
+                    : 'URL loaded, but no valid .sflx JSON/ZIP manifest was found',
+              ),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('URL fetch failed (HTTP ${res.statusCode})')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('URL import error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showImportSflxBundleDialog(BuildContext parentCtx, VoidCallback refreshRepo) async {
+    final pathCtrl = TextEditingController();
+    final discovered = <File>[];
+    for (final dirPath in [
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Documents',
+      _mornyeDownloadFolder,
+    ]) {
+      try {
+        final d = Directory(dirPath);
+        if (await d.exists()) {
+          await for (final ent in d.list(followLinks: false)) {
+            if (ent is File) {
+              final lower = ent.path.toLowerCase();
+              if (lower.endsWith('.sflx') ||
+                  lower.endsWith('.zip') ||
+                  (lower.endsWith('.json') && lower.contains('sflx'))) {
+                discovered.add(ent);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: parentCtx,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF14141C),
+        title: const Text('Import .sflx / ZIP Bundle', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (discovered.isNotEmpty) ...[
+                  const Text(
+                    'Detected in storage (tap to import):',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                  const SizedBox(height: 8),
+                  ...discovered.take(12).map(
+                        (f) => ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.extension_rounded, color: Color(0xFFE53935), size: 20),
+                          title: Text(
+                            f.path.split('/').last,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            f.parent.path,
+                            style: const TextStyle(fontSize: 10, color: Colors.white54),
+                          ),
+                          onTap: () async {
+                            Navigator.of(ctx).pop();
+                            await _importSflxFromFilePath(f.path);
+                            refreshRepo();
+                          },
+                        ),
+                      ),
+                  const Divider(color: Colors.white12),
+                ] else
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'No .sflx or .zip bundles auto-detected in /Download. Enter a file path below:',
+                      style: TextStyle(fontSize: 12, color: Colors.white60),
+                    ),
+                  ),
+                TextField(
+                  controller: pathCtrl,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(
+                    labelText: 'Custom .sflx / .json / .zip path',
+                    hintText: '/storage/emulated/0/Download/bundle.sflx',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
+            onPressed: () async {
+              final p = pathCtrl.text.trim();
+              Navigator.of(ctx).pop();
+              if (p.isNotEmpty) {
+                await _importSflxFromFilePath(p);
+                refreshRepo();
+              }
+            },
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddSflxFromUrlDialog(BuildContext parentCtx, VoidCallback refreshRepo) async {
+    final urlCtrl = TextEditingController();
+    await showDialog<void>(
+      context: parentCtx,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF14141C),
+        title: const Text('Add .sflx from URL', style: TextStyle(fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Paste a direct URL to a .sflx manifest, JSON repo index, or .zip extension bundle:',
+              style: TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: urlCtrl,
+              keyboardType: TextInputType.url,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: 'Extension / Repo URL',
+                hintText: 'https://example.com/provider.sflx',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
+            onPressed: () async {
+              final u = urlCtrl.text.trim();
+              Navigator.of(ctx).pop();
+              if (u.isNotEmpty) {
+                await _importSflxFromUrl(u);
+                refreshRepo();
+              }
+            },
+            child: const Text('Fetch & Add'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _downloadMornyeItem(MornyeCatalogItem item) async {
