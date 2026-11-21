@@ -3918,7 +3918,10 @@ _buildCoverArt(song, 46, 8),
                             title: Text('${ext.name} • ${ext.version}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
                             subtitle: Text('${ext.category} • ${ext.format}\n${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
                             isThreeLine: true,
-                            trailing: Switch(
+                            trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Switch(
                               value: ext.isInstalled,
                               activeColor: accent,
                               onChanged: (v) {
@@ -3929,6 +3932,29 @@ _buildCoverArt(song, 46, 8),
                                 setState(() {});
                               },
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                              tooltip: 'Delete Extension',
+                              onPressed: () {
+                                final removed = ext;
+                                setState(() => _extensions.remove(ext));
+                                setRepoState(() {});
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Deleted "${removed.name}"'),
+                                    action: SnackBarAction(
+                                      label: 'Undo',
+                                      onPressed: () {
+                                        setState(() => _extensions.add(removed));
+                                        setRepoState(() {});
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                           ),
                         );
                       },
@@ -5439,7 +5465,27 @@ _buildCoverArt(song, 46, 8),
                         : CircleAvatar(
                             radius: 30,
                             backgroundColor: accent.withOpacity(0.18),
-                            child: Icon(Icons.headphones_rounded, color: accent, size: 28),
+                            child: GestureDetector(
+                      onTap: () async {
+                        final chosen = await _showLocalImagePickerSheet(context, title: 'Choose Profile Photo');
+                        if (chosen != null && chosen.isNotEmpty && File(chosen).existsSync()) {
+                          setState(() => _profileImagePath = chosen);
+                        }
+                      },
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          _profileImagePath != null && File(_profileImagePath!).existsSync()
+                              ? ClipOval(child: Image.file(File(_profileImagePath!), width: 56, height: 56, fit: BoxFit.cover))
+                              : Icon(Icons.headphones_rounded, color: accent, size: 28),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(color: Color(0xFFE53935), shape: BoxShape.circle),
+                            child: const Icon(Icons.camera_alt_rounded, size: 12, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
                           ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -6417,7 +6463,7 @@ _buildCoverArt(song, 46, 8),
           child: Row(children: [
             IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
             IconButton(icon: const Icon(Icons.play_arrow_rounded, size: 22), onPressed: () { if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first); }),
-            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text('${_filteredSongs.length} / ${_songs.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text(_filteredSongs.length == _songs.length ? '${_songs.length} Tracks' : '${_filteredSongs.length} / ${_songs.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
             const Spacer(),
             TextButton.icon(
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: Colors.white70),
@@ -6505,11 +6551,25 @@ _buildCoverArt(song, 46, 8),
         Positioned(
           right: 20,
           bottom: 92,
-          child: FloatingActionButton.small(
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'tracks_shuffle_fab',
+                  backgroundColor: const Color(0xFFE53935),
+                  foregroundColor: Colors.white,
+                  tooltip: 'Shuffle Play',
+                  onPressed: _shufflePlay,
+                  child: const Icon(Icons.shuffle_rounded, size: 20),
+                ),
+                const SizedBox(height: 10),
+                FloatingActionButton.small(
             backgroundColor: Theme.of(context).colorScheme.primary,
             onPressed: _locateActivePlayingTrack,
             child: const Icon(Icons.my_location_rounded, color: Colors.white, size: 20),
           ),
+              ],
+            ),
         ),
       ],
     );
@@ -8289,12 +8349,12 @@ void _showCreatePlaylistDialog() {
               ),
               child: Column(
                 children: [
-                  const Text('Trending Quick Searches', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+                  const Text('Quick Search Suggestions', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: ['Lo-Fi Beats', 'Acoustic Sessions', 'Synthwave', 'Cello Suites', 'Jazz Quartet']
+                    children: _getSmartMornyeQuickSearches()
                         .map((sampleQ) => ActionChip(
                               label: Text(sampleQ, style: const TextStyle(fontSize: 11.5)),
                               backgroundColor: const Color(0xFF161622),
@@ -8529,6 +8589,234 @@ void _showCreatePlaylistDialog() {
       ),
     );
   }
+
+  String? _profileImagePath;
+
+  List<String> _getSmartMornyeQuickSearches() {
+    final counts = <String, int>{};
+    for (final s in _songs) {
+      final raw = s.artist.toString().trim();
+      if (raw.isEmpty || raw.toLowerCase() == 'unknown artist') continue;
+      final primary = raw.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+      if (primary.isNotEmpty) counts[primary] = (counts[primary] ?? 0) + 1;
+    }
+    final sorted = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final picks = sorted.take(5).map((e) => e.key).toList();
+    if (picks.length < 5) {
+      for (final fb in ['FLAC Lossless', '24-Bit Hi-Res', 'Instrumental', 'Acoustic Sessions', 'Live Performance']) {
+        if (!picks.contains(fb)) picks.add(fb);
+        if (picks.length == 5) break;
+      }
+    }
+    return picks;
+  }
+
+  Future<String?> _fetchArtistPhotoOnline(String artistName) async {
+    try {
+      final q = Uri.encodeComponent(artistName.trim());
+      final res = await http
+          .get(Uri.parse('https://api.deezer.com/search/artist?q=$q&limit=1'), headers: _httpHeaders)
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is Map && data['data'] is List && (data['data'] as List).isNotEmpty) {
+          final first = (data['data'] as List).first;
+          if (first is Map) {
+            final picUrl = (first['picture_xl'] ?? first['picture_big'] ?? first['picture_medium'] ?? '').toString().trim();
+            if (picUrl.startsWith('http')) {
+              final imgRes = await http.get(Uri.parse(picUrl), headers: _httpHeaders).timeout(const Duration(seconds: 15));
+              if (imgRes.statusCode == 200 && imgRes.bodyBytes.isNotEmpty) {
+                final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
+                if (!await dir.exists()) await dir.create(recursive: true);
+                final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+                final savedFile = File('${dir.path}/$safe.jpg');
+                await savedFile.writeAsBytes(imgRes.bodyBytes);
+                setState(() {
+                  _artistImagePaths[artistName] = savedFile.path;
+                  _artworkTick.value++;
+                });
+                await _saveStateCache();
+                return savedFile.path;
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String?> _showLocalImagePickerSheet(BuildContext parentCtx, {String title = 'Select Photo'}) async {
+    final images = <File>[];
+    for (final folder in [
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Pictures',
+      '/storage/emulated/0/DCIM/Camera',
+      '/storage/emulated/0/DCIM',
+    ]) {
+      try {
+        final d = Directory(folder);
+        if (await d.exists()) {
+          await for (final ent in d.list(followLinks: false)) {
+            if (ent is File) {
+              final l = ent.path.toLowerCase();
+              if (l.endsWith('.jpg') || l.endsWith('.jpeg') || l.endsWith('.png') || l.endsWith('.webp')) {
+                images.add(ent);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    images.sort((a, b) {
+      try { return b.lastModifiedSync().compareTo(a.lastModifiedSync()); } catch (_) { return 0; }
+    });
+    if (!mounted) return null;
+    final pathCtrl = TextEditingController();
+    return showModalBottomSheet<String>(
+      context: parentCtx,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF14141C),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            if (images.isNotEmpty) ...[
+              const Text('Recent photos on device (tap to apply):', style: TextStyle(fontSize: 12, color: Colors.white70)),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 110,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: images.length > 20 ? 20 : images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, idx) {
+                    final img = images[idx];
+                    return GestureDetector(
+                      onTap: () => Navigator.of(ctx).pop(img.path),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(img, width: 100, height: 100, fit: BoxFit.cover),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              controller: pathCtrl,
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                labelText: 'Or enter image file path / https:// URL',
+                hintText: '/storage/emulated/0/Download/avatar.png',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
+                const SizedBox(width: 8),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935)),
+                  onPressed: () => Navigator.of(ctx).pop(pathCtrl.text.trim()),
+                  child: const Text('Apply'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildArtistOptionsMenuButton(BuildContext ctx, String artistName, List<dynamic> artistSongs) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+      tooltip: 'Artist Photo & Options',
+      color: const Color(0xFF181822),
+      onSelected: (val) => _handleArtistMenuAction(ctx, artistName, artistSongs, val),
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: 'fetch_photo',
+          child: Row(children: [Icon(Icons.cloud_download_outlined, size: 18, color: Color(0xFFE53935)), SizedBox(width: 10), Text('Auto-Fetch Artist Photo')]),
+        ),
+        PopupMenuItem(
+          value: 'pick_photo',
+          child: Row(children: [Icon(Icons.photo_library_outlined, size: 18), SizedBox(width: 10), Text('Pick Custom Artist Photo')]),
+        ),
+        PopupMenuItem(
+          value: 'reset_photo',
+          child: Row(children: [Icon(Icons.restore_rounded, size: 18), SizedBox(width: 10), Text('Reset Artist Photo')]),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'queue_all',
+          child: Row(children: [Icon(Icons.queue_music_rounded, size: 18), SizedBox(width: 10), Text('Add All Tracks to Queue')]),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleArtistMenuAction(BuildContext ctx, String artistName, List<dynamic> artistSongs, String action) async {
+    if (action == 'fetch_photo') {
+      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Fetching artist photo for $artistName...')));
+      final saved = await _fetchArtistPhotoOnline(artistName);
+      if (mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text(saved != null ? 'Updated artist photo for $artistName' : 'Could not find online photo — try Pick Custom Photo')),
+        );
+      }
+    } else if (action == 'pick_photo') {
+      final picked = await _showLocalImagePickerSheet(ctx, title: 'Set Artist Photo ($artistName)');
+      if (picked != null && picked.isNotEmpty) {
+        String finalPath = picked;
+        if (picked.startsWith('http://') || picked.startsWith('https://')) {
+          try {
+            final res = await http.get(Uri.parse(picked), headers: _httpHeaders).timeout(const Duration(seconds: 15));
+            if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+              final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
+              if (!await dir.exists()) await dir.create(recursive: true);
+              final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+              final savedFile = File('${dir.path}/$safe.jpg');
+              await savedFile.writeAsBytes(res.bodyBytes);
+              finalPath = savedFile.path;
+            }
+          } catch (_) {}
+        }
+        if (File(finalPath).existsSync()) {
+          setState(() {
+            final savedFile = File(finalPath);
+            _artistImagePaths[artistName] = savedFile.path;
+            _artworkTick.value++;
+          });
+          await _saveStateCache();
+        }
+      }
+    } else if (action == 'reset_photo') {
+      setState(() {
+        _artistImagePaths.remove(artistName);
+        _artworkTick.value++;
+      });
+      await _saveStateCache();
+      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Reset artist photo for $artistName')));
+    } else if (action == 'queue_all') {
+      setState(() {
+        for (final s in artistSongs) {
+          if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
+        }
+      });
+      if (mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Added ${artistSongs.length} tracks to Play Next queue')));
+    }
+  }
+
 }
 
 class MainSettingsScreen extends StatefulWidget {
