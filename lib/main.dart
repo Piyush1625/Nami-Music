@@ -3970,37 +3970,7 @@ _buildCoverArt(song, 46, 8),
   }
 
   void _openStatisticsScreen() {
-    final topPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(title: const Text('Listening Statistics')),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: const Color(0xFF14141F), borderRadius: BorderRadius.circular(16)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Total Listen Time: ${_totalListenSeconds ~/ 60} mins', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text('Total Library Tracks: ${_songs.length}', style: const TextStyle(color: Colors.white70)),
-                    Text('Favorites Count: ${_songs.where((s) => s.isFavorite).length}', style: const TextStyle(color: Colors.white70)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              const Text('Most Played Tracks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              ...topPlayed.take(15).map((s) => _buildNamiTrackTile(s)),
-            ],
-          ),
-        ),
-      ),
-    );
+    _openNamidaStatisticsScreen(context);
   }
 
   Future<void> _playMornyePreview(MornyeCatalogItem item) async {
@@ -8616,6 +8586,7 @@ void _showCreatePlaylistDialog() {
   bool _lyricsCenterAlign = true;
   bool _autoFetchLyricsEnabled = true;
   bool _gaplessPlaybackEnabled = true;
+  bool _bitPerfectUsbEnabled = true;
   int _crossfadeSeconds = 0;
   int _minTrackDurationSec = 0;
   int _sleepTimerMinutes = 0;
@@ -10242,6 +10213,10 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
   }
 
   /// Namida-Style Fullscreen Synced Lyrics Mode
+  /// Namida-Style Fullscreen Synced Lyrics Mode (opens on Long-Press of Lyrics in Now Playing!)
+  /// Matches Namida UI: Top-left back chevron, centered Title/Artist, top-right Lyrics Sheet icon,
+  /// dark warm-tinted gradient, ShaderMask top/bottom fade, highlighted translucent pill for active line,
+  /// tap-to-seek, bottom waveform seekbar + timestamps + Namida outlined transport controls!
   Future<void> _openFullLyricsModeScreen(BuildContext parentCtx) async {
     if (_songs.isEmpty) return;
     final currentSong = _currentSong ?? _songs.first;
@@ -10253,14 +10228,20 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
 
     if (!mounted) return;
     await Navigator.of(parentCtx).push(
-      MaterialPageRoute(
-        builder: (_) => StatefulBuilder(
+      PageRouteBuilder(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 280),
+        pageBuilder: (_, __, ___) => StatefulBuilder(
           builder: (ctx, setLyricsState) {
             return StreamBuilder<Duration>(
               stream: _audioPlayer.stream.position,
               builder: (ctx, posSnap) {
                 final pos = posSnap.data ?? _audioPlayer.state.position;
+                final dur = _audioPlayer.state.duration.inMilliseconds > 0
+                    ? _audioPlayer.state.duration
+                    : Duration(milliseconds: _trackDurationMs(currentSong));
                 final adjustedMs = pos.inMilliseconds + (_lyricsOffsetSeconds * 1000).round();
+
                 int activeIdx = -1;
                 for (int i = 0; i < syncedLines.length; i++) {
                   if (syncedLines[i].time.inMilliseconds <= adjustedMs) {
@@ -10272,239 +10253,368 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
 
                 if (activeIdx != -1 && activeIdx != lastAutoIdx && !userScrolling && scrollCtrl.hasClients) {
                   lastAutoIdx = activeIdx;
-                  final targetOffset = (activeIdx * 58.0 - 160.0).clamp(0.0, scrollCtrl.position.maxScrollExtent);
+                  final targetOffset = (activeIdx * 62.0 - 210.0).clamp(0.0, scrollCtrl.position.maxScrollExtent);
                   scrollCtrl.animateTo(
                     targetOffset,
-                    duration: const Duration(milliseconds: 360),
+                    duration: const Duration(milliseconds: 380),
                     curve: Curves.easeOutCubic,
                   );
                 }
 
-                final plainLines = syncedLines.isEmpty
-                    ? _extractCleanLyricLines(rawLyrics)
-                    : <String>[];
+                final plainLines = syncedLines.isEmpty ? _extractCleanLyricLines(rawLyrics) : <String>[];
+                final progressRatio = dur.inMilliseconds > 0
+                    ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
+                    : 0.0;
+
+                String fmtDur(Duration d) {
+                  final m = d.inMinutes.toString().padLeft(2, '0');
+                  final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+                  return '$m:$s';
+                }
+
+                const warmGold = Color(0xFFE5C49F);
+                const warmPillBg = Color(0x24E5C49F);
 
                 return Scaffold(
-                  backgroundColor: const Color(0xFF060609),
-                  appBar: AppBar(
-                    backgroundColor: const Color(0xFF060609),
-                    leading: IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                    title: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          currentSong.title.toString(),
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          '${currentSong.artist} • ${syncedLines.isNotEmpty ? 'Synced LRC' : 'Lyrics Mode'}',
-                          style: const TextStyle(fontSize: 11, color: Colors.white60),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                    actions: [
-                      IconButton(
-                        icon: const Icon(Icons.format_align_center_rounded, size: 20),
-                        tooltip: 'Toggle Alignment',
-                        onPressed: () => setLyricsState(() => _lyricsCenterAlign = !_lyricsCenterAlign),
-                      ),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.tune_rounded, size: 20),
-                        color: const Color(0xFF161620),
-                        onSelected: (v) async {
-                          if (v == 'offset_minus') {
-                            setLyricsState(() => _lyricsOffsetSeconds -= 0.5);
-                          } else if (v == 'offset_plus') {
-                            setLyricsState(() => _lyricsOffsetSeconds += 0.5);
-                          } else if (v == 'offset_reset') {
-                            setLyricsState(() => _lyricsOffsetSeconds = 0.0);
-                          } else if (v == 'font_up') {
-                            setLyricsState(() => _lyricsFontSize = (_lyricsFontSize + 2).clamp(16.0, 30.0));
-                          } else if (v == 'font_down') {
-                            setLyricsState(() => _lyricsFontSize = (_lyricsFontSize - 2).clamp(16.0, 30.0));
-                          } else if (v == 'refetch') {
-                            final prevAuto = _autoFetchLyricsEnabled;
-                            _autoFetchLyricsEnabled = true;
-                            final fetched = await _loadOrFetchLyricsForTrack(currentSong);
-                            _autoFetchLyricsEnabled = prevAuto;
-                            setLyricsState(() {
-                              rawLyrics = fetched;
-                              syncedLines = _parseLrcLines(rawLyrics);
-                              lastAutoIdx = -1;
-                            });
-                          }
-                        },
-                        itemBuilder: (_) => [
-                          PopupMenuItem(
-                            value: 'offset_minus',
-                            child: Text('Sync Delay -0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
-                          ),
-                          PopupMenuItem(
-                            value: 'offset_plus',
-                            child: Text('Sync Advance +0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
-                          ),
-                          const PopupMenuItem(value: 'offset_reset', child: Text('Reset Sync Offset (0.0s)')),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: 'font_up', child: Text('Increase Lyrics Size')),
-                          const PopupMenuItem(value: 'font_down', child: Text('Decrease Lyrics Size')),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem(value: 'refetch', child: Text('Re-Fetch Synced Lyrics Online')),
+                  backgroundColor: const Color(0xFF0B0908),
+                  body: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0xFF1A1410),
+                          Color(0xFF0E0B09),
+                          Color(0xFF080706),
                         ],
                       ),
-                    ],
-                  ),
-                  body: Column(
-                    children: [
-                      if (userScrolling && syncedLines.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: ActionChip(
-                            backgroundColor: _namiAccentColor,
-                            label: const Text('Sync to Active Line', style: TextStyle(fontSize: 11, color: Colors.white)),
-                            onPressed: () {
-                              setLyricsState(() {
-                                userScrolling = false;
-                                lastAutoIdx = -1;
-                              });
-                            },
-                          ),
-                        ),
-                      Expanded(
-                        child: rawLyrics.trim().isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.lyrics_outlined, size: 46, color: Colors.white24),
-                                    const SizedBox(height: 12),
-                                    const Text('No lyrics found for this track.', style: TextStyle(color: Colors.white60)),
-                                    const SizedBox(height: 12),
-                                    FilledButton.icon(
-                                      style: FilledButton.styleFrom(backgroundColor: _namiAccentColor),
-                                      icon: const Icon(Icons.cloud_download_rounded, size: 18),
-                                      label: const Text('Fetch Lyrics from LRCLIB'),
-                                      onPressed: () async {
-                                        final prevAuto = _autoFetchLyricsEnabled;
-                                        _autoFetchLyricsEnabled = true;
-                                        final fetched = await _loadOrFetchLyricsForTrack(currentSong);
-                                        _autoFetchLyricsEnabled = prevAuto;
-                                        setLyricsState(() {
-                                          rawLyrics = fetched;
-                                          syncedLines = _parseLrcLines(rawLyrics);
-                                        });
-                                      },
+                    ),
+                    child: SafeArea(
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 6, 12, 4),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 19, color: warmGold),
+                                  onPressed: () => Navigator.of(ctx).pop(),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        currentSong.title.toString(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: warmGold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        currentSong.artist.toString(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: warmGold.withOpacity(0.75),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                PopupMenuButton<String>(
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: warmGold.withOpacity(0.45)),
                                     ),
+                                    child: const Icon(Icons.subtitles_outlined, size: 18, color: warmGold),
+                                  ),
+                                  color: const Color(0xFF1A1512),
+                                  onSelected: (v) async {
+                                    if (v == 'offset_minus') {
+                                      setLyricsState(() => _lyricsOffsetSeconds -= 0.5);
+                                    } else if (v == 'offset_plus') {
+                                      setLyricsState(() => _lyricsOffsetSeconds += 0.5);
+                                    } else if (v == 'offset_reset') {
+                                      setLyricsState(() => _lyricsOffsetSeconds = 0.0);
+                                    } else if (v == 'font_up') {
+                                      setLyricsState(() => _lyricsFontSize = (_lyricsFontSize + 2).clamp(16.0, 30.0));
+                                    } else if (v == 'font_down') {
+                                      setLyricsState(() => _lyricsFontSize = (_lyricsFontSize - 2).clamp(16.0, 30.0));
+                                    } else if (v == 'align') {
+                                      setLyricsState(() => _lyricsCenterAlign = !_lyricsCenterAlign);
+                                    } else if (v == 'refetch') {
+                                      final prev = _autoFetchLyricsEnabled;
+                                      _autoFetchLyricsEnabled = true;
+                                      final fetched = await _loadOrFetchLyricsForTrack(currentSong);
+                                      _autoFetchLyricsEnabled = prev;
+                                      setLyricsState(() {
+                                        rawLyrics = fetched;
+                                        syncedLines = _parseLrcLines(rawLyrics);
+                                        lastAutoIdx = -1;
+                                      });
+                                    }
+                                  },
+                                  itemBuilder: (_) => [
+                                    PopupMenuItem(
+                                      value: 'offset_minus',
+                                      child: Text('Sync Delay -0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'offset_plus',
+                                      child: Text('Sync Advance +0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
+                                    ),
+                                    const PopupMenuItem(value: 'offset_reset', child: Text('Reset Sync Offset (0.0s)')),
+                                    const PopupMenuDivider(),
+                                    const PopupMenuItem(value: 'align', child: Text('Toggle Left / Center Align')),
+                                    const PopupMenuItem(value: 'font_up', child: Text('Increase Lyrics Size')),
+                                    const PopupMenuItem(value: 'font_down', child: Text('Decrease Lyrics Size')),
+                                    const PopupMenuDivider(),
+                                    const PopupMenuItem(value: 'refetch', child: Text('Re-Fetch Synced Lyrics (LRCLIB)')),
                                   ],
                                 ),
-                              )
-                            : NotificationListener<UserScrollNotification>(
-                                onNotification: (notif) {
-                                  if (!userScrolling) {
-                                    setLyricsState(() => userScrolling = true);
-                                  }
-                                  return false;
-                                },
-                                child: syncedLines.isNotEmpty
-                                    ? ListView.builder(
-                                        controller: scrollCtrl,
-                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 140),
-                                        itemCount: syncedLines.length,
-                                        itemBuilder: (_, idx) {
-                                          final line = syncedLines[idx];
-                                          final isActive = idx == activeIdx;
-                                          return GestureDetector(
-                                            onTap: () {
-                                              _audioPlayer.seek(line.time);
-                                              setLyricsState(() {
-                                                userScrolling = false;
-                                                lastAutoIdx = -1;
-                                              });
-                                            },
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(vertical: 10),
-                                              child: AnimatedDefaultTextStyle(
-                                                duration: const Duration(milliseconds: 220),
-                                                style: TextStyle(
-                                                  fontSize: isActive ? _lyricsFontSize + 3 : _lyricsFontSize - 2,
-                                                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                                                  color: isActive ? Colors.white : Colors.white38,
-                                                  height: 1.35,
-                                                ),
+                              ],
+                            ),
+                          ),
+                          if (userScrolling && syncedLines.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: ActionChip(
+                                backgroundColor: warmPillBg,
+                                side: BorderSide(color: warmGold.withOpacity(0.5)),
+                                label: const Text('Resume Auto-Sync', style: TextStyle(fontSize: 11, color: warmGold)),
+                                onPressed: () => setLyricsState(() {
+                                  userScrolling = false;
+                                  lastAutoIdx = -1;
+                                }),
+                              ),
+                            ),
+                          Expanded(
+                            child: rawLyrics.trim().isEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.lyrics_outlined, size: 48, color: warmGold.withOpacity(0.35)),
+                                        const SizedBox(height: 12),
+                                        const Text('No lyrics found for this track.', style: TextStyle(color: Colors.white60)),
+                                        const SizedBox(height: 12),
+                                        FilledButton.icon(
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: warmGold,
+                                            foregroundColor: Colors.black,
+                                          ),
+                                          icon: const Icon(Icons.cloud_download_rounded, size: 18),
+                                          label: const Text('Fetch Lyrics Online'),
+                                          onPressed: () async {
+                                            final prev = _autoFetchLyricsEnabled;
+                                            _autoFetchLyricsEnabled = true;
+                                            final fetched = await _loadOrFetchLyricsForTrack(currentSong);
+                                            _autoFetchLyricsEnabled = prev;
+                                            setLyricsState(() {
+                                              rawLyrics = fetched;
+                                              syncedLines = _parseLrcLines(rawLyrics);
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : ShaderMask(
+                                    shaderCallback: (Rect bounds) {
+                                      return const LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.white,
+                                          Colors.white,
+                                          Colors.transparent,
+                                        ],
+                                        stops: [0.0, 0.12, 0.88, 1.0],
+                                      ).createShader(bounds);
+                                    },
+                                    blendMode: BlendMode.dstIn,
+                                    child: NotificationListener<UserScrollNotification>(
+                                      onNotification: (_) {
+                                        if (!userScrolling) setLyricsState(() => userScrolling = true);
+                                        return false;
+                                      },
+                                      child: syncedLines.isNotEmpty
+                                          ? ListView.builder(
+                                              controller: scrollCtrl,
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 140),
+                                              itemCount: syncedLines.length,
+                                              itemBuilder: (_, idx) {
+                                                final line = syncedLines[idx];
+                                                final isActive = idx == activeIdx;
+                                                final isAdjacent = (idx - activeIdx).abs() == 1;
+                                                return GestureDetector(
+                                                  onTap: () {
+                                                    _audioPlayer.seek(line.time);
+                                                    setLyricsState(() {
+                                                      userScrolling = false;
+                                                      lastAutoIdx = -1;
+                                                    });
+                                                  },
+                                                  child: AnimatedContainer(
+                                                    duration: const Duration(milliseconds: 220),
+                                                    margin: const EdgeInsets.symmetric(vertical: 5),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                                                    decoration: BoxDecoration(
+                                                      color: isActive ? warmPillBg : Colors.transparent,
+                                                      borderRadius: BorderRadius.circular(14),
+                                                      border: isActive
+                                                          ? Border.all(color: warmGold.withOpacity(0.28))
+                                                          : null,
+                                                    ),
+                                                    child: AnimatedDefaultTextStyle(
+                                                      duration: const Duration(milliseconds: 220),
+                                                      style: TextStyle(
+                                                        fontSize: isActive ? _lyricsFontSize + 1 : _lyricsFontSize - 1,
+                                                        fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+                                                        color: isActive
+                                                            ? warmGold
+                                                            : isAdjacent
+                                                                ? Colors.white60
+                                                                : Colors.white24,
+                                                        height: 1.35,
+                                                      ),
+                                                      child: Text(
+                                                        line.text,
+                                                        textAlign: _lyricsCenterAlign ? TextAlign.left : TextAlign.center,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            )
+                                          : ListView.builder(
+                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 36),
+                                              itemCount: plainLines.length,
+                                              itemBuilder: (_, idx) => Padding(
+                                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                                                 child: Text(
-                                                  line.text,
-                                                  textAlign: _lyricsCenterAlign ? TextAlign.center : TextAlign.left,
+                                                  plainLines[idx],
+                                                  textAlign: _lyricsCenterAlign ? TextAlign.left : TextAlign.center,
+                                                  style: TextStyle(
+                                                    fontSize: _lyricsFontSize - 1,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: idx == 0 ? warmGold : Colors.white70,
+                                                    height: 1.4,
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          );
-                                        },
-                                      )
-                                    : ListView.builder(
-                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                                        itemCount: plainLines.length,
-                                        itemBuilder: (_, idx) => Padding(
-                                          padding: const EdgeInsets.symmetric(vertical: 8),
-                                          child: Text(
-                                            plainLines[idx],
-                                            textAlign: _lyricsCenterAlign ? TextAlign.center : TextAlign.left,
-                                            style: TextStyle(fontSize: _lyricsFontSize - 1, color: Colors.white70, height: 1.4),
+                                    ),
+                                  ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                GestureDetector(
+                                  onTapDown: (details) {
+                                    if (dur.inMilliseconds <= 0) return;
+                                    final w = MediaQuery.of(ctx).size.width - 32;
+                                    final frac = (details.localPosition.dx / w).clamp(0.0, 1.0);
+                                    _audioPlayer.seek(Duration(milliseconds: (dur.inMilliseconds * frac).round()));
+                                  },
+                                  child: SizedBox(
+                                    height: 34,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        for (int b = 0; b < 56; b++)
+                                          Expanded(
+                                            child: Container(
+                                              margin: const EdgeInsets.symmetric(horizontal: 1),
+                                              height: 8.0 + ((b * 17 + 7) % 22).toDouble(),
+                                              decoration: BoxDecoration(
+                                                color: (b / 56.0) <= progressRatio
+                                                    ? warmGold
+                                                    : warmGold.withOpacity(0.22),
+                                                borderRadius: BorderRadius.circular(2),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(fmtDur(pos), style: TextStyle(fontSize: 11, color: warmGold.withOpacity(0.8))),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.skip_previous_outlined, size: 28, color: warmGold),
+                                          onPressed: () {
+                                            final curIdx = _songs.indexWhere((s) => s.path == currentSong.path);
+                                            if (curIdx > 0) {
+                                              _playSong(_songs[curIdx - 1]);
+                                              Navigator.of(ctx).pop();
+                                            }
+                                          },
+                                        ),
+                                        const SizedBox(width: 14),
+                                        GestureDetector(
+                                          onTap: () {
+                                            _audioPlayer.playOrPause();
+                                            setLyricsState(() {});
+                                          },
+                                          child: Container(
+                                            width: 56,
+                                            height: 56,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: warmPillBg,
+                                              border: Border.all(color: warmGold.withOpacity(0.5), width: 1.4),
+                                            ),
+                                            child: Icon(
+                                              _audioPlayer.state.playing
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
+                                              size: 32,
+                                              color: warmGold,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                              ),
+                                        const SizedBox(width: 14),
+                                        IconButton(
+                                          icon: const Icon(Icons.skip_next_outlined, size: 28, color: warmGold),
+                                          onPressed: () {
+                                            final curIdx = _songs.indexWhere((s) => s.path == currentSong.path);
+                                            if (curIdx >= 0 && curIdx + 1 < _songs.length) {
+                                              _playSong(_songs[curIdx + 1]);
+                                              Navigator.of(ctx).pop();
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    Text(fmtDur(dur), style: TextStyle(fontSize: 11, color: warmGold.withOpacity(0.8))),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      // Bottom Mini Transport Controls
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 22),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF0E0E15),
-                          border: Border(top: BorderSide(color: Colors.white10)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.skip_previous_rounded, size: 30),
-                              onPressed: () {
-                                final curIdx = _songs.indexWhere((s) => s.path == currentSong.path);
-                                  if (curIdx > 0) {
-                                    _playSong(_songs[curIdx - 1]);
-                                  Navigator.of(ctx).pop();
-                                }
-                              },
-                            ),
-                            FloatingActionButton(
-                              heroTag: 'lyrics_play_pause_fab',
-                              backgroundColor: _namiAccentColor,
-                              foregroundColor: Colors.white,
-                              onPressed: () {
-                                _audioPlayer.playOrPause();
-                                setLyricsState(() {});
-                              },
-                              child: Icon(
-                                _audioPlayer.state.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                size: 30,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.skip_next_rounded, size: 30),
-                              onPressed: () {
-                                final curIdx = _songs.indexWhere((s) => s.path == currentSong.path);
-                                  if (curIdx >= 0 && curIdx + 1 < _songs.length) {
-                                    _playSong(_songs[curIdx + 1]);
-                                  Navigator.of(ctx).pop();
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 );
               },
