@@ -8997,6 +8997,7 @@ List<String> _getSmartMornyeQuickSearches() {
 
 
 
+
   void _openStatisticsScreen() {
     final mostPlayed = List<AudioTrack>.from(_songs)
       ..sort((a, b) => b.playCount.compareTo(a.playCount));
