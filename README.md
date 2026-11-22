@@ -23,14 +23,4 @@
 
 * **Mornye Extensions & Catalog**
   * Search tracks, albums, and artists across supported services, preview audio, and download to your music folder
-  * Manage extensions in **Mornye Repo** with `.sflx` / ZIP bundle import, URL manifest import, enable/disable toggles, and delete with **Undo**
-
----
-
-## Direct In-Place APK Updates
-
-To update Nami directly over an existing installation without uninstalling first:
-
-1. Generate and back up a persistent release keystore (`nami-release.jks`) and base64 string (`NAMI_KEYSTORE_B64`).
-2. Add `NAMI_KEYSTORE_B64` and `NAMI_KEY_PASS` to your GitHub repository's **Actions secrets** and pass them into your release build workflow.
-3. Increment the `+N` build number in `pubspec.yaml` (for example `2.0.0+2` -> `2.0.0+3`) before releasing a new build.
+  * Manage extensions in **Mornye Repo** with `.sflx` / ZIP bundle import, URL manifest import, enable/disable toggles
