@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter/services.dart';
 
@@ -8516,7 +8517,7 @@ void _showCreatePlaylistDialog() {
           Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
         ],
       ),
-      bottomNavigationBar: Container(
+      bottomNavigationBar: _wrapWithLiquidGlassNavBar(Container(
         decoration: BoxDecoration(
           border: Border(
             top: BorderSide(color: Colors.white.withOpacity(0.08), width: 0.8),
@@ -8570,7 +8571,7 @@ void _showCreatePlaylistDialog() {
           ],
         ),
         ),
-      ),
+      )),
     );
   }
 
@@ -10959,6 +10960,93 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                       return const Icon(Icons.album_rounded, size: 120, color: Colors.white38);
                     }(),
                   ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+
+
+  bool _liquidGlassNavBar = true;
+
+  Widget _wrapWithLiquidGlassNavBar(Widget standardNavBar) {
+    if (!_liquidGlassNavBar) return standardNavBar;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(36),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.55),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+              BoxShadow(
+                color: Colors.white.withOpacity(0.06),
+                blurRadius: 1,
+                spreadRadius: 0.5,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(36),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF23232E).withOpacity(0.76),
+                      const Color(0xFF13131A).withOpacity(0.84),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(36),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.16),
+                    width: 1.0,
+                  ),
+                ),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    navigationBarTheme: NavigationBarThemeData(
+                      backgroundColor: Colors.transparent,
+                      elevation: 0,
+                      height: 66,
+                      indicatorColor: Colors.white.withOpacity(0.13),
+                      indicatorShape: const StadiumBorder(),
+                      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                      iconTheme: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return IconThemeData(color: _namiAccentColor, size: 23);
+                        }
+                        return const IconThemeData(color: Colors.white70, size: 22);
+                      }),
+                      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: _namiAccentColor,
+                          );
+                        }
+                        return const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70,
+                        );
+                      }),
+                    ),
+                  ),
+                  child: standardNavBar,
                 ),
               ),
             ),
