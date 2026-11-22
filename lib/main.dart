@@ -3404,7 +3404,7 @@ const SizedBox(height: 10),
                     });
                     
                   },
-                                  controller: scrollController,
+                                  scrollController: scrollController,
                                   padding: const EdgeInsets.symmetric(vertical: 6),
                                   itemCount: _filteredSongs.length,
                                   itemBuilder: (ctx, idx) => _buildNamiQueueRow(
