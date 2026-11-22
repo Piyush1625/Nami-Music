@@ -34,10 +34,3 @@ To update Nami directly over an existing installation without uninstalling first
 1. Generate and back up a persistent release keystore (`nami-release.jks`) and base64 string (`NAMI_KEYSTORE_B64`).
 2. Add `NAMI_KEYSTORE_B64` and `NAMI_KEY_PASS` to your GitHub repository's **Actions secrets** and pass them into your release build workflow.
 3. Increment the `+N` build number in `pubspec.yaml` (for example `2.0.0+2` -> `2.0.0+3`) before releasing a new build.
-
----
-
-## Termux Workflow
-
-1. Save `README.md` to `/storage/emulated/0/Download/README.md`.
-2. Run the push commands below in Termux to copy the file into your repo, commit it, and push your branches.
