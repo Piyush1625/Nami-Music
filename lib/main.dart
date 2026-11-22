@@ -5929,7 +5929,7 @@ _buildCoverArt(song, 46, 8),
                       children: [
                         GestureDetector(
                           onTap: () => _openNamidaStatisticsScreen(context),
-                          child: _buildNamidaHomeStatisticsSection(context),
+                          child: const SizedBox.shrink(),
                         ),
                         const SizedBox(height: 6),
                         Align(
