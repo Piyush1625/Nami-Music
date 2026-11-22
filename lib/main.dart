@@ -5865,34 +5865,7 @@ _buildCoverArt(song, 46, 8),
         ],
 
         const SizedBox(height: 16),
-        Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        GestureDetector(
-                          onTap: () => _openNamidaStatisticsScreen(context),
-                          child: const SizedBox.shrink(),
-                        ),
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: InkWell(
-                            onTap: () => _openNamidaStatisticsScreen(context),
-                            borderRadius: BorderRadius.circular(12),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.pie_chart_rounded, size: 14, color: Color(0xFFE53935)),
-                                  SizedBox(width: 5),
-                                  Text('Detailed Pie Chart & Stats >', style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w600)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+        
 
         if (_historyTracks.isNotEmpty) ...[
           const SizedBox(height: 22),
@@ -8984,6 +8957,7 @@ List<String> _getSmartMornyeQuickSearches() {
 
 // 0 = Off, 1 = Repeat Queue, 2 = Repeat One, 3 = Repeat N Times
 // sourceKey -> last played track path
+
 
 
 
