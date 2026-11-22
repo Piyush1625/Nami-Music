@@ -8989,6 +8989,8 @@ List<String> _getSmartMornyeQuickSearches() {
 
 
 
+
+
   double _lyricsOffsetSeconds = 0.0;
   double _lyricsFontSize = 21.0;
   bool _lyricsCenterAlign = true;
