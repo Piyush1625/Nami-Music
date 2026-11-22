@@ -9637,7 +9637,7 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
   }
 
   void _openNamidaStatisticsScreen(BuildContext parentCtx) {
-    int detailTab = 0; // 0 = Listening Behavior, 1 = Quality & Format, 2 = Artists & Eras
+    int detailTab = 0; // 0 = Listening Share, 1 = Audio Quality, 2 = Library Artists, 3 = Release Eras
     int selectedSlice = -1;
 
     int totalBytes = 0;
@@ -9696,11 +9696,10 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
       } else if (yr > 1900) {
         eraCounts['Classic (<2000)'] = (eraCounts['Classic (<2000)'] ?? 0) + 1;
       } else {
-        eraCounts['Untagged Year'] = (eraCounts['Untagged Year'] ?? 0) + 1;
+        eraCounts['Untagged'] = (eraCounts['Untagged'] ?? 0) + 1;
       }
     }
 
-    // Listening telemetry from `_historyTracks`
     int listenTotalMs = 0;
     int hiResPlays = 0;
     int cdPlays = 0;
@@ -9709,10 +9708,14 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
     final playedArtistMs = <String, int>{};
     final playedTrackCounts = <String, int>{};
     final playedTrackTitles = <String, String>{};
+    final recentPlayBars = List<double>.filled(7, 0.0);
 
-    for (final h in _historyTracks) {
+    for (int i = 0; i < _historyTracks.length; i++) {
+      final h = _historyTracks[i];
       final dMs = _trackDurationMs(h);
       listenTotalMs += dMs;
+      recentPlayBars[i % 7] += (dMs > 0 ? dMs / 60000.0 : 3.5);
+
       final pLow = h.path.toString().toLowerCase();
       int bd = 16;
       try { bd = ((h as dynamic).bitDepth as int? ?? 16); } catch (_) {}
@@ -9757,7 +9760,6 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
             String centerSub;
 
             if (detailTab == 0) {
-              // Listening Behavior Pie Chart
               if (_historyTracks.isNotEmpty) {
                 final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
                 if (topPlayedArtists.length >= 2) {
@@ -9781,7 +9783,8 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                 centerSub = 'Total Plays';
               } else {
                 slices = [
-                  _NamiPieSlice(label: 'Unplayed Library', value: _songs.length.toDouble(), color: const Color(0xFF37474F)),
+                  _NamiPieSlice(label: '24-Bit Ready', value: flac24Count.toDouble(), color: _namiAccentColor),
+                  _NamiPieSlice(label: '16-Bit Ready', value: flac16Count.toDouble(), color: const Color(0xFF00ACC1)),
                 ];
                 centerTop = '0';
                 centerSub = 'Plays Yet';
@@ -9795,7 +9798,7 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
               ];
               centerTop = '$losslessPct%';
               centerSub = 'Lossless';
-            } else {
+            } else if (detailTab == 2) {
               final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
               final top4 = topLibArtists.take(4).toList();
               final top4Sum = top4.fold<int>(0, (s, e) => s + e.value);
@@ -9808,6 +9811,15 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
               ];
               centerTop = '${artistTrackCounts.length}';
               centerSub = 'Artists';
+            } else {
+              final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFF546E7A)];
+              final entries = eraCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+              slices = [
+                for (int i = 0; i < entries.length; i++)
+                  _NamiPieSlice(label: entries[i].key, value: entries[i].value.toDouble(), color: palette[i % palette.length]),
+              ];
+              centerTop = '${albumSet.length}';
+              centerSub = 'Albums';
             }
 
             final totalSliceVal = slices.fold<double>(0, (s, e) => s + e.value);
@@ -9844,12 +9856,11 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
               backgroundColor: const Color(0xFF08080C),
               appBar: AppBar(
                 backgroundColor: const Color(0xFF08080C),
-                title: const Text('Listening & Library Analytics', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                title: const Text('Namida Listening & Library Analytics', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
               body: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  // Interactive Namida Pie Chart Card
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -9875,7 +9886,7 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                              for (final tab in [(0, 'Listening Share'), (1, 'Audio Quality'), (2, 'Library Artists')])
+                              for (final tab in [(0, 'Listening Share'), (1, 'Audio Quality'), (2, 'Library Artists'), (3, 'Release Eras')])
                                 Padding(
                                   padding: const EdgeInsets.only(right: 8),
                                   child: ChoiceChip(
@@ -9994,7 +10005,44 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                   ),
                   const SizedBox(height: 14),
 
-                  // 8-Card Heavy Listening & Audiophile Telemetry Grid
+                  // Session Activity Bar Chart Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111119),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.bar_chart_rounded, color: _namiAccentColor, size: 19),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text('Listening Activity Cadence', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
+                            Text('${listenHours}h ${listenMins}m total', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 115,
+                          width: double.infinity,
+                          child: CustomPaint(
+                            painter: _NamiActivityBarChartPainter(
+                              values: recentPlayBars,
+                              labels: const ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'],
+                              accentColor: _namiAccentColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
                   GridView.count(
                     crossAxisCount: 2,
                     shrinkWrap: true,
@@ -10015,7 +10063,6 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                   ),
                   const SizedBox(height: 14),
 
-                  // Most Played Artists & Tracks Leaderboard
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -10111,30 +10158,24 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
     );
     return cleaned
         .split('\n')
-        .map((e) => e.trim())
+        .map((e) => e.replaceAll(RegExp(r'^\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]\s*'), '').trim())
         .where((e) => e.isNotEmpty)
         .toList();
   }
 
-List<_NamiLyricEntry> _parseLrcLines(String rawLyrics) {
+  List<_NamiLyricEntry> _parseLrcLines(String rawLyrics) {
     final entries = <_NamiLyricEntry>[];
     if (rawLyrics.trim().isEmpty) return entries;
-
-    // 1. Strip LRC metadata header tags like [ti:...], [ar:...], [al:...], [by:...], [offset:...]
     String cleaned = rawLyrics.replaceAll(
       RegExp(r'\[(?:ti|ar|al|au|lr|length|by|offset|re|ve):[^\]]*\]', caseSensitive: false),
       '\n',
     );
-
-    // 2. Insert a line break before every inline timestamp `[mm:ss.xx]` so concatenated tags never stay on 1 line
     cleaned = cleaned.replaceAllMapped(
       RegExp(r'(?<!^)(?<!\n)(\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\])'),
       (m) => '\n${m.group(1)}',
     );
-
     final lineReg = RegExp(r'^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\](.*)$');
     final parsedRaw = <Map<String, dynamic>>[];
-
     for (final rawLine in cleaned.split('\n')) {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
@@ -10146,23 +10187,13 @@ List<_NamiLyricEntry> _parseLrcLines(String rawLyrics) {
         final millis = int.tryParse(fracStr.substring(0, 3)) ?? 0;
         final text = (m.group(4) ?? '').trim();
         if (text.isNotEmpty) {
-          parsedRaw.add({
-            'time': Duration(minutes: mins, seconds: secs, milliseconds: millis),
-            'text': text,
-          });
+          parsedRaw.add({'time': Duration(minutes: mins, seconds: secs, milliseconds: millis), 'text': text});
         }
       }
     }
-
     if (parsedRaw.isEmpty) return entries;
-
-    // 3. Detect if timestamps are fake/unsynced (e.g. every line is [00:00.00])
     final uniqueTimes = parsedRaw.map((e) => (e['time'] as Duration).inMilliseconds).toSet();
-    if (uniqueTimes.length <= 1) {
-      // Return empty so the clean line-by-line vertical lyrics reader renders 1st, 2nd, 3rd line!
-      return <_NamiLyricEntry>[];
-    }
-
+    if (uniqueTimes.length <= 1) return <_NamiLyricEntry>[];
     for (final item in parsedRaw) {
       entries.add(_NamiLyricEntry(item['time'] as Duration, item['text'] as String));
     }
@@ -12437,4 +12468,68 @@ class _NamiLyricEntry {
   final Duration time;
   final String text;
   const _NamiLyricEntry(this.time, this.text);
+}
+
+
+class _NamiActivityBarChartPainter extends CustomPainter {
+  final List<double> values;
+  final List<String> labels;
+  final Color accentColor;
+
+  const _NamiActivityBarChartPainter({
+    required this.values,
+    required this.labels,
+    required this.accentColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    final maxVal = values.fold<double>(0.0, (m, v) => v > m ? v : m);
+    final effectiveMax = maxVal <= 0 ? 1.0 : maxVal;
+    final chartH = size.height - 20;
+    final barSlotW = size.width / values.length;
+    final barW = math.max(6.0, barSlotW * 0.56);
+
+    // Subtle horizontal grid lines
+    final gridPaint = Paint()
+      ..color = Colors.white10
+      ..strokeWidth = 1;
+    for (int g = 1; g <= 3; g++) {
+      final y = chartH * (1 - g / 3);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    for (int i = 0; i < values.length; i++) {
+      final ratio = (values[i] / effectiveMax).clamp(0.0, 1.0);
+      final barH = math.max(values[i] > 0 ? 6.0 : 3.0, chartH * ratio);
+      final left = i * barSlotW + (barSlotW - barW) / 2;
+      final top = chartH - barH;
+      final rect = RRect.fromRectAndCorners(
+        Rect.fromLTWH(left, top, barW, barH),
+        topLeft: const Radius.circular(5),
+        topRight: const Radius.circular(5),
+      );
+      final paint = Paint()
+        ..color = values[i] > 0 ? accentColor.withOpacity(0.35 + 0.65 * ratio) : Colors.white12
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(rect, paint);
+
+      if (i < labels.length) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: labels[i],
+            style: const TextStyle(fontSize: 9, color: Colors.white54),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(left + (barW - tp.width) / 2, chartH + 5));
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NamiActivityBarChartPainter oldDelegate) {
+    return oldDelegate.values != values || oldDelegate.accentColor != accentColor;
+  }
 }
