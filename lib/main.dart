@@ -3392,7 +3392,18 @@ const SizedBox(height: 10),
                         const Divider(color: Colors.white10, height: 1),
                         Expanded(
                           child: _playNextQueue.isEmpty
-                              ? ListView.builder(
+                              ? ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  onReorder: (oldIndex, newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      if (oldIndex >= 0 && oldIndex < _songs.length && newIndex >= 0 && newIndex < _songs.length) {
+                        final moved = _songs.removeAt(oldIndex);
+                        _songs.insert(newIndex, moved);
+                      }
+                    });
+                    
+                  },
                                   controller: scrollController,
                                   padding: const EdgeInsets.symmetric(vertical: 6),
                                   itemCount: _filteredSongs.length,
@@ -9104,7 +9115,7 @@ void _showCreatePlaylistDialog() {
   }
 
   /// Namida-style Home Screen Listening Statistics Card with Interactive Donut/Pie Chart & Heavy Detail
-    Widget _buildSmartMixesSection(BuildContext context) {
+  Widget _buildSmartMixesSection(BuildContext context) {
     final hiResSongs = _songs.where((s) {
       try {
         return ((s as dynamic).bitDepth as int? ?? 16) >= 24;
@@ -9113,9 +9124,14 @@ void _showCreatePlaylistDialog() {
       }
     }).toList();
 
-    final favSongs = _songs.where((s) {
+    final playedPaths = _historyTracks.map((h) => h.path.toString()).toSet();
+    final underratedSongs = _songs.where((s) => !playedPaths.contains(s.path.toString())).toList();
+
+    final currentYr = DateTime.now().year;
+    final lostMemories = _songs.where((s) {
       try {
-        return (s as dynamic).isFavorite == true;
+        final yr = int.tryParse(((s as dynamic).year ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        return yr > 1950 && yr <= currentYr - 2;
       } catch (_) {
         return false;
       }
@@ -9123,72 +9139,70 @@ void _showCreatePlaylistDialog() {
 
     final artistGroups = <String, List<dynamic>>{};
     for (final s in _songs) {
-      final raw = s.artist.toString().trim();
-      if (raw.isEmpty || raw.toLowerCase() == 'unknown artist') continue;
-      final primary = raw.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
-      if (primary.isNotEmpty) {
-        artistGroups.putIfAbsent(primary, () => []).add(s);
+      for (final art in _extractFeaturedArtistsFromTrack(s)) {
+        artistGroups.putIfAbsent(art, () => []).add(s);
       }
     }
     final topMixArtists = artistGroups.entries.toList()
       ..sort((a, b) => b.value.length.compareTo(a.value.length));
 
-    final recentSongs = _historyTracks.isNotEmpty
-        ? _historyTracks.reversed.take(25).toList()
-        : _songs.reversed.take(25).toList();
-
     final mixes = <Map<String, dynamic>>[
       {
-        'title': '24-Bit Studio Master Mix',
+        'key': 'mix_hires',
+        'title': '24-Bit Studio Master',
         'subtitle': '${hiResSongs.length} Hi-Res tracks',
         'icon': Icons.graphic_eq_rounded,
         'color': _namiAccentColor,
         'tracks': hiResSongs.isNotEmpty ? hiResSongs : _songs,
       },
       {
-        'title': 'Daily Discovery Mix',
-        'subtitle': 'Auto-curated from ${_songs.length} tracks',
-        'icon': Icons.auto_awesome_rounded,
+        'key': 'mix_lost_memories',
+        'title': 'Lost Memories Mix',
+        'subtitle': '${lostMemories.length} throwback tracks',
+        'icon': Icons.history_toggle_off_rounded,
         'color': const Color(0xFF00ACC1),
-        'tracks': (List<dynamic>.from(_songs)..shuffle()).take(40).toList(),
+        'tracks': lostMemories.isNotEmpty ? lostMemories : _songs,
+      },
+      {
+        'key': 'mix_underrated',
+        'title': 'Underrated Gems',
+        'subtitle': '${underratedSongs.length} unheard tracks',
+        'icon': Icons.diamond_outlined,
+        'color': const Color(0xFFFFB300),
+        'tracks': underratedSongs.isNotEmpty ? underratedSongs : _songs,
       },
       if (topMixArtists.isNotEmpty)
         {
+          'key': 'mix_art_1',
           'title': '${topMixArtists.first.key} Essentials',
-          'subtitle': '${topMixArtists.first.value.length} top artist tracks',
+          'subtitle': '${topMixArtists.first.value.length} tracks (incl. feat.)',
           'icon': Icons.person_pin_rounded,
           'color': const Color(0xFF8E24AA),
           'tracks': topMixArtists.first.value,
         },
       if (topMixArtists.length > 1)
         {
+          'key': 'mix_art_2',
           'title': '${topMixArtists[1].key} Radio',
           'subtitle': '${topMixArtists[1].value.length} tracks',
           'icon': Icons.radio_rounded,
           'color': const Color(0xFF43A047),
           'tracks': topMixArtists[1].value,
         },
-      {
-        'title': favSongs.isNotEmpty ? 'Liked Favorites Mix' : 'Recent Additions Mix',
-        'subtitle': favSongs.isNotEmpty ? '${favSongs.length} liked tracks' : '${recentSongs.length} recent tracks',
-        'icon': favSongs.isNotEmpty ? Icons.favorite_rounded : Icons.history_rounded,
-        'color': const Color(0xFFFFB300),
-        'tracks': favSongs.isNotEmpty ? favSongs : recentSongs,
-      },
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(2, 12, 2, 10),
+          padding: const EdgeInsets.fromLTRB(2, 10, 2, 10),
           child: Row(
             children: [
               Icon(Icons.auto_awesome_mosaic_rounded, size: 17, color: _namiAccentColor),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
-                  'Made For You • Smart Mixes',
+                  'Made For You • Namida Mixes',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
               ),
@@ -9200,7 +9214,7 @@ void _showCreatePlaylistDialog() {
           ),
         ),
         SizedBox(
-          height: 122,
+          height: 124,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: mixes.length,
@@ -9209,6 +9223,8 @@ void _showCreatePlaylistDialog() {
               final mix = mixes[idx];
               final Color col = mix['color'] as Color;
               final List<dynamic> tracks = mix['tracks'] as List<dynamic>;
+              final String mixKey = mix['key'] as String;
+              final bool hasBookmark = _contextBookmarks.containsKey(mixKey);
               return GestureDetector(
                 onTap: () {
                   if (tracks.isEmpty) return;
@@ -9218,13 +9234,13 @@ void _showCreatePlaylistDialog() {
                       if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
                     }
                   });
-                  _playSong(shuffled.first);
+                  _resumeOrPlayFromContext(mixKey, shuffled);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Playing "${mix['title']}" (${tracks.length} tracks)')),
+                    SnackBar(content: Text('${hasBookmark ? 'Resuming' : 'Playing'} "${mix['title']}" (${tracks.length} tracks)')),
                   );
                 },
                 child: Container(
-                  width: 168,
+                  width: 172,
                   padding: const EdgeInsets.all(13),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -9264,7 +9280,7 @@ void _showCreatePlaylistDialog() {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        mix['subtitle'] as String,
+                        hasBookmark ? 'Resume • ${mix['subtitle']}' : (mix['subtitle'] as String),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 10, color: Colors.white60),
@@ -10251,6 +10267,17 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                   }
                 }
 
+                // Word-by-word karaoke progress fraction within the active lyric line
+                double wordProgress = 1.0;
+                if (activeIdx >= 0 && activeIdx < syncedLines.length) {
+                  final startMs = syncedLines[activeIdx].time.inMilliseconds;
+                  final endMs = (activeIdx + 1 < syncedLines.length)
+                      ? syncedLines[activeIdx + 1].time.inMilliseconds
+                      : (dur.inMilliseconds > startMs ? dur.inMilliseconds : startMs + 4000);
+                  final span = (endMs - startMs).clamp(300, 15000);
+                  wordProgress = ((adjustedMs - startMs) / span).clamp(0.0, 1.0);
+                }
+
                 if (activeIdx != -1 && activeIdx != lastAutoIdx && !userScrolling && scrollCtrl.hasClients) {
                   lastAutoIdx = activeIdx;
                   final targetOffset = (activeIdx * 62.0 - 210.0).clamp(0.0, scrollCtrl.position.maxScrollExtent);
@@ -10274,6 +10301,40 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
 
                 const warmGold = Color(0xFFE5C49F);
                 const warmPillBg = Color(0x24E5C49F);
+
+                Widget buildWordHighlightedLine(String text) {
+                  final words = text.split(' ');
+                  if (words.length <= 1) {
+                    return Text(
+                      text,
+                      textAlign: _lyricsCenterAlign ? TextAlign.left : TextAlign.center,
+                      style: TextStyle(
+                        fontSize: _lyricsFontSize + 1,
+                        fontWeight: FontWeight.bold,
+                        color: warmGold,
+                        height: 1.35,
+                      ),
+                    );
+                  }
+                  final litWords = (words.length * wordProgress).ceil().clamp(1, words.length);
+                  return RichText(
+                    textAlign: _lyricsCenterAlign ? TextAlign.left : TextAlign.center,
+                    text: TextSpan(
+                      children: [
+                        for (int w = 0; w < words.length; w++)
+                          TextSpan(
+                            text: w == words.length - 1 ? words[w] : '${words[w]} ',
+                            style: TextStyle(
+                              fontSize: _lyricsFontSize + 1,
+                              fontWeight: FontWeight.bold,
+                              color: w < litWords ? warmGold : warmGold.withOpacity(0.45),
+                              height: 1.35,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }
 
                 return Scaffold(
                   backgroundColor: const Color(0xFF0B0908),
@@ -10339,7 +10400,15 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                                   ),
                                   color: const Color(0xFF1A1512),
                                   onSelected: (v) async {
-                                    if (v == 'offset_minus') {
+                                    if (v == 'edit_lrc') {
+                                      await _openBuiltInLrcEditorDialog(ctx, currentSong, (newText) {
+                                        setLyricsState(() {
+                                          rawLyrics = newText;
+                                          syncedLines = _parseLrcLines(rawLyrics);
+                                          lastAutoIdx = -1;
+                                        });
+                                      });
+                                    } else if (v == 'offset_minus') {
                                       setLyricsState(() => _lyricsOffsetSeconds -= 0.5);
                                     } else if (v == 'offset_plus') {
                                       setLyricsState(() => _lyricsOffsetSeconds += 0.5);
@@ -10364,6 +10433,8 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                                     }
                                   },
                                   itemBuilder: (_) => [
+                                    const PopupMenuItem(value: 'edit_lrc', child: Text('Edit / Stamp LRC Lyrics')),
+                                    const PopupMenuDivider(),
                                     PopupMenuItem(
                                       value: 'offset_minus',
                                       child: Text('Sync Delay -0.5s (${_lyricsOffsetSeconds.toStringAsFixed(1)}s)'),
@@ -10476,23 +10547,18 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
                                                           ? Border.all(color: warmGold.withOpacity(0.28))
                                                           : null,
                                                     ),
-                                                    child: AnimatedDefaultTextStyle(
-                                                      duration: const Duration(milliseconds: 220),
-                                                      style: TextStyle(
-                                                        fontSize: isActive ? _lyricsFontSize + 1 : _lyricsFontSize - 1,
-                                                        fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                                                        color: isActive
-                                                            ? warmGold
-                                                            : isAdjacent
-                                                                ? Colors.white60
-                                                                : Colors.white24,
-                                                        height: 1.35,
-                                                      ),
-                                                      child: Text(
-                                                        line.text,
-                                                        textAlign: _lyricsCenterAlign ? TextAlign.left : TextAlign.center,
-                                                      ),
-                                                    ),
+                                                    child: isActive
+                                                        ? buildWordHighlightedLine(line.text)
+                                                        : Text(
+                                                            line.text,
+                                                            textAlign: _lyricsCenterAlign ? TextAlign.left : TextAlign.center,
+                                                            style: TextStyle(
+                                                              fontSize: _lyricsFontSize - 1,
+                                                              fontWeight: FontWeight.w600,
+                                                              color: isAdjacent ? Colors.white60 : Colors.white24,
+                                                              height: 1.35,
+                                                            ),
+                                                          ),
                                                   ),
                                                 );
                                               },
@@ -10620,6 +10686,283 @@ Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
               },
             );
           },
+        ),
+      ),
+    );
+  }
+
+
+
+  bool _namiShuffleActive = false;
+  int _namiRepeatMode = 0; // 0 = Off, 1 = Repeat Queue, 2 = Repeat One, 3 = Repeat N Times
+  int _namiRepeatNTarget = 3;
+  int _namiRepeatNRemaining = 0;
+  bool _miniplayerPartyMode = true;
+  final Map<String, String> _contextBookmarks = {}; // sourceKey -> last played track path
+
+  void _recordContextBookmark(String contextKey, dynamic track) {
+    if (contextKey.isEmpty || track == null) return;
+    try {
+      _contextBookmarks[contextKey] = track.path.toString();
+    } catch (_) {}
+  }
+
+  void _resumeOrPlayFromContext(String contextKey, List<dynamic> tracks) {
+    if (tracks.isEmpty) return;
+    final savedPath = _contextBookmarks[contextKey];
+    dynamic target = tracks.first;
+    if (savedPath != null) {
+      final found = tracks.where((t) => t.path.toString() == savedPath).toList();
+      if (found.isNotEmpty) target = found.first;
+    }
+    _recordContextBookmark(contextKey, target);
+    _playSong(target);
+  }
+
+  List<String> _extractFeaturedArtistsFromTrack(dynamic song) {
+    final names = <String>{};
+    try {
+      final rawArtist = song.artist.toString();
+      for (final part in rawArtist.split(RegExp(r'[,&/]|feat\.|ft\.|featuring', caseSensitive: false))) {
+        final clean = part.trim();
+        if (clean.isNotEmpty && clean.toLowerCase() != 'unknown artist') {
+          names.add(clean);
+        }
+      }
+      final titleStr = song.title.toString();
+      final featInTitle = RegExp(r'(?:\(|\[)?(?:feat\.|ft\.|featuring)\s+([^)\]]+)', caseSensitive: false).firstMatch(titleStr);
+      if (featInTitle != null) {
+        for (final p in (featInTitle.group(1) ?? '').split(RegExp(r'[,&]|and', caseSensitive: false))) {
+          final clean = p.trim();
+          if (clean.isNotEmpty) names.add(clean);
+        }
+      }
+    } catch (_) {}
+    return names.toList();
+  }
+
+  void _toggleNowPlayingShuffle([StateSetter? sheetSetState]) {
+    setState(() {
+      _namiShuffleActive = !_namiShuffleActive;
+      if (_namiShuffleActive && _songs.length > 1) {
+        final cur = _currentSong;
+        final rest = _songs.where((s) => cur == null || s.path != cur.path).toList()..shuffle();
+        _songs
+          ..clear()
+          ..addAll([if (cur != null) cur, ...rest]);
+      }
+    });
+    if (sheetSetState != null) sheetSetState(() {});
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 1),
+          content: Text(_namiShuffleActive ? 'Shuffle On' : 'Shuffle Off'),
+        ),
+      );
+    }
+  }
+
+  void _cycleNowPlayingRepeat([StateSetter? sheetSetState]) {
+    setState(() {
+      _namiRepeatMode = (_namiRepeatMode + 1) % 4;
+      if (_namiRepeatMode == 3) {
+        _namiRepeatNRemaining = _namiRepeatNTarget;
+      }
+    });
+    try {
+      if (_namiRepeatMode == 2 || _namiRepeatMode == 3) {
+        _audioPlayer.setPlaylistMode(PlaylistMode.single);
+      } else if (_namiRepeatMode == 1) {
+        _audioPlayer.setPlaylistMode(PlaylistMode.loop);
+      } else {
+        _audioPlayer.setPlaylistMode(PlaylistMode.none);
+      }
+    } catch (_) {}
+    if (sheetSetState != null) sheetSetState(() {});
+    const labels = [
+      'Repeat: Off',
+      'Repeat: All Queue',
+      'Repeat: Current Track',
+      'Repeat: 3x Current Track',
+    ];
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(duration: const Duration(seconds: 1), content: Text(labels[_namiRepeatMode])),
+      );
+    }
+  }
+
+
+  void _setUnifiedPlaybackMode(String mode, [StateSetter? sheetSetState]) {
+    setState(() {
+      if (mode == 'off') {
+        _namiShuffleActive = false;
+        _namiRepeatMode = 0;
+      } else if (mode == 'shuffle') {
+        _namiShuffleActive = true;
+        _namiRepeatMode = 0;
+        if (_songs.length > 1) {
+          final cur = _currentSong;
+          final rest = _songs.where((s) => cur == null || s.path != cur.path).toList()..shuffle();
+          _songs
+            ..clear()
+            ..addAll([if (cur != null) cur, ...rest]);
+        }
+      } else if (mode == 'repeat_all') {
+        _namiShuffleActive = false;
+        _namiRepeatMode = 1;
+      } else if (mode == 'repeat_one') {
+        _namiShuffleActive = false;
+        _namiRepeatMode = 2;
+      } else if (mode == 'repeat_n') {
+        _namiShuffleActive = false;
+        _namiRepeatMode = 3;
+        _namiRepeatNRemaining = _namiRepeatNTarget;
+      }
+    });
+    try {
+      if (_namiRepeatMode == 2 || _namiRepeatMode == 3) {
+        _audioPlayer.setPlaylistMode(PlaylistMode.single);
+      } else if (_namiRepeatMode == 1) {
+        _audioPlayer.setPlaylistMode(PlaylistMode.loop);
+      } else {
+        _audioPlayer.setPlaylistMode(PlaylistMode.none);
+      }
+    } catch (_) {}
+    if (sheetSetState != null) sheetSetState(() {});
+  }
+
+  Future<void> _openBuiltInLrcEditorDialog(BuildContext parentCtx, dynamic song, void Function(String) onSaved) async {
+    final initial = await _loadOrFetchLyricsForTrack(song);
+    final ctrl = TextEditingController(text: initial);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: parentCtx,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141210),
+        title: const Text('Built-in LRC Timestamp Editor', style: TextStyle(fontSize: 15, color: Color(0xFFE5C49F))),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.timer_outlined, size: 16, color: Color(0xFFE5C49F)),
+                    label: const Text('Stamp Current Time', style: TextStyle(fontSize: 11, color: Color(0xFFE5C49F))),
+                    onPressed: () {
+                      final pos = _audioPlayer.state.position;
+                      final mm = pos.inMinutes.toString().padLeft(2, '0');
+                      final ss = (pos.inSeconds % 60).toString().padLeft(2, '0');
+                      final xx = ((pos.inMilliseconds % 1000) ~/ 10).toString().padLeft(2, '0');
+                      final stamp = '[$mm:$ss.$xx]';
+                      final sel = ctrl.selection;
+                      final posIdx = sel.isValid ? sel.baseOffset : ctrl.text.length;
+                      final updated = ctrl.text.substring(0, posIdx) + stamp + ctrl.text.substring(posIdx);
+                      ctrl.value = TextEditingValue(
+                        text: updated,
+                        selection: TextSelection.collapsed(offset: posIdx + stamp.length),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ctrl,
+                maxLines: 10,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '[00:12.50]First lyric line...',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5C49F), foregroundColor: Colors.black),
+            onPressed: () async {
+              final text = ctrl.text;
+              try {
+                final audioPath = song.path.toString();
+                final dotIdx = audioPath.lastIndexOf('.');
+                final lrcPath = dotIdx != -1 ? '${audioPath.substring(0, dotIdx)}.lrc' : '$audioPath.lrc';
+                await File(lrcPath).writeAsString(text);
+              } catch (_) {}
+              Navigator.of(ctx).pop();
+              onSaved(text);
+            },
+            child: const Text('Save .lrc'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFullscreenArtworkViewer(BuildContext parentCtx, dynamic song) {
+    if (song == null) return;
+    showDialog<void>(
+      context: parentCtx,
+      barrierColor: Colors.black.withOpacity(0.92),
+      builder: (ctx) => GestureDetector(
+        onTap: () => Navigator.of(ctx).pop(),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            title: Text(song.title.toString(), style: const TextStyle(fontSize: 15)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.download_rounded),
+                tooltip: 'Save Cover to Gallery',
+                onPressed: () async {
+                  try {
+                    final bytes = (song as dynamic).artworkBytes;
+                    if (bytes != null && bytes is List<int> && bytes.isNotEmpty) {
+                      final outDir = Directory('/storage/emulated/0/Pictures/NamiCovers');
+                      if (!await outDir.exists()) await outDir.create(recursive: true);
+                      final safe = song.album.toString().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+                      final out = File('${outDir.path}/$safe.jpg');
+                      await out.writeAsBytes(bytes);
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('Saved cover art to ${out.path}')),
+                        );
+                      }
+                    }
+                  } catch (_) {}
+                },
+              ),
+            ],
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: Container(
+                    color: const Color(0xFF181822),
+                    child: () {
+                      try {
+                        final bytes = (song as dynamic).artworkBytes;
+                        if (bytes != null && bytes is Uint8List && bytes.isNotEmpty) {
+                          return Image.memory(bytes, fit: BoxFit.cover);
+                        }
+                      } catch (_) {}
+                      return const Icon(Icons.album_rounded, size: 120, color: Colors.white38);
+                    }(),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
