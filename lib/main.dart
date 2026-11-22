@@ -9133,7 +9133,183 @@ void _showCreatePlaylistDialog() {
   }
 
   /// Namida-style Home Screen Listening Statistics Card with Interactive Donut/Pie Chart & Heavy Detail
-  Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
+    Widget _buildSmartMixesSection(BuildContext context) {
+    final hiResSongs = _songs.where((s) {
+      try {
+        return ((s as dynamic).bitDepth as int? ?? 16) >= 24;
+      } catch (_) {
+        return s.path.toString().toLowerCase().endsWith('.flac');
+      }
+    }).toList();
+
+    final favSongs = _songs.where((s) {
+      try {
+        return (s as dynamic).isFavorite == true;
+      } catch (_) {
+        return false;
+      }
+    }).toList();
+
+    final artistGroups = <String, List<dynamic>>{};
+    for (final s in _songs) {
+      final raw = s.artist.toString().trim();
+      if (raw.isEmpty || raw.toLowerCase() == 'unknown artist') continue;
+      final primary = raw.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+      if (primary.isNotEmpty) {
+        artistGroups.putIfAbsent(primary, () => []).add(s);
+      }
+    }
+    final topMixArtists = artistGroups.entries.toList()
+      ..sort((a, b) => b.value.length.compareTo(a.value.length));
+
+    final recentSongs = _historyTracks.isNotEmpty
+        ? _historyTracks.reversed.take(25).toList()
+        : _songs.reversed.take(25).toList();
+
+    final mixes = <Map<String, dynamic>>[
+      {
+        'title': '24-Bit Studio Master Mix',
+        'subtitle': '${hiResSongs.length} Hi-Res tracks',
+        'icon': Icons.graphic_eq_rounded,
+        'color': _namiAccentColor,
+        'tracks': hiResSongs.isNotEmpty ? hiResSongs : _songs,
+      },
+      {
+        'title': 'Daily Discovery Mix',
+        'subtitle': 'Auto-curated from ${_songs.length} tracks',
+        'icon': Icons.auto_awesome_rounded,
+        'color': const Color(0xFF00ACC1),
+        'tracks': (List<dynamic>.from(_songs)..shuffle()).take(40).toList(),
+      },
+      if (topMixArtists.isNotEmpty)
+        {
+          'title': '${topMixArtists.first.key} Essentials',
+          'subtitle': '${topMixArtists.first.value.length} top artist tracks',
+          'icon': Icons.person_pin_rounded,
+          'color': const Color(0xFF8E24AA),
+          'tracks': topMixArtists.first.value,
+        },
+      if (topMixArtists.length > 1)
+        {
+          'title': '${topMixArtists[1].key} Radio',
+          'subtitle': '${topMixArtists[1].value.length} tracks',
+          'icon': Icons.radio_rounded,
+          'color': const Color(0xFF43A047),
+          'tracks': topMixArtists[1].value,
+        },
+      {
+        'title': favSongs.isNotEmpty ? 'Liked Favorites Mix' : 'Recent Additions Mix',
+        'subtitle': favSongs.isNotEmpty ? '${favSongs.length} liked tracks' : '${recentSongs.length} recent tracks',
+        'icon': favSongs.isNotEmpty ? Icons.favorite_rounded : Icons.history_rounded,
+        'color': const Color(0xFFFFB300),
+        'tracks': favSongs.isNotEmpty ? favSongs : recentSongs,
+      },
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 12, 2, 10),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_mosaic_rounded, size: 17, color: _namiAccentColor),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Made For You • Smart Mixes',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+              TextButton(
+                onPressed: _shufflePlay,
+                child: Text('Shuffle Mix', style: TextStyle(fontSize: 12, color: _namiAccentColor)),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 122,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: mixes.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, idx) {
+              final mix = mixes[idx];
+              final Color col = mix['color'] as Color;
+              final List<dynamic> tracks = mix['tracks'] as List<dynamic>;
+              return GestureDetector(
+                onTap: () {
+                  if (tracks.isEmpty) return;
+                  final shuffled = List<dynamic>.from(tracks)..shuffle();
+                  setState(() {
+                    for (final s in shuffled.skip(1).take(30)) {
+                      if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
+                    }
+                  });
+                  _playSong(shuffled.first);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Playing "${mix['title']}" (${tracks.length} tracks)')),
+                  );
+                },
+                child: Container(
+                  width: 168,
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        col.withOpacity(0.28),
+                        const Color(0xFF14141E),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: col.withOpacity(0.45)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: col.withOpacity(0.22),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(mix['icon'] as IconData, size: 18, color: col),
+                          ),
+                          const Spacer(),
+                          Icon(Icons.play_circle_fill_rounded, size: 24, color: col),
+                        ],
+                      ),
+                      const Spacer(),
+                      Text(
+                        mix['title'] as String,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        mix['subtitle'] as String,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10, color: Colors.white60),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+Widget _buildNamidaHomeStatisticsSection(BuildContext context) {
     int totalBytes = 0;
     int totalDurationMs = 0;
     int flac24Count = 0;
@@ -9461,43 +9637,401 @@ void _showCreatePlaylistDialog() {
   }
 
   void _openNamidaStatisticsScreen(BuildContext parentCtx) {
+    int detailTab = 0; // 0 = Listening Behavior, 1 = Quality & Format, 2 = Artists & Eras
+    int selectedSlice = -1;
+
+    int totalBytes = 0;
+    int totalDurationMs = 0;
+    int flac24Count = 0;
+    int flac16Count = 0;
+    int alacWavCount = 0;
+    int lossyCount = 0;
+    int favCount = 0;
+    final artistTrackCounts = <String, int>{};
+    final albumSet = <String>{};
+    final eraCounts = <String, int>{};
+
+    for (final s in _songs) {
+      try {
+        final f = File(s.path.toString());
+        if (f.existsSync()) totalBytes += f.lengthSync();
+      } catch (_) {}
+      totalDurationMs += _trackDurationMs(s);
+      try { if ((s as dynamic).isFavorite == true) favCount++; } catch (_) {}
+      try {
+        final alb = s.album.toString().trim();
+        if (alb.isNotEmpty) albumSet.add(alb);
+      } catch (_) {}
+
+      final pathLower = s.path.toString().toLowerCase();
+      int bitDepth = 16;
+      try { bitDepth = ((s as dynamic).bitDepth as int? ?? 16); } catch (_) {}
+      if (pathLower.endsWith('.flac')) {
+        if (bitDepth >= 24) {
+          flac24Count++;
+        } else {
+          flac16Count++;
+        }
+      } else if (pathLower.endsWith('.alac') || pathLower.endsWith('.wav') || pathLower.endsWith('.aiff')) {
+        alacWavCount++;
+      } else {
+        lossyCount++;
+      }
+
+      final rawArt = s.artist.toString().trim();
+      if (rawArt.isNotEmpty && rawArt.toLowerCase() != 'unknown artist') {
+        final primary = rawArt.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+        if (primary.isNotEmpty) artistTrackCounts[primary] = (artistTrackCounts[primary] ?? 0) + 1;
+      }
+
+      String yrStr = '';
+      try { yrStr = ((s as dynamic).year ?? '').toString(); } catch (_) {}
+      final yr = int.tryParse(yrStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (yr >= 2020) {
+        eraCounts['2020s'] = (eraCounts['2020s'] ?? 0) + 1;
+      } else if (yr >= 2010) {
+        eraCounts['2010s'] = (eraCounts['2010s'] ?? 0) + 1;
+      } else if (yr >= 2000) {
+        eraCounts['2000s'] = (eraCounts['2000s'] ?? 0) + 1;
+      } else if (yr > 1900) {
+        eraCounts['Classic (<2000)'] = (eraCounts['Classic (<2000)'] ?? 0) + 1;
+      } else {
+        eraCounts['Untagged Year'] = (eraCounts['Untagged Year'] ?? 0) + 1;
+      }
+    }
+
+    // Listening telemetry from `_historyTracks`
+    int listenTotalMs = 0;
+    int hiResPlays = 0;
+    int cdPlays = 0;
+    int lossyPlays = 0;
+    final playedArtistCounts = <String, int>{};
+    final playedArtistMs = <String, int>{};
+    final playedTrackCounts = <String, int>{};
+    final playedTrackTitles = <String, String>{};
+
+    for (final h in _historyTracks) {
+      final dMs = _trackDurationMs(h);
+      listenTotalMs += dMs;
+      final pLow = h.path.toString().toLowerCase();
+      int bd = 16;
+      try { bd = ((h as dynamic).bitDepth as int? ?? 16); } catch (_) {}
+      if (pLow.endsWith('.flac') && bd >= 24) {
+        hiResPlays++;
+      } else if (pLow.endsWith('.flac') || pLow.endsWith('.alac') || pLow.endsWith('.wav')) {
+        cdPlays++;
+      } else {
+        lossyPlays++;
+      }
+
+      final rawA = h.artist.toString().trim();
+      final pArt = rawA.isEmpty ? 'Unknown Artist' : rawA.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+      playedArtistCounts[pArt] = (playedArtistCounts[pArt] ?? 0) + 1;
+      playedArtistMs[pArt] = (playedArtistMs[pArt] ?? 0) + dMs;
+
+      final key = h.path.toString();
+      playedTrackCounts[key] = (playedTrackCounts[key] ?? 0) + 1;
+      playedTrackTitles[key] = '${h.title} • $pArt';
+    }
+
+    final topPlayedArtists = playedArtistCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final topPlayedTracks = playedTrackCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final topLibArtists = artistTrackCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+
+    final listenHours = listenTotalMs ~/ 3600000;
+    final listenMins = (listenTotalMs % 3600000) ~/ 60000;
+    final avgSessionSec = _historyTracks.isEmpty ? 0 : (listenTotalMs ~/ 1000) ~/ _historyTracks.length;
+    final discoveryRatio = _songs.isEmpty ? 0 : ((playedTrackCounts.length * 100) / _songs.length).clamp(0, 100).round();
+    final totalGb = totalBytes / (1024 * 1024 * 1024);
+    final avgBitrateKbps = totalDurationMs > 0 ? ((totalBytes * 8) ~/ totalDurationMs) : 0;
+    final totalLibHours = totalDurationMs ~/ 3600000;
+    final totalLibMins = (totalDurationMs % 3600000) ~/ 60000;
+    final losslessPct = _songs.isEmpty ? 0 : (((flac24Count + flac16Count + alacWavCount) * 100) / _songs.length).round();
+
     Navigator.of(parentCtx).push(
       MaterialPageRoute(
         builder: (_) => StatefulBuilder(
           builder: (ctx, setStatsState) {
-            final topArtists = <String, int>{};
-            for (final s in _songs) {
-              final raw = s.artist.toString().trim();
-              if (raw.isEmpty || raw.toLowerCase() == 'unknown artist') continue;
-              final primary = raw.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
-              if (primary.isNotEmpty) topArtists[primary] = (topArtists[primary] ?? 0) + 1;
+            List<_NamiPieSlice> slices;
+            String centerTop;
+            String centerSub;
+
+            if (detailTab == 0) {
+              // Listening Behavior Pie Chart
+              if (_historyTracks.isNotEmpty) {
+                final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
+                if (topPlayedArtists.length >= 2) {
+                  final top4 = topPlayedArtists.take(4).toList();
+                  final top4Plays = top4.fold<int>(0, (s, e) => s + e.value);
+                  final otherPlays = (_historyTracks.length - top4Plays).clamp(0, _historyTracks.length);
+                  slices = [
+                    for (int i = 0; i < top4.length; i++)
+                      _NamiPieSlice(label: top4[i].key, value: top4[i].value.toDouble(), color: palette[i % palette.length]),
+                    if (otherPlays > 0)
+                      _NamiPieSlice(label: 'Other Artists', value: otherPlays.toDouble(), color: palette[5]),
+                  ];
+                } else {
+                  slices = [
+                    _NamiPieSlice(label: '24-Bit Hi-Res Plays', value: hiResPlays.toDouble(), color: _namiAccentColor),
+                    _NamiPieSlice(label: '16-Bit Lossless Plays', value: cdPlays.toDouble(), color: const Color(0xFF00ACC1)),
+                    _NamiPieSlice(label: 'Lossy Plays', value: lossyPlays.toDouble(), color: const Color(0xFFFFB300)),
+                  ];
+                }
+                centerTop = '${_historyTracks.length}';
+                centerSub = 'Total Plays';
+              } else {
+                slices = [
+                  _NamiPieSlice(label: 'Unplayed Library', value: _songs.length.toDouble(), color: const Color(0xFF37474F)),
+                ];
+                centerTop = '0';
+                centerSub = 'Plays Yet';
+              }
+            } else if (detailTab == 1) {
+              slices = [
+                _NamiPieSlice(label: 'FLAC 24-Bit Hi-Res', value: flac24Count.toDouble(), color: _namiAccentColor),
+                _NamiPieSlice(label: 'FLAC 16-Bit CD', value: flac16Count.toDouble(), color: const Color(0xFF00ACC1)),
+                _NamiPieSlice(label: 'ALAC / WAV', value: alacWavCount.toDouble(), color: const Color(0xFF43A047)),
+                _NamiPieSlice(label: 'AAC / MP3', value: lossyCount.toDouble(), color: const Color(0xFFFFB300)),
+              ];
+              centerTop = '$losslessPct%';
+              centerSub = 'Lossless';
+            } else {
+              final palette = [_namiAccentColor, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
+              final top4 = topLibArtists.take(4).toList();
+              final top4Sum = top4.fold<int>(0, (s, e) => s + e.value);
+              final restCount = (_songs.length - top4Sum).clamp(0, _songs.length);
+              slices = [
+                for (int i = 0; i < top4.length; i++)
+                  _NamiPieSlice(label: top4[i].key, value: top4[i].value.toDouble(), color: palette[i % palette.length]),
+                if (restCount > 0)
+                  _NamiPieSlice(label: 'Other Artists', value: restCount.toDouble(), color: palette[5]),
+              ];
+              centerTop = '${artistTrackCounts.length}';
+              centerSub = 'Artists';
             }
-            final sortedArtists = topArtists.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+
+            final totalSliceVal = slices.fold<double>(0, (s, e) => s + e.value);
+            final activeSlice = (selectedSlice >= 0 && selectedSlice < slices.length) ? slices[selectedSlice] : null;
+
+            Widget heavyCard(IconData icon, String title, String value, String sub, Color accent) {
+              return Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF13131C),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, size: 15, color: accent),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(title, style: const TextStyle(fontSize: 11, color: Colors.white60), overflow: TextOverflow.ellipsis)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
+                    const SizedBox(height: 2),
+                    Text(sub, style: const TextStyle(fontSize: 10, color: Colors.white54), overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              );
+            }
 
             return Scaffold(
-              backgroundColor: const Color(0xFF09090D),
+              backgroundColor: const Color(0xFF08080C),
               appBar: AppBar(
-                backgroundColor: const Color(0xFF09090D),
-                title: const Text('Deep Library & Listening Stats', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                backgroundColor: const Color(0xFF08080C),
+                title: const Text('Listening & Library Analytics', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
               ),
               body: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _buildNamidaHomeStatisticsSection(ctx),
-                  const SizedBox(height: 14),
+                  // Interactive Namida Pie Chart Card
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF101017),
+                      color: const Color(0xFF111119),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white10),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Top Artists Leaderboard', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        Row(
+                          children: [
+                            Icon(Icons.pie_chart_rounded, color: _namiAccentColor, size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text('Interactive Breakdown', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                            ),
+                            Text('${_songs.length} Tracks', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final tab in [(0, 'Listening Share'), (1, 'Audio Quality'), (2, 'Library Artists')])
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(tab.$2, style: const TextStyle(fontSize: 11)),
+                                    selected: detailTab == tab.$1,
+                                    selectedColor: _namiAccentColor,
+                                    onSelected: (_) => setStatsState(() {
+                                      detailTab = tab.$1;
+                                      selectedSlice = -1;
+                                    }),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          height: 205,
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTapUp: (details) {
+                                  const boxSize = 185.0;
+                                  final dx = details.localPosition.dx - boxSize / 2;
+                                  final dy = details.localPosition.dy - boxSize / 2;
+                                  double angle = math.atan2(dy, dx) + math.pi / 2;
+                                  if (angle < 0) angle += 2 * math.pi;
+                                  if (totalSliceVal > 0) {
+                                    double acc = 0;
+                                    for (int i = 0; i < slices.length; i++) {
+                                      final sw = (slices[i].value / totalSliceVal) * 2 * math.pi;
+                                      if (angle >= acc && angle <= acc + sw) {
+                                        setStatsState(() => selectedSlice = (selectedSlice == i) ? -1 : i);
+                                        break;
+                                      }
+                                      acc += sw;
+                                    }
+                                  }
+                                },
+                                child: SizedBox(
+                                  width: 185,
+                                  height: 185,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      CustomPaint(
+                                        size: const Size(185, 185),
+                                        painter: _NamiPieChartPainter(slices: slices, selectedIndex: selectedSlice),
+                                      ),
+                                      Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            activeSlice != null ? '${activeSlice.value.toInt()}' : centerTop,
+                                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                          Text(
+                                            activeSlice != null ? activeSlice.label : centerSub,
+                                            textAlign: TextAlign.center,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 10, color: Colors.white60),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    for (int i = 0; i < slices.length; i++)
+                                      if (slices[i].value > 0)
+                                        InkWell(
+                                          onTap: () => setStatsState(() => selectedSlice = (selectedSlice == i) ? -1 : i),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 4),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 10,
+                                                  height: 10,
+                                                  decoration: BoxDecoration(color: slices[i].color, shape: BoxShape.circle),
+                                                ),
+                                                const SizedBox(width: 7),
+                                                Expanded(
+                                                  child: Text(
+                                                    slices[i].label,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: selectedSlice == i ? FontWeight.bold : FontWeight.normal,
+                                                      color: Colors.white,
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${slices[i].value.toInt()} (${totalSliceVal > 0 ? ((slices[i].value * 100) / totalSliceVal).round() : 0}%)',
+                                                  style: const TextStyle(fontSize: 10, color: Colors.white60),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 8-Card Heavy Listening & Audiophile Telemetry Grid
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.65,
+                    children: [
+                      heavyCard(Icons.headphones_rounded, 'Total Listen Time', '${listenHours}h ${listenMins}m', '${_historyTracks.length} completed plays', const Color(0xFFFFB300)),
+                      heavyCard(Icons.explore_rounded, 'Library Explored', '$discoveryRatio%', '${playedTrackCounts.length} of ${_songs.length} tracks heard', const Color(0xFF00ACC1)),
+                      heavyCard(Icons.timer_outlined, 'Avg Session Length', '${avgSessionSec ~/ 60}m ${(avgSessionSec % 60).toString().padLeft(2, '0')}s', 'Per track playback', const Color(0xFF43A047)),
+                      heavyCard(Icons.graphic_eq_rounded, 'Hi-Res vs CD Plays', '$hiResPlays Hi-Res', '$cdPlays CD • $lossyPlays Lossy plays', _namiAccentColor),
+                      heavyCard(Icons.sd_storage_rounded, 'Library Footprint', '${totalGb.toStringAsFixed(2)} GB', '$avgBitrateKbps kbps average', const Color(0xFF8E24AA)),
+                      heavyCard(Icons.schedule_rounded, 'Catalog Runtime', '${totalLibHours}h ${totalLibMins}m', '${albumSet.length} Albums • ${artistTrackCounts.length} Artists', const Color(0xFF00ACC1)),
+                      heavyCard(Icons.verified_rounded, 'Lossless Purity', '$losslessPct%', '${flac24Count + flac16Count + alacWavCount} lossless files', const Color(0xFF43A047)),
+                      heavyCard(Icons.favorite_rounded, 'Liked & Queued', '$favCount Liked', '${_playNextQueue.length} in Play Next', _namiAccentColor),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Most Played Artists & Tracks Leaderboard
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111119),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          topPlayedArtists.isNotEmpty ? 'Most Played Artists' : 'Top Library Artists',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
                         const SizedBox(height: 12),
-                        for (final entry in sortedArtists.take(10))
+                        for (final entry in (topPlayedArtists.isNotEmpty ? topPlayedArtists : topLibArtists).take(6))
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Column(
@@ -9507,14 +10041,19 @@ void _showCreatePlaylistDialog() {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(child: Text(entry.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
-                                    Text('${entry.value} tracks', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                                    Text(
+                                      topPlayedArtists.isNotEmpty
+                                          ? '${entry.value} plays • ${(playedArtistMs[entry.key] ?? 0) ~/ 60000}m'
+                                          : '${entry.value} tracks',
+                                      style: const TextStyle(fontSize: 11, color: Colors.white60),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
                                   child: LinearProgressIndicator(
-                                    value: sortedArtists.isEmpty ? 0 : entry.value / sortedArtists.first.value,
+                                    value: entry.value / (topPlayedArtists.isNotEmpty ? topPlayedArtists.first.value : topLibArtists.first.value),
                                     minHeight: 6,
                                     backgroundColor: Colors.white10,
                                     valueColor: AlwaysStoppedAnimation<Color>(_namiAccentColor),
@@ -9523,6 +10062,29 @@ void _showCreatePlaylistDialog() {
                               ],
                             ),
                           ),
+                        if (topPlayedTracks.isNotEmpty) ...[
+                          const Divider(color: Colors.white12, height: 20),
+                          const Text('Most Replayed Tracks', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          for (final tEntry in topPlayedTracks.take(5))
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.play_arrow_rounded, size: 16, color: _namiAccentColor),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      playedTrackTitles[tEntry.key] ?? 'Track',
+                                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text('${tEntry.value}x', style: const TextStyle(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                        ],
                       ],
                     ),
                   ),
@@ -9536,21 +10098,73 @@ void _showCreatePlaylistDialog() {
   }
 
   /// Parses [mm:ss.xx] LRC text into sorted timed lines
-  List<_NamiLyricEntry> _parseLrcLines(String rawLyrics) {
+  /// Parses [mm:ss.xx] LRC text AND splits inline tags / dummy [00:00.00] lines cleanly
+    List<String> _extractCleanLyricLines(String rawLyrics) {
+    if (rawLyrics.trim().isEmpty) return const [];
+    String cleaned = rawLyrics.replaceAll(
+      RegExp(r'\[(?:ti|ar|al|au|lr|length|by|offset|re|ve):[^\]]*\]', caseSensitive: false),
+      '\n',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]'),
+      (_) => '\n',
+    );
+    return cleaned
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
+List<_NamiLyricEntry> _parseLrcLines(String rawLyrics) {
     final entries = <_NamiLyricEntry>[];
-    final lineReg = RegExp(r'\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)');
-    for (final rawLine in rawLyrics.split('\n')) {
-      final matches = lineReg.allMatches(rawLine).toList();
-      if (matches.isEmpty) continue;
-      final lyricText = matches.last.group(4)?.trim() ?? '';
-      if (lyricText.isEmpty) continue;
-      for (final m in matches) {
+    if (rawLyrics.trim().isEmpty) return entries;
+
+    // 1. Strip LRC metadata header tags like [ti:...], [ar:...], [al:...], [by:...], [offset:...]
+    String cleaned = rawLyrics.replaceAll(
+      RegExp(r'\[(?:ti|ar|al|au|lr|length|by|offset|re|ve):[^\]]*\]', caseSensitive: false),
+      '\n',
+    );
+
+    // 2. Insert a line break before every inline timestamp `[mm:ss.xx]` so concatenated tags never stay on 1 line
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'(?<!^)(?<!\n)(\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\])'),
+      (m) => '\n${m.group(1)}',
+    );
+
+    final lineReg = RegExp(r'^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\](.*)$');
+    final parsedRaw = <Map<String, dynamic>>[];
+
+    for (final rawLine in cleaned.split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      final m = lineReg.firstMatch(line);
+      if (m != null) {
         final mins = int.tryParse(m.group(1) ?? '0') ?? 0;
         final secs = int.tryParse(m.group(2) ?? '0') ?? 0;
         final fracStr = (m.group(3) ?? '0').padRight(3, '0');
         final millis = int.tryParse(fracStr.substring(0, 3)) ?? 0;
-        entries.add(_NamiLyricEntry(Duration(minutes: mins, seconds: secs, milliseconds: millis), lyricText));
+        final text = (m.group(4) ?? '').trim();
+        if (text.isNotEmpty) {
+          parsedRaw.add({
+            'time': Duration(minutes: mins, seconds: secs, milliseconds: millis),
+            'text': text,
+          });
+        }
       }
+    }
+
+    if (parsedRaw.isEmpty) return entries;
+
+    // 3. Detect if timestamps are fake/unsynced (e.g. every line is [00:00.00])
+    final uniqueTimes = parsedRaw.map((e) => (e['time'] as Duration).inMilliseconds).toSet();
+    if (uniqueTimes.length <= 1) {
+      // Return empty so the clean line-by-line vertical lyrics reader renders 1st, 2nd, 3rd line!
+      return <_NamiLyricEntry>[];
+    }
+
+    for (final item in parsedRaw) {
+      entries.add(_NamiLyricEntry(item['time'] as Duration, item['text'] as String));
     }
     entries.sort((a, b) => a.time.compareTo(b.time));
     return entries;
@@ -9636,7 +10250,7 @@ void _showCreatePlaylistDialog() {
                 }
 
                 final plainLines = syncedLines.isEmpty
-                    ? rawLyrics.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
+                    ? _extractCleanLyricLines(rawLyrics)
                     : <String>[];
 
                 return Scaffold(
