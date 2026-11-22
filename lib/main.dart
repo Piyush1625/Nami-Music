@@ -3391,22 +3391,38 @@ const SizedBox(height: 10),
                         ),
                         const Divider(color: Colors.white10, height: 1),
                         Expanded(
-                          child: _playNextQueue.isEmpty ? ListView.builder(controller: scrollController,
+                          child: _playNextQueue.isEmpty
+                              ? ReorderableListView.builder(
+                                  scrollController: scrollController,
+                                  buildDefaultDragHandles: false,
                                   padding: const EdgeInsets.symmetric(vertical: 6),
                                   itemCount: _filteredSongs.length,
-                                  itemBuilder: (ctx, idx) => _buildNamiQueueRow(
-                                    song: _filteredSongs[idx],
-                                    index: idx,
-                                    isReorderable: false,
-                                    onTap: () {
-                                      _playSong(_filteredSongs[idx]);
-                                      Navigator.pop(context);
-                                    },
-                                    onToggleFav: () {
-                                      setQueueState(() => _filteredSongs[idx].isFavorite = !_filteredSongs[idx].isFavorite);
-                                      setState(() {});
-                                      _saveStateCache();
-                                    },
+                                  onReorder: (oldIndex, newIndex) {
+                                    setQueueState(() {
+                                      if (newIndex > oldIndex) newIndex -= 1;
+                                      if (oldIndex >= 0 && oldIndex < _filteredSongs.length && newIndex >= 0 && newIndex < _filteredSongs.length) {
+                                        final moved = _filteredSongs.removeAt(oldIndex);
+                                        _filteredSongs.insert(newIndex, moved);
+                                      }
+                                    });
+                                    setState(() {});
+                                  },
+                                  itemBuilder: (ctx, idx) => KeyedSubtree(
+                                    key: ValueKey('lib_q_${_filteredSongs[idx].path}_$idx'),
+                                    child: _buildNamiQueueRow(
+                                      song: _filteredSongs[idx],
+                                      index: idx,
+                                      isReorderable: true,
+                                      onTap: () {
+                                        _playSong(_filteredSongs[idx]);
+                                        Navigator.pop(context);
+                                      },
+                                      onToggleFav: () {
+                                        setQueueState(() => _filteredSongs[idx].isFavorite = !_filteredSongs[idx].isFavorite);
+                                        setState(() {});
+                                        _saveStateCache();
+                                      },
+                                    ),
                                   ),
                                 )
                               : ReorderableListView.builder(
@@ -3537,8 +3553,7 @@ Container(
     child: Padding(
       padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
       child: Row(children: [
-        if (isReorderable) ReorderableDragStartListener(index: index, child: const Padding(padding: EdgeInsets.only(right: 8), child: Icon(Icons.drag_indicator_rounded, color: Colors.white38, size: 20))),
-_buildCoverArt(song, 46, 8),
+        _buildCoverArt(song, 46, 8),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -8972,57 +8987,515 @@ List<String> _getSmartMornyeQuickSearches() {
 
 
 
-  void _openStatisticsScreen() {
-    final mostPlayed = List<AudioTrack>.from(_songs)
-      ..sort((a, b) => b.playCount.compareTo(a.playCount));
-    final flacCount = _songs.where((s) => s.path.toLowerCase().endsWith('.flac')).length;
-    final hiResCount = _songs.where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000).length;
-    final totalBytes = _songs.fold<int>(0, (sum, s) => sum + s.fileSize);
-    final totalGb = (totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(2);
-    final favCount = _songs.where((s) => s.isFavorite).length;
 
-    Navigator.push(
-      context,
+
+
+
+  double _lyricsOffsetSeconds = 0.0;
+  double _lyricsFontSize = 21.0;
+  bool _lyricsCenterAlign = true;
+  bool _autoFetchLyricsEnabled = true;
+
+  int _trackDurationMs(dynamic track) {
+    try {
+      final d = (track as dynamic).duration;
+      if (d is Duration) return d.inMilliseconds;
+      if (d is int) return d > 10000 ? d : d * 1000;
+    } catch (_) {}
+    try {
+      final ms = (track as dynamic).durationMs;
+      if (ms is int) return ms;
+    } catch (_) {}
+    return 0;
+  }
+
+  void _openStatisticsScreen() {
+    final accent = Theme.of(context).colorScheme.primary;
+    int detailTab = 0; // 0 = Listening Share, 1 = Audio Quality, 2 = Library Artists, 3 = Release Eras
+    int selectedSlice = -1;
+
+    int totalBytes = 0;
+    int totalDurationMs = 0;
+    int flac24Count = 0;
+    int flac16Count = 0;
+    int alacWavCount = 0;
+    int lossyCount = 0;
+    int favCount = 0;
+    final artistTrackCounts = <String, int>{};
+    final albumSet = <String>{};
+    final eraCounts = <String, int>{};
+
+    for (final s in _songs) {
+      try {
+        if (s.fileSize > 0) {
+          totalBytes += s.fileSize;
+        } else {
+          final f = File(s.path);
+          if (f.existsSync()) totalBytes += f.lengthSync();
+        }
+      } catch (_) {}
+      totalDurationMs += _trackDurationMs(s);
+      if (s.isFavorite) favCount++;
+      final alb = s.album.trim();
+      if (alb.isNotEmpty) albumSet.add(alb);
+
+      final pathLower = s.path.toLowerCase();
+      if (pathLower.endsWith('.flac')) {
+        if (s.bitDepth >= 24) {
+          flac24Count++;
+        } else {
+          flac16Count++;
+        }
+      } else if (pathLower.endsWith('.alac') || pathLower.endsWith('.wav') || pathLower.endsWith('.aiff')) {
+        alacWavCount++;
+      } else {
+        lossyCount++;
+      }
+
+      final rawArt = s.artist.trim();
+      if (rawArt.isNotEmpty && rawArt.toLowerCase() != 'unknown artist') {
+        final primary = rawArt.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+        if (primary.isNotEmpty) artistTrackCounts[primary] = (artistTrackCounts[primary] ?? 0) + 1;
+      }
+
+      final yr = int.tryParse(s.year.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (yr >= 2020) {
+        eraCounts['2020s'] = (eraCounts['2020s'] ?? 0) + 1;
+      } else if (yr >= 2010) {
+        eraCounts['2010s'] = (eraCounts['2010s'] ?? 0) + 1;
+      } else if (yr >= 2000) {
+        eraCounts['2000s'] = (eraCounts['2000s'] ?? 0) + 1;
+      } else if (yr > 1900) {
+        eraCounts['Classic (<2000)'] = (eraCounts['Classic (<2000)'] ?? 0) + 1;
+      } else {
+        eraCounts['Untagged'] = (eraCounts['Untagged'] ?? 0) + 1;
+      }
+    }
+
+    int listenTotalMs = _totalListenSeconds * 1000;
+    int hiResPlays = 0;
+    int cdPlays = 0;
+    int lossyPlays = 0;
+    final playedArtistCounts = <String, int>{};
+    final playedArtistMs = <String, int>{};
+    final playedTrackCounts = <String, int>{};
+    final playedTrackTitles = <String, String>{};
+    final recentPlayBars = List<double>.filled(7, 0.0);
+
+    for (int i = 0; i < _historyTracks.length; i++) {
+      final h = _historyTracks[i];
+      final dMs = _trackDurationMs(h);
+      if (_totalListenSeconds == 0) listenTotalMs += dMs;
+      recentPlayBars[i % 7] += (dMs > 0 ? dMs / 60000.0 : 3.5);
+
+      final pLow = h.path.toLowerCase();
+      if (pLow.endsWith('.flac') && h.bitDepth >= 24) {
+        hiResPlays++;
+      } else if (pLow.endsWith('.flac') || pLow.endsWith('.alac') || pLow.endsWith('.wav')) {
+        cdPlays++;
+      } else {
+        lossyPlays++;
+      }
+
+      final rawA = h.artist.trim();
+      final pArt = rawA.isEmpty ? 'Unknown Artist' : rawA.split(RegExp(r'[,&]|feat\.|ft\.', caseSensitive: false)).first.trim();
+      playedArtistCounts[pArt] = (playedArtistCounts[pArt] ?? 0) + 1;
+      playedArtistMs[pArt] = (playedArtistMs[pArt] ?? 0) + dMs;
+
+      playedTrackCounts[h.path] = (playedTrackCounts[h.path] ?? 0) + 1;
+      playedTrackTitles[h.path] = '${h.title} • $pArt';
+    }
+
+    final topPlayedArtists = playedArtistCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final topPlayedTracks = playedTrackCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final topLibArtists = artistTrackCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final mostPlayedSongs = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
+
+    final listenHours = listenTotalMs ~/ 3600000;
+    final listenMins = (listenTotalMs % 3600000) ~/ 60000;
+    final avgSessionSec = _historyTracks.isEmpty ? 0 : (listenTotalMs ~/ 1000) ~/ _historyTracks.length;
+    final discoveryRatio = _songs.isEmpty ? 0 : ((playedTrackCounts.length * 100) / _songs.length).clamp(0, 100).round();
+    final totalGb = totalBytes / (1024 * 1024 * 1024);
+    final avgBitrateKbps = totalDurationMs > 0 ? ((totalBytes * 8) ~/ totalDurationMs) : 0;
+    final totalLibHours = totalDurationMs ~/ 3600000;
+    final totalLibMins = (totalDurationMs % 3600000) ~/ 60000;
+    final losslessPct = _songs.isEmpty ? 0 : (((flac24Count + flac16Count + alacWavCount) * 100) / _songs.length).round();
+
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            title: const Text('Listening Statistics', style: TextStyle(fontWeight: FontWeight.w800)),
-          ),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
+        builder: (_) => StatefulBuilder(
+          builder: (ctx, setStatsState) {
+            List<_NamiPieSlice> slices;
+            String centerTop;
+            String centerSub;
+
+            if (detailTab == 0) {
+              if (_historyTracks.isNotEmpty) {
+                final palette = [accent, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
+                if (topPlayedArtists.length >= 2) {
+                  final top4 = topPlayedArtists.take(4).toList();
+                  final top4Plays = top4.fold<int>(0, (s, e) => s + e.value);
+                  final otherPlays = (_historyTracks.length - top4Plays).clamp(0, _historyTracks.length);
+                  slices = [
+                    for (int i = 0; i < top4.length; i++)
+                      _NamiPieSlice(label: top4[i].key, value: top4[i].value.toDouble(), color: palette[i % palette.length]),
+                    if (otherPlays > 0)
+                      _NamiPieSlice(label: 'Other Artists', value: otherPlays.toDouble(), color: palette[5]),
+                  ];
+                } else {
+                  slices = [
+                    _NamiPieSlice(label: '24-Bit Hi-Res Plays', value: hiResPlays.toDouble(), color: accent),
+                    _NamiPieSlice(label: '16-Bit Lossless Plays', value: cdPlays.toDouble(), color: const Color(0xFF00ACC1)),
+                    _NamiPieSlice(label: 'Lossy Plays', value: lossyPlays.toDouble(), color: const Color(0xFFFFB300)),
+                  ];
+                }
+                centerTop = '${_historyTracks.length}';
+                centerSub = 'Total Plays';
+              } else {
+                slices = [
+                  _NamiPieSlice(label: '24-Bit Ready', value: flac24Count.toDouble(), color: accent),
+                  _NamiPieSlice(label: '16-Bit Ready', value: flac16Count.toDouble(), color: const Color(0xFF00ACC1)),
+                ];
+                centerTop = '${listenHours}h ${listenMins}m';
+                centerSub = 'Listen Time';
+              }
+            } else if (detailTab == 1) {
+              slices = [
+                _NamiPieSlice(label: 'FLAC 24-Bit Hi-Res', value: flac24Count.toDouble(), color: accent),
+                _NamiPieSlice(label: 'FLAC 16-Bit CD', value: flac16Count.toDouble(), color: const Color(0xFF00ACC1)),
+                _NamiPieSlice(label: 'ALAC / WAV', value: alacWavCount.toDouble(), color: const Color(0xFF43A047)),
+                _NamiPieSlice(label: 'AAC / MP3', value: lossyCount.toDouble(), color: const Color(0xFFFFB300)),
+              ];
+              centerTop = '$losslessPct%';
+              centerSub = 'Lossless';
+            } else if (detailTab == 2) {
+              final palette = [accent, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFFFFB300), const Color(0xFF546E7A)];
+              final top4 = topLibArtists.take(4).toList();
+              final top4Sum = top4.fold<int>(0, (s, e) => s + e.value);
+              final restCount = (_songs.length - top4Sum).clamp(0, _songs.length);
+              slices = [
+                for (int i = 0; i < top4.length; i++)
+                  _NamiPieSlice(label: top4[i].key, value: top4[i].value.toDouble(), color: palette[i % palette.length]),
+                if (restCount > 0)
+                  _NamiPieSlice(label: 'Other Artists', value: restCount.toDouble(), color: palette[5]),
+              ];
+              centerTop = '${artistTrackCounts.length}';
+              centerSub = 'Artists';
+            } else {
+              final palette = [accent, const Color(0xFF00ACC1), const Color(0xFF8E24AA), const Color(0xFF43A047), const Color(0xFF546E7A)];
+              final entries = eraCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+              slices = [
+                for (int i = 0; i < entries.length; i++)
+                  _NamiPieSlice(label: entries[i].key, value: entries[i].value.toDouble(), color: palette[i % palette.length]),
+              ];
+              centerTop = '${albumSet.length}';
+              centerSub = 'Albums';
+            }
+
+            final totalSliceVal = slices.fold<double>(0, (s, e) => s + e.value);
+            final activeSlice = (selectedSlice >= 0 && selectedSlice < slices.length) ? slices[selectedSlice] : null;
+
+            Widget heavyCard(IconData icon, String title, String value, String sub, Color col) {
+              return Container(
+                padding: const EdgeInsets.all(13),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF14141F),
-                  borderRadius: BorderRadius.circular(18),
+                  color: const Color(0xFF13131C),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white10),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Total Listen Time: ${_totalListenSeconds ~/ 60} mins',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
+                    Row(
+                      children: [
+                        Icon(icon, size: 15, color: col),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(title, style: const TextStyle(fontSize: 11, color: Colors.white60), overflow: TextOverflow.ellipsis)),
+                      ],
                     ),
                     const SizedBox(height: 6),
-                    Text('Library: ${_songs.length} Tracks • $flacCount FLAC • $hiResCount 24-Bit Hi-Res', style: const TextStyle(fontSize: 12.5, color: Colors.white70)),
-                    const SizedBox(height: 3),
-                    Text('Storage: $totalGb GB • Favorites: $favCount', style: const TextStyle(fontSize: 12.5, color: Colors.white60)),
+                    Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
+                    const SizedBox(height: 2),
+                    Text(sub, style: const TextStyle(fontSize: 10, color: Colors.white54), overflow: TextOverflow.ellipsis),
                   ],
                 ),
+              );
+            }
+
+            return Scaffold(
+              backgroundColor: const Color(0xFF08080C),
+              appBar: AppBar(
+                backgroundColor: const Color(0xFF08080C),
+                title: const Text('Listening & Library Statistics', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(height: 18),
-              const Text('Most Played Tracks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 10),
-              ...mostPlayed.take(25).map((song) => _buildNamiTrackTile(song)),
-            ],
-          ),
+              body: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111119),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.pie_chart_rounded, color: accent, size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(child: Text('Interactive Breakdown', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold))),
+                            Text('${_songs.length} Tracks', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final tab in [(0, 'Listening Share'), (1, 'Audio Quality'), (2, 'Library Artists'), (3, 'Release Eras')])
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(tab.$2, style: const TextStyle(fontSize: 11)),
+                                    selected: detailTab == tab.$1,
+                                    selectedColor: accent,
+                                    onSelected: (_) => setStatsState(() {
+                                      detailTab = tab.$1;
+                                      selectedSlice = -1;
+                                    }),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          height: 205,
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTapUp: (details) {
+                                  const boxSize = 185.0;
+                                  final dx = details.localPosition.dx - boxSize / 2;
+                                  final dy = details.localPosition.dy - boxSize / 2;
+                                  double angle = math.atan2(dy, dx) + math.pi / 2;
+                                  if (angle < 0) angle += 2 * math.pi;
+                                  if (totalSliceVal > 0) {
+                                    double acc = 0;
+                                    for (int i = 0; i < slices.length; i++) {
+                                      final sw = (slices[i].value / totalSliceVal) * 2 * math.pi;
+                                      if (angle >= acc && angle <= acc + sw) {
+                                        setStatsState(() => selectedSlice = (selectedSlice == i) ? -1 : i);
+                                        break;
+                                      }
+                                      acc += sw;
+                                    }
+                                  }
+                                },
+                                child: SizedBox(
+                                  width: 185,
+                                  height: 185,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      CustomPaint(
+                                        size: const Size(185, 185),
+                                        painter: _NamiPieChartPainter(slices: slices, selectedIndex: selectedSlice),
+                                      ),
+                                      Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            activeSlice != null ? '${activeSlice.value.toInt()}' : centerTop,
+                                            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                          Text(
+                                            activeSlice != null ? activeSlice.label : centerSub,
+                                            textAlign: TextAlign.center,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 10, color: Colors.white60),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    for (int i = 0; i < slices.length; i++)
+                                      if (slices[i].value > 0)
+                                        InkWell(
+                                          onTap: () => setStatsState(() => selectedSlice = (selectedSlice == i) ? -1 : i),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 4),
+                                            child: Row(
+                                              children: [
+                                                Container(width: 10, height: 10, decoration: BoxDecoration(color: slices[i].color, shape: BoxShape.circle)),
+                                                const SizedBox(width: 7),
+                                                Expanded(
+                                                  child: Text(
+                                                    slices[i].label,
+                                                    style: TextStyle(fontSize: 11, fontWeight: selectedSlice == i ? FontWeight.bold : FontWeight.normal, color: Colors.white),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${slices[i].value.toInt()} (${totalSliceVal > 0 ? ((slices[i].value * 100) / totalSliceVal).round() : 0}%)',
+                                                  style: const TextStyle(fontSize: 10, color: Colors.white60),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111119),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.bar_chart_rounded, color: accent, size: 19),
+                            const SizedBox(width: 8),
+                            const Expanded(child: Text('Listening Activity Cadence', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
+                            Text('${listenHours}h ${listenMins}m total', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 115,
+                          width: double.infinity,
+                          child: CustomPaint(
+                            painter: _NamiActivityBarChartPainter(
+                              values: recentPlayBars,
+                              labels: const ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'],
+                              accentColor: accent,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.65,
+                    children: [
+                      heavyCard(Icons.headphones_rounded, 'Total Listen Time', '${listenHours}h ${listenMins}m', '${_historyTracks.length} session plays', const Color(0xFFFFB300)),
+                      heavyCard(Icons.explore_rounded, 'Library Explored', '$discoveryRatio%', '${playedTrackCounts.length} of ${_songs.length} tracks heard', const Color(0xFF00ACC1)),
+                      heavyCard(Icons.timer_outlined, 'Avg Session Length', '${avgSessionSec ~/ 60}m ${(avgSessionSec % 60).toString().padLeft(2, '0')}s', 'Per track playback', const Color(0xFF43A047)),
+                      heavyCard(Icons.graphic_eq_rounded, 'Hi-Res vs CD Plays', '$hiResPlays Hi-Res', '$cdPlays CD • $lossyPlays Lossy plays', accent),
+                      heavyCard(Icons.sd_storage_rounded, 'Library Footprint', '${totalGb.toStringAsFixed(2)} GB', '$avgBitrateKbps kbps average', const Color(0xFF8E24AA)),
+                      heavyCard(Icons.schedule_rounded, 'Catalog Runtime', '${totalLibHours}h ${totalLibMins}m', '${albumSet.length} Albums • ${artistTrackCounts.length} Artists', const Color(0xFF00ACC1)),
+                      heavyCard(Icons.verified_rounded, 'Lossless Purity', '$losslessPct%', '${flac24Count + flac16Count + alacWavCount} lossless files', const Color(0xFF43A047)),
+                      heavyCard(Icons.favorite_rounded, 'Liked & Queued', '$favCount Liked', '${_playNextQueue.length} in Play Next', accent),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111119),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          topPlayedArtists.isNotEmpty ? 'Most Played Artists' : 'Top Library Artists',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 12),
+                        for (final entry in (topPlayedArtists.isNotEmpty ? topPlayedArtists : topLibArtists).take(6))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(child: Text(entry.key, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                                    Text(
+                                      topPlayedArtists.isNotEmpty
+                                          ? '${entry.value} plays • ${(playedArtistMs[entry.key] ?? 0) ~/ 60000}m'
+                                          : '${entry.value} tracks',
+                                      style: const TextStyle(fontSize: 11, color: Colors.white60),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: entry.value / (topPlayedArtists.isNotEmpty ? topPlayedArtists.first.value : topLibArtists.first.value),
+                                    minHeight: 6,
+                                    backgroundColor: Colors.white10,
+                                    valueColor: AlwaysStoppedAnimation<Color>(accent),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (topPlayedTracks.isNotEmpty) ...[
+                          const Divider(color: Colors.white12, height: 20),
+                          const Text('Most Replayed Tracks', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          for (final tEntry in topPlayedTracks.take(5))
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.play_arrow_rounded, size: 16, color: accent),
+                                  const SizedBox(width: 6),
+                                  Expanded(child: Text(playedTrackTitles[tEntry.key] ?? 'Track', style: const TextStyle(fontSize: 12, color: Colors.white), overflow: TextOverflow.ellipsis)),
+                                  Text('${tEntry.value}x', style: const TextStyle(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Most Played Tracks', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  ...mostPlayedSongs.take(15).map((song) => _buildNamiTrackTile(song)),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
+
 }
 
 class MainSettingsScreen extends StatefulWidget {
@@ -10900,3 +11373,148 @@ Future<void> requestNotificationPermission() async {
 
 
 
+
+
+class _NamiPieSlice {
+  final String label;
+  final double value;
+  final Color color;
+  final String subtitle;
+  const _NamiPieSlice({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.subtitle = '',
+  });
+}
+
+class _NamiPieChartPainter extends CustomPainter {
+  final List<_NamiPieSlice> slices;
+  final int selectedIndex;
+  final double holeRadiusFactor;
+
+  const _NamiPieChartPainter({
+    required this.slices,
+    this.selectedIndex = -1,
+    this.holeRadiusFactor = 0.58,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = slices.fold<double>(0, (s, e) => s + (e.value > 0 ? e.value : 0));
+    final center = Offset(size.width / 2, size.height / 2);
+    final baseRadius = math.min(size.width, size.height) / 2 - 8;
+    if (total <= 0 || baseRadius <= 0) {
+      final bgPaint = Paint()
+        ..color = Colors.white12
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 18;
+      canvas.drawCircle(center, baseRadius * 0.8, bgPaint);
+      return;
+    }
+
+    double startAngle = -math.pi / 2;
+    for (int i = 0; i < slices.length; i++) {
+      final slice = slices[i];
+      if (slice.value <= 0) continue;
+      final sweep = (slice.value / total) * 2 * math.pi;
+      final isSel = i == selectedIndex;
+      final r = isSel ? baseRadius + 5 : baseRadius;
+      final midAngle = startAngle + sweep / 2;
+      final offset = isSel
+          ? Offset(math.cos(midAngle) * 4, math.sin(midAngle) * 4)
+          : Offset.zero;
+
+      final paint = Paint()
+        ..color = slice.color
+        ..style = PaintingStyle.fill;
+
+      canvas.drawArc(
+        Rect.fromCircle(center: center + offset, radius: r),
+        startAngle,
+        sweep - (slices.length > 1 ? 0.025 : 0),
+        true,
+        paint,
+      );
+      startAngle += sweep;
+    }
+
+    final holePaint = Paint()
+      ..color = const Color(0xFF0E0E14)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, baseRadius * holeRadiusFactor, holePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _NamiPieChartPainter oldDelegate) {
+    return oldDelegate.selectedIndex != selectedIndex || oldDelegate.slices != slices;
+  }
+}
+
+class _NamiActivityBarChartPainter extends CustomPainter {
+  final List<double> values;
+  final List<String> labels;
+  final Color accentColor;
+
+  const _NamiActivityBarChartPainter({
+    required this.values,
+    required this.labels,
+    required this.accentColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    final maxVal = values.fold<double>(0.0, (m, v) => v > m ? v : m);
+    final effectiveMax = maxVal <= 0 ? 1.0 : maxVal;
+    final chartH = size.height - 20;
+    final barSlotW = size.width / values.length;
+    final barW = math.max(6.0, barSlotW * 0.56);
+
+    final gridPaint = Paint()
+      ..color = Colors.white10
+      ..strokeWidth = 1;
+    for (int g = 1; g <= 3; g++) {
+      final y = chartH * (1 - g / 3);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    for (int i = 0; i < values.length; i++) {
+      final ratio = (values[i] / effectiveMax).clamp(0.0, 1.0);
+      final barH = math.max(values[i] > 0 ? 6.0 : 3.0, chartH * ratio);
+      final left = i * barSlotW + (barSlotW - barW) / 2;
+      final top = chartH - barH;
+      final rect = RRect.fromRectAndCorners(
+        Rect.fromLTWH(left, top, barW, barH),
+        topLeft: const Radius.circular(5),
+        topRight: const Radius.circular(5),
+      );
+      final paint = Paint()
+        ..color = values[i] > 0 ? accentColor.withOpacity(0.35 + 0.65 * ratio) : Colors.white12
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(rect, paint);
+
+      if (i < labels.length) {
+        final tp = TextPainter(
+          text: TextSpan(
+            text: labels[i],
+            style: const TextStyle(fontSize: 9, color: Colors.white54),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(left + (barW - tp.width) / 2, chartH + 5));
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NamiActivityBarChartPainter oldDelegate) {
+    return oldDelegate.values != values || oldDelegate.accentColor != accentColor;
+  }
+}
+
+class _NamiLyricEntry {
+  final Duration time;
+  final String text;
+  const _NamiLyricEntry(this.time, this.text);
+}
