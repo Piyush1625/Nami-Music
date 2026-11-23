@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Permanent Nami Android Native Configurator (replaces legacy patch_manifest.py).
-Idempotently configures AndroidManifest.xml, MainActivity.kt (USB DAC + audio output),
-R8 ProGuard shrinking, and persistent Base64 release keystore signing.
+Permanent Nami Android Native Configurator.
+Configures AndroidManifest.xml (v2 embedding, storage/DAC permissions, AudioService),
+MainActivity.kt (USB DAC + active audio output), R8 ProGuard & release keystore signing.
 """
 
 import base64
@@ -130,54 +130,53 @@ def patch_manifest() -> None:
     if "requestLegacyExternalStorage" not in txt:
         txt = txt.replace("<application", '<application android:requestLegacyExternalStorage="true"', 1)
 
-    if "com.ryanheise.audioservice.AudioService" not in txt:
-        service_xml = """        <service
-            android:name="com.ryanheise.audioservice.AudioService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
-        <receiver
-            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
-    </application>"""
-        txt = txt.replace("</application>", service_xml, 1)
-
-
-    # Force Android v2 embedding (remove v1 FlutterApplication & enforce flutterEmbedding=2)
+    # Enforce Android v2 embedding
     txt = txt.replace('android:name="io.flutter.app.FlutterApplication"', 'android:name="${applicationName}"')
     if 'android:name="flutterEmbedding"' not in txt:
-        txt = txt.replace(
-            "</application>",
-            '        <meta-data
-            android:name="flutterEmbedding"
-            android:value="2" />
-    </application>',
-            1,
+        meta_v2 = (
+            '        <meta-data\n'
+            '            android:name="flutterEmbedding"\n'
+            '            android:value="2" />\n'
+            '    </application>'
         )
+        txt = txt.replace("</application>", meta_v2, 1)
     else:
         txt = re.sub(
             r'(<meta-data[^>]*android:name="flutterEmbedding"[^>]*android:value=")1(")',
-            r'\g<1>2\g<2>',
+            r"\g<1>2\g<2>",
             txt,
             flags=re.S,
         )
 
-    # Remove any stale v1 Java MainActivity if present
-    for _java in glob.glob("android/app/src/main/java/**/MainActivity.java", recursive=True):
-        _jtxt = open(_java, encoding="utf-8", errors="ignore").read()
-        if "io.flutter.app.FlutterActivity" in _jtxt or "GeneratedPluginRegistrant" in _jtxt:
-            os.remove(_java)
-            print(f"Removed legacy v1 {_java}")
+    if "com.ryanheise.audioservice.AudioService" not in txt:
+        service_xml = (
+            '        <service\n'
+            '            android:name="com.ryanheise.audioservice.AudioService"\n'
+            '            android:foregroundServiceType="mediaPlayback"\n'
+            '            android:exported="true">\n'
+            '            <intent-filter>\n'
+            '                <action android:name="android.media.browse.MediaBrowserService" />\n'
+            '            </intent-filter>\n'
+            '        </service>\n'
+            '        <receiver\n'
+            '            android:name="com.ryanheise.audioservice.MediaButtonReceiver"\n'
+            '            android:exported="true">\n'
+            '            <intent-filter>\n'
+            '                <action android:name="android.intent.action.MEDIA_BUTTON" />\n'
+            '            </intent-filter>\n'
+            '        </receiver>\n'
+            '    </application>'
+        )
+        txt = txt.replace("</application>", service_xml, 1)
+
+    for jpath in glob.glob("android/app/src/main/java/**/MainActivity.java", recursive=True):
+        jtxt = open(jpath, encoding="utf-8", errors="ignore").read()
+        if "io.flutter.app.FlutterActivity" in jtxt or "GeneratedPluginRegistrant" in jtxt:
+            os.remove(jpath)
+            print(f"Removed legacy v1 {jpath}")
 
     open(MANIFEST, "w", encoding="utf-8").write(txt)
-    print("Configured AndroidManifest.xml")
+    print("Configured AndroidManifest.xml (v2 embedding)")
 
 
 def patch_main_activity() -> None:
