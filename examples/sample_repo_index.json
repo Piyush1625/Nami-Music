@@ -1,0 +1,25 @@
+{
+  "repoName": "Nami Starter Extension Index",
+  "extensions": [
+    {
+      "id": "sample_flac_resolver",
+      "name": "Sample FLAC Resolver",
+      "version": "v1.0.0",
+      "author": "Piyush1625",
+      "category": "Download",
+      "format": "24B FLAC",
+      "description": "Starter template for a custom Mornye lossless provider.",
+      "endpointUrl": ""
+    },
+    {
+      "id": "lrclib_lyrics_sync",
+      "name": "LRCLIB Synced Lyrics",
+      "version": "v2.2.0",
+      "author": "LRCLIB",
+      "category": "Utility",
+      "format": "Synced .LRC",
+      "description": "Karaoke timestamped lyrics provider.",
+      "endpointUrl": "https://lrclib.net/api/search?q=test"
+    }
+  ]
+}

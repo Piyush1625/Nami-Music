@@ -1,0 +1,10 @@
+{
+  "id": "nami_sample_lossless",
+  "name": "Sample Hi-Res Provider",
+  "version": "v1.0.0",
+  "author": "Piyush1625",
+  "category": "Download",
+  "format": "24B / 96kHz FLAC",
+  "description": "Starter Mornye .sflx manifest template. Replace endpointUrl with your resolver API.",
+  "endpointUrl": ""
+}

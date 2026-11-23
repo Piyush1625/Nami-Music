@@ -1,0 +1,50 @@
+name: Bug Report
+description: Report a crash, audio playback glitch, or UI bug in Nami Music.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nami Version / Build
+      placeholder: "e.g. v2.0.0 (Build v17)"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone Model & Android Version
+      placeholder: "e.g. CMF Phone 1 • Android 15"
+    validations:
+      required: true
+  - type: input
+    id: dac
+    attributes:
+      label: Audio Output / USB DAC & IEMs (if applicable)
+      placeholder: "e.g. USB-C DAC + Kefine IEMs / Phone Speaker / Bluetooth"
+  - type: dropdown
+    id: format
+    attributes:
+      label: Audio Format Affected
+      options:
+        - FLAC (24-Bit)
+        - FLAC (16-Bit)
+        - ALAC / WAV
+        - MP3 / M4A / OGG
+        - Mornye Stream / Download
+        - Not format-specific
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Open Nami
+        2. Go to '...'
+        3. Tap '...'

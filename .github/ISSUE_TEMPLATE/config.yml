@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Mornye .sflx Extension Spec
+    url: https://github.com/Piyush1625/Nami-Music/blob/main/docs/SFLX_SPEC.md
+    about: Documentation for creating custom .sflx providers.

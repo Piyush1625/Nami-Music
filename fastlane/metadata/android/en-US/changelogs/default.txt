@@ -1,0 +1,1 @@
+v2.0.0: All-5-Tabs overhaul, minimal categorized Settings, in-app GitHub Releases updater, dual-deck crossfade, FLAC/MP3 tag writer, and full storage/USB DAC permissions.

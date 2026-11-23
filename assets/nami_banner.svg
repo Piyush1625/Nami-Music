@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#000000"/>
+      <stop offset="55%" stop-color="#0B0B12"/>
+      <stop offset="100%" stop-color="#1A090C"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="22%" cy="50%" r="42%">
+      <stop offset="0%" stop-color="#E53935" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#E53935" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="320" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="320" rx="28" fill="url(#glow)"/>
+  <rect x="1.5" y="1.5" width="1197" height="317" rx="26.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="2"/>
+
+  <g transform="translate(88, 92)">
+    <rect width="136" height="136" rx="34" fill="#12121A" stroke="#E53935" stroke-opacity="0.45" stroke-width="2.5"/>
+    <rect x="28" y="54" width="11" height="28" rx="5.5" fill="#FF8A80"/>
+    <rect x="47" y="34" width="11" height="68" rx="5.5" fill="#E53935"/>
+    <rect x="66" y="22" width="11" height="92" rx="5.5" fill="#FFFFFF"/>
+    <rect x="85" y="40" width="11" height="56" rx="5.5" fill="#E53935"/>
+    <rect x="104" y="56" width="11" height="24" rx="5.5" fill="#FF8A80"/>
+  </g>
+
+  <text x="262" y="148" fill="#FFFFFF" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="64" font-weight="800" letter-spacing="1.5">Nami Music</text>
+  <text x="264" y="192" fill="#B8B8C8" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="22" font-weight="500">Bit-Perfect Hi-Res Android Audio Player • libmpv • 120Hz AMOLED • Mornye .sflx</text>
+
+  <g transform="translate(264, 218)" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" font-weight="800">
+    <rect x="0" y="0" width="112" height="30" rx="15" fill="#E53935" fill-opacity="0.18" stroke="#E53935" stroke-opacity="0.6"/>
+    <text x="56" y="20" fill="#FF8A80" text-anchor="middle">FLAC 24B</text>
+
+    <rect x="124" y="0" width="152" height="30" rx="15" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <text x="200" y="20" fill="#FFFFFF" text-anchor="middle">USB DAC DIRECT</text>
+
+    <rect x="288" y="0" width="146" height="30" rx="15" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <text x="361" y="20" fill="#FFFFFF" text-anchor="middle">10-BAND AUTOEQ</text>
+
+    <rect x="446" y="0" width="152" height="30" rx="15" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <text x="522" y="20" fill="#FFFFFF" text-anchor="middle">MORNYE .SFLX</text>
+  </g>
+</svg>

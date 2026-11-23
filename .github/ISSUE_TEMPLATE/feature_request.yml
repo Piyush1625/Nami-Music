@@ -1,0 +1,24 @@
+name: Feature Request
+description: Suggest an audiophile feature, UI refinement, or Mornye extension capability.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area of Nami
+      options:
+        - Audio Engine / USB DAC / EQ
+        - Home / Tracks / Artists / Playlists UI
+        - Now Playing / Lyrics
+        - Mornye Extensions (.sflx)
+        - Settings / Sync / Backup
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: Describe the feature and how it improves your listening workflow.
+    validations:
+      required: true

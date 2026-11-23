@@ -1,0 +1,8 @@
+Nami Music is an open-source, pitch-black 120Hz AMOLED music player for Android powered by libmpv (media_kit) and AudioService.
+
+Features:
+- Bit-perfect lossless playback (16B/24B FLAC, ALAC, WAV, MP3, M4A, OGG) with USB DAC exclusive output permission and live Audio Path telemetry.
+- 10-band ISO Hardware Equalizer with AutoEQ headphone/IEM profiles, true Dual-Deck Overlapping Crossfade, independent pitch, and L/R stereo balance.
+- Permanent in-file FLAC (Vorbis Comment + PICTURE) and MP3 (ID3v2.3) tag & cover art writing.
+- Customizable Home shelves, parallax Artist discographies with alias merging, Rule-Based Smart Playlists, and 28-day listening analytics with ListenBrainz scrobbling.
+- Built-in Mornye .sflx extension engine for catalog browsing, direct stream queueing, and auto-tagged background downloads.
