@@ -843,11 +843,16 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   String? _userPhotoPath;
 
   final Map<String, double> _eqBands = {
-    '60Hz': 3.0,
-    '230Hz': 1.5,
-    '910Hz': 0.0,
-    '3.6kHz': 2.0,
-    '14kHz': 4.0,
+    '31Hz': 2.5,
+    '62Hz': 3.0,
+    '125Hz': 1.5,
+    '250Hz': 0.5,
+    '500Hz': 0.0,
+    '1kHz': 0.0,
+    '2kHz': 1.5,
+    '4kHz': 2.5,
+    '8kHz': 3.5,
+    '16kHz': 4.0,
   };
   String _selectedEqPreset = 'Hi-Fi Master';
 
@@ -990,6 +995,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadStateCache();
+      await _loadNamiV12Prefs();
       await _requestPermissionsAndInitBackground();
     });
 
@@ -1079,7 +1085,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       final List<String> filters = [];
 
       if (_eqEnabled) {
-        const freqs = [60, 230, 910, 3600, 14000];
+        const freqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
         final values = _eqBands.values.toList();
         for (int i = 0; i < freqs.length && i < values.length; i++) {
           final g = values[i].clamp(-12.0, 12.0).toStringAsFixed(1);
@@ -1476,7 +1482,16 @@ Future<void> _playSong(AudioTrack song) async {
     }
 
     try {
+      if (_crossfadeSeconds > 0 && _audioPlayer.state.playing) {
+        final steps = (_crossfadeSeconds * 5).clamp(2, 20);
+        final stepMs = ((_crossfadeSeconds * 450) ~/ steps).clamp(25, 180);
+        for (int s = steps - 1; s >= 1; s--) {
+          await _audioPlayer.setVolume((s / steps) * 100.0);
+          await Future.delayed(Duration(milliseconds: stepMs));
+        }
+      }
       await _audioPlayer.stop();
+      await _audioPlayer.setVolume(100.0);
       await _audioPlayer.open(Media(song.path));
       await _audioPlayer.play();
       if (_audioPlayer.state.duration != null &&
@@ -1950,6 +1965,9 @@ const SizedBox(height: 10),
                 child: Row(
                   children: [
                     'Hi-Fi Master',
+                    'AutoEQ: Harman IE',
+                    'AutoEQ: IEM Neutral',
+                    'AutoEQ: Studio DF',
                     'Bass Boost',
                     'Flat',
                     'Vocal Clear',
@@ -1970,38 +1988,21 @@ const SizedBox(height: 10),
                         onSelected: (val) async {
                           setEqState(() {
                             _selectedEqPreset = preset;
-                            if (preset == 'Bass Boost') {
-                              _eqBands['60Hz'] = 6.5;
-                              _eqBands['230Hz'] = 4.0;
-                              _eqBands['910Hz'] = 0.0;
-                              _eqBands['3.6kHz'] = 1.0;
-                              _eqBands['14kHz'] = 2.0;
-                            } else if (preset == 'Flat') {
-                              _eqBands.updateAll((key, value) => 0.0);
-                            } else if (preset == 'Vocal Clear') {
-                              _eqBands['60Hz'] = -1.5;
-                              _eqBands['230Hz'] = 1.0;
-                              _eqBands['910Hz'] = 3.5;
-                              _eqBands['3.6kHz'] = 4.5;
-                              _eqBands['14kHz'] = 2.0;
-                            } else if (preset == 'Rock') {
-                              _eqBands['60Hz'] = 4.5;
-                              _eqBands['230Hz'] = 2.0;
-                              _eqBands['910Hz'] = -1.0;
-                              _eqBands['3.6kHz'] = 3.0;
-                              _eqBands['14kHz'] = 4.5;
-                            } else if (preset == 'Treble Sparkle') {
-                              _eqBands['60Hz'] = 1.0;
-                              _eqBands['230Hz'] = 0.0;
-                              _eqBands['910Hz'] = 1.0;
-                              _eqBands['3.6kHz'] = 4.0;
-                              _eqBands['14kHz'] = 6.5;
-                            } else if (preset == 'Hi-Fi Master') {
-                              _eqBands['60Hz'] = 3.0;
-                              _eqBands['230Hz'] = 1.5;
-                              _eqBands['910Hz'] = 0.0;
-                              _eqBands['3.6kHz'] = 2.0;
-                              _eqBands['14kHz'] = 4.0;
+                            final curves = <String, List<double>>{
+                              'Hi-Fi Master':        [2.5, 3.0, 1.5, 0.5, 0.0, 0.0, 1.5, 2.5, 3.5, 4.0],
+                              'AutoEQ: Harman IE':   [4.2, 3.5, 1.0, -1.2, -0.5, 0.4, 2.2, 3.4, 1.8, 1.0],
+                              'AutoEQ: IEM Neutral': [1.8, 1.2, 0.0, -0.8, 0.0, 0.5, 1.6, 2.0, 1.2, 0.5],
+                              'AutoEQ: Studio DF':   [-1.0, -0.5, 0.0, 0.0, 0.5, 1.2, 2.4, 3.0, 2.2, 1.5],
+                              'Bass Boost':          [7.0, 6.0, 4.0, 1.5, 0.0, 0.0, 0.5, 1.0, 1.5, 2.0],
+                              'Flat':                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                              'Vocal Clear':         [-2.0, -1.5, 0.0, 1.2, 2.5, 3.8, 4.2, 3.5, 2.0, 1.5],
+                              'Rock':                [5.0, 4.0, 2.0, -0.5, -1.5, -0.5, 2.0, 3.5, 4.5, 4.5],
+                              'Treble Sparkle':      [0.5, 1.0, 0.0, 0.0, 0.5, 1.0, 2.5, 4.5, 6.0, 6.5],
+                            };
+                            final vals = curves[preset] ?? List<double>.filled(10, 0.0);
+                            final keys = _eqBands.keys.toList();
+                            for (int i = 0; i < keys.length && i < vals.length; i++) {
+                              _eqBands[keys[i]] = vals[i];
                             }
                           });
                           setState(() {});
@@ -3224,6 +3225,27 @@ const SizedBox(height: 10),
                     const SizedBox(width: 8),
                     const Text('Folder Explorer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                     const Spacer(),
+                    Builder(builder: (_) {
+                      final isEx = _isPathExcluded(_currentFolder.path);
+                      return TextButton.icon(
+                        icon: Icon(isEx ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 16, color: isEx ? Colors.greenAccent : Colors.redAccent),
+                        label: Text(isEx ? 'Include' : 'Exclude', style: TextStyle(fontSize: 11.5, color: isEx ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          setFolderState(() {
+                            if (isEx) {
+                              _excludedFolders.removeWhere((e) => e.toLowerCase() == _currentFolder.path.toLowerCase());
+                            } else {
+                              _excludedFolders.add(_currentFolder.path);
+                            }
+                          });
+                          setState(() => _applyExcludedFoldersFilter());
+                          _saveNamiV12Prefs();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(isEx ? 'Folder included in library' : 'Folder blacklisted from library')),
+                          );
+                        },
+                      );
+                    }),
                     IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context)),
                   ],
                 ),
@@ -9643,6 +9665,193 @@ List<String> _getSmartMornyeQuickSearches() {
     }
   }
 
+
+
+  int _crossfadeSeconds = 0;
+  final List<String> _excludedFolders = [];
+  final List<Map<String, dynamic>> _timestampedPlayEvents = [];
+
+  Future<void> _loadNamiV12Prefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _crossfadeSeconds = prefs.getInt('nami_crossfade_sec_v1') ?? 0;
+      final ex = prefs.getStringList('nami_excluded_folders_v1');
+      if (ex != null) {
+        _excludedFolders
+          ..clear()
+          ..addAll(ex);
+      }
+      final rawEvents = prefs.getString('nami_timestamped_play_events_v1');
+      if (rawEvents != null && rawEvents.isNotEmpty) {
+        final decoded = jsonDecode(rawEvents);
+        if (decoded is List) {
+          _timestampedPlayEvents
+            ..clear()
+            ..addAll(decoded.whereType<Map>().map((e) => Map<String, dynamic>.from(e)));
+        }
+      }
+      _applyExcludedFoldersFilter();
+    } catch (_) {}
+  }
+
+  Future<void> _saveNamiV12Prefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('nami_crossfade_sec_v1', _crossfadeSeconds);
+      await prefs.setStringList('nami_excluded_folders_v1', _excludedFolders);
+      final trimmed = _timestampedPlayEvents.length > 500
+          ? _timestampedPlayEvents.sublist(_timestampedPlayEvents.length - 500)
+          : _timestampedPlayEvents;
+      await prefs.setString('nami_timestamped_play_events_v1', jsonEncode(trimmed));
+    } catch (_) {}
+  }
+
+  void _recordTimestampedPlayEvent(AudioTrack track) {
+    _timestampedPlayEvents.add({
+      'path': track.path,
+      'title': track.title,
+      'artist': track.artist,
+      'timestampMs': DateTime.now().millisecondsSinceEpoch,
+      'durationSec': track.duration.inSeconds,
+    });
+    _saveNamiV12Prefs();
+  }
+
+  bool _isPathExcluded(String path) {
+    final p = path.toLowerCase();
+    for (final ex in _excludedFolders) {
+      final e = ex.toLowerCase().trim();
+      if (e.isNotEmpty && (p == e || p.startsWith('$e/'))) return true;
+    }
+    return false;
+  }
+
+  void _applyExcludedFoldersFilter() {
+    if (_excludedFolders.isEmpty) return;
+    _songs.removeWhere((s) => _isPathExcluded(s.path));
+    _filteredSongs.removeWhere((s) => _isPathExcluded(s.path));
+  }
+
+  int _computeListeningStreakDays() {
+    if (_timestampedPlayEvents.isEmpty) return 0;
+    final dayKeys = <String>{};
+    for (final ev in _timestampedPlayEvents) {
+      final ts = ev['timestampMs'];
+      if (ts is int && ts > 0) {
+        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+        dayKeys.add('${dt.year}-${dt.month}-${dt.day}');
+      }
+    }
+    int streak = 0;
+    DateTime cursor = DateTime.now();
+    while (true) {
+      final key = '${cursor.year}-${cursor.month}-${cursor.day}';
+      if (dayKeys.contains(key)) {
+        streak++;
+        cursor = cursor.subtract(const Duration(days: 1));
+      } else if (streak == 0) {
+        // Allow streak to start from yesterday if user hasn't played yet today
+        final yest = cursor.subtract(const Duration(days: 1));
+        final yKey = '${yest.year}-${yest.month}-${yest.day}';
+        if (dayKeys.contains(yKey)) {
+          cursor = yest;
+          continue;
+        }
+        break;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  List<double> _computeLast7DaysMinutes() {
+    final out = List<double>.filled(7, 0.0);
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    for (final ev in _timestampedPlayEvents) {
+      final ts = ev['timestampMs'];
+      final dur = ev['durationSec'];
+      if (ts is int && ts > 0) {
+        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+        final evDay = DateTime(dt.year, dt.month, dt.day);
+        final diffDays = todayStart.difference(evDay).inDays;
+        if (diffDays >= 0 && diffDays < 7) {
+          final idx = 6 - diffDays;
+          final mins = (dur is int && dur > 0) ? (dur / 60.0) : 3.2;
+          out[idx] += mins;
+        }
+      }
+    }
+    return out;
+  }
+
+  List<int> _compute28DayHeatmapCounts() {
+    final out = List<int>.filled(28, 0);
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    for (final ev in _timestampedPlayEvents) {
+      final ts = ev['timestampMs'];
+      if (ts is int && ts > 0) {
+        final dt = DateTime.fromMillisecondsSinceEpoch(ts);
+        final evDay = DateTime(dt.year, dt.month, dt.day);
+        final diffDays = todayStart.difference(evDay).inDays;
+        if (diffDays >= 0 && diffDays < 28) {
+          out[27 - diffDays]++;
+        }
+      }
+    }
+    return out;
+  }
+
+  void _openGenresBrowserScreen() {
+    final accent = Theme.of(context).colorScheme.primary;
+    final genreMap = <String, List<AudioTrack>>{};
+    for (final s in _songs) {
+      final raw = s.genre.trim();
+      final g = raw.isEmpty ? 'Uncategorized' : raw;
+      genreMap.putIfAbsent(g, () => []).add(s);
+    }
+    final sortedGenres = genreMap.entries.toList()
+      ..sort((a, b) => b.value.length.compareTo(a.value.length));
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: const Color(0xFF08080C),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF08080C),
+            title: Text('Genres (${sortedGenres.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          body: sortedGenres.isEmpty
+              ? const Center(child: Text('No genres found in library', style: TextStyle(color: Colors.white54)))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(14),
+                  itemCount: sortedGenres.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (ctx, i) {
+                    final entry = sortedGenres[i];
+                    final tracks = entry.value;
+                    final artists = tracks.map((t) => t.artist).toSet().length;
+                    return ListTile(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      tileColor: const Color(0xFF13131C),
+                      leading: CircleAvatar(
+                        backgroundColor: accent.withOpacity(0.18),
+                        child: Icon(Icons.category_rounded, color: accent, size: 20),
+                      ),
+                      title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      subtitle: Text('${tracks.length} tracks • $artists artists', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white54),
+                      onTap: () => _showFilteredListScreen(entry.key, tracks),
+                    );
+                  },
+                ),
+        ),
+      ),
+    );
+  }
+
 }
 
 class MainSettingsScreen extends StatefulWidget {
@@ -10614,8 +10823,13 @@ class NowPlayingModal extends StatefulWidget {
   State<NowPlayingModal> createState() => _NowPlayingModalState();
 }
 
-class _NowPlayingModalState extends State<NowPlayingModal> {
+class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProviderStateMixin {
   int _viewMode = 0;
+  int _npThemeMode = 0; // 0 = Classic Glow, 1 = Full-Art Blur, 2 = Vinyl Disc, 3 = Minimalist
+  bool _visualizerEnabled = true;
+  late final AnimationController _vinylSpinCtrl;
+  final Map<String, List<double>> _realWaveformCache = {};
+  String _loadingWaveformPath = '';
   late bool _shuffleLocal;
   late int _repeatLocal;
   double _lyricsShiftSec = 0.0;
@@ -10645,11 +10859,57 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
   static const double _lyricLineExtent = 36.0;
 
-  double _getWaveformBarHeight(int index, String seedTitle) {
+  Future<void> _ensureRealWaveformEnvelope(String? path) async {
+    if (path == null || path.isEmpty || _realWaveformCache.containsKey(path) || _loadingWaveformPath == path) {
+      return;
+    }
+    _loadingWaveformPath = path;
+    try {
+      final f = File(path);
+      if (!await f.exists()) return;
+      final len = await f.length();
+      if (len <= 4096) return;
+      const bars = 78;
+      const sampleChunk = 512;
+      final raf = await f.open();
+      final peaks = List<double>.filled(bars, 0.25);
+      final skipHeader = math.min(4096, len ~/ 12);
+      final usable = math.max(bars * sampleChunk, len - skipHeader);
+      for (int i = 0; i < bars; i++) {
+        final pos = skipHeader + ((usable * i) ~/ bars);
+        if (pos + sampleChunk < len) {
+          await raf.setPosition(pos);
+          final chunk = await raf.read(sampleChunk);
+          double rms = 0;
+          for (int b = 1; b < chunk.length; b++) {
+            final diff = (chunk[b] - chunk[b - 1]).abs();
+            rms += diff;
+          }
+          peaks[i] = rms / math.max(1, chunk.length);
+        }
+      }
+      await raf.close();
+      final minP = peaks.reduce(math.min);
+      final maxP = peaks.reduce(math.max);
+      final span = math.max(1.0, maxP - minP);
+      final normalized = peaks.map((p) => (6.0 + ((p - minP) / span) * 32.0).clamp(6.0, 38.0)).toList();
+      _realWaveformCache[path] = normalized;
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
+  double _getWaveformBarHeight(int index, String seedTitle, [String? songPath]) {
+    if (songPath != null && songPath.isNotEmpty) {
+      final cached = _realWaveformCache[songPath];
+      if (cached != null && index >= 0 && index < cached.length) {
+        return cached[index];
+      }
+      _ensureRealWaveformEnvelope(songPath);
+    }
     final hash = seedTitle.codeUnits.fold(0, (prev, elem) => prev + elem);
     final wave1 = math.sin((index + hash) * 0.42).abs();
     final wave2 = math.cos((index * 0.85) + (hash * 0.1)).abs();
-    return ((10.0 + (wave1 * 20.0) + (wave2 * 14.0))).clamp(6.0, 40.0);
+    return ((10.0 + (wave1 * 20.0) + (wave2 * 14.0))).clamp(6.0, 38.0);
   }
 
   void _autoScrollToActiveLyric(int activeIdx) {
@@ -10735,6 +10995,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
   @override
   void dispose() {
     _seekFlashTimer?.cancel();
+    _vinylSpinCtrl.dispose();
     _lyricsScrollCtrl.dispose();
     super.dispose();
   }
@@ -10769,7 +11030,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           backgroundColor: const Color(0xFF07070B),
           body: Stack(
             children: [
-              if (widget.blurredBackdrop && song?.albumArt != null && song!.albumArt!.isNotEmpty)
+              if ((widget.blurredBackdrop || _npThemeMode == 1) && _npThemeMode != 3 && song?.albumArt != null && song!.albumArt!.isNotEmpty)
                 Positioned.fill(
                   child: Opacity(
                     opacity: 0.24,
@@ -10838,14 +11099,56 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                           ],
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () => _showMoreAndLoopSheet(song),
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
-                          child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              setState(() => _visualizerEnabled = !_visualizerEnabled);
+                              SharedPreferences.getInstance().then((p) => p.setBool('nami_np_visualizer_v1', _visualizerEnabled));
+                            },
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: _visualizerEnabled ? accent.withOpacity(0.24) : Colors.white10,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Icon(Icons.graphic_eq_rounded, color: _visualizerEnabled ? accent : Colors.white60, size: 16),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              const names = ['Classic', 'Full-Art', 'Vinyl', 'Minimal'];
+                              setState(() => _npThemeMode = (_npThemeMode + 1) % 4);
+                              SharedPreferences.getInstance().then((p) => p.setInt('nami_np_theme_mode_v1', _npThemeMode));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(duration: const Duration(milliseconds: 900), content: Text('Now Playing Theme: ${names[_npThemeMode]}')),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(14)),
+                              child: Text(
+                                const ['Classic', 'Full-Art', 'Vinyl', 'Minimal'][_npThemeMode],
+                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white70),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            onTap: () => _showMoreAndLoopSheet(song),
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
+                              child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -10892,13 +11195,45 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         ),
                                       ],
                                     ),
-                                    child: Hero(
-                                      tag: 'nami_np_art_${song?.path ?? ""}',
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: SizedBox.expand(child: artWidget),
-                                      ),
-                                    ),
+                                    child: _npThemeMode == 2
+                                        ? AnimatedBuilder(
+                                            animation: _vinylSpinCtrl,
+                                            builder: (_, child) => Transform.rotate(
+                                              angle: isP ? _vinylSpinCtrl.value * 2 * math.pi : 0.0,
+                                              child: child,
+                                            ),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: const Color(0xFF0B0B10),
+                                                border: Border.all(color: Colors.white12, width: 6),
+                                                boxShadow: [BoxShadow(color: glowColor.withOpacity(0.32), blurRadius: 26)],
+                                              ),
+                                              padding: const EdgeInsets.all(24),
+                                              child: Stack(
+                                                alignment: Alignment.center,
+                                                children: [
+                                                  ClipOval(child: SizedBox.expand(child: artWidget)),
+                                                  Container(
+                                                    width: 34,
+                                                    height: 34,
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF0A0A0E),
+                                                      shape: BoxShape.circle,
+                                                      border: Border.all(color: Colors.white30, width: 2),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          )
+                                        : Hero(
+                                            tag: 'nami_np_art_${song?.path ?? ""}',
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(_npThemeMode == 3 ? 12 : 20),
+                                              child: SizedBox.expand(child: artWidget),
+                                            ),
+                                          ),
                                   ),
                                 );
                               },
@@ -11057,6 +11392,40 @@ return GestureDetector(
 
                   const Spacer(flex: 2),
 
+                  if (_visualizerEnabled)
+                    StreamBuilder<Duration>(
+                      stream: widget.audioPlayer.stream.position,
+                      builder: (vCtx, vSnap) {
+                        final ms = (vSnap.data ?? Duration.zero).inMilliseconds;
+                        final isPlaying = widget.audioPlayer.state.playing;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: SizedBox(
+                            height: 22,
+                            width: double.infinity,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: List.generate(32, (b) {
+                                final env = _getWaveformBarHeight((b * 2.4).round().clamp(0, 77), song?.title ?? 'Nami', song?.path) / 38.0;
+                                final pulse = isPlaying
+                                    ? (0.35 + 0.65 * math.sin((ms / 115.0) + b * 0.65).abs() * env)
+                                    : 0.16;
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 90),
+                                  width: 3.2,
+                                  height: (4.0 + pulse * 18.0).clamp(3.0, 22.0),
+                                  decoration: BoxDecoration(
+                                    color: accent.withOpacity(isPlaying ? (0.45 + 0.55 * pulse) : 0.25),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   StreamBuilder<Duration>(
                     stream: widget.audioPlayer.stream.position,
                     builder: (context, posSnap) {
@@ -11090,7 +11459,7 @@ return GestureDetector(
                                       final isHead = (ratio - prog).abs() < 0.015;
                                       return Container(
                                         width: isHead ? 3.0 : 2.3,
-                                        height: _getWaveformBarHeight(i, song?.title ?? 'Nami') + (isHead ? 4.0 : 0.0),
+                                        height: _getWaveformBarHeight(i, song?.title ?? 'Nami', song?.path) + (isHead ? 4.0 : 0.0),
                                         decoration: BoxDecoration(
                                           color: isHead
                                               ? Colors.white
