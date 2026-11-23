@@ -1,3 +1,5 @@
+import 'dart:isolate';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/nami_audio_handler.dart';
 import 'dart:io';
@@ -132,8 +134,7 @@ class NamiApp extends StatefulWidget {
 }
 
 class _NamiAppState extends State<NamiApp> {
-  bool _isCheckingPerms = true;
-  bool pitchBlack = true;
+bool pitchBlack = true;
   Color accentColor = const Color(0xFFE53935);
 
   void updateTheme({bool? isPitchBlack, Color? newAccent}) {
@@ -145,12 +146,7 @@ class _NamiAppState extends State<NamiApp> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isCheckingPerms) {
-      Future.microtask(() {
-        if (mounted) setState(() => _isCheckingPerms = false);
-      });
-      return const Scaffold(backgroundColor: Color(0xFF050508), body: Center(child: CircularProgressIndicator(color: Colors.white24)));
-    }
+    
     final bgColor =
         pitchBlack ? const Color(0xFF000000) : const Color(0xFF09090E);
     final cardColor =
@@ -799,6 +795,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   Directory _currentFolder = Directory('/storage/emulated/0/Music');
   String _lastKnownDac = "";
   StreamSubscription? _deviceSub;
+  StreamSubscription? _playingSub;
+  StreamSubscription? _completedSub;
 
   Timer? _sleepTimer;
   Timer? _fadeTimer;
@@ -810,6 +808,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   int _currentTrackSecondsListened = 0;
 
   double _playbackSpeed = 1.0;
+  double _playbackPitch = 1.0;
+  double _stereoBalance = 0.0;
   String _soundstagePreset = 'Off';
   bool _eqEnabled = false;
   double _preampGainDb = 0.0;
@@ -999,14 +999,14 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
       await _requestPermissionsAndInitBackground();
     });
 
-    _audioPlayer.stream.playing.listen((state) {
+    _playingSub = _audioPlayer.stream.playing.listen((state) {
       if (mounted) setState(() {});
       if (!state && _currentSong != null) {
         _saveStateCache();
       }
     });
 
-    _audioPlayer.stream.completed.listen((completed) {
+    _completedSub = _audioPlayer.stream.completed.listen((completed) {
       if (!completed) return;
       if (_sleepAfterCurrentTrack) {
         _audioPlayer.pause();
@@ -1054,6 +1054,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         _currentTrackSecondsListened++;
         if (_currentTrackSecondsListened == 25 && _currentSong != null) {
           _currentSong!.playCount++;
+          _recordTimestampedPlayEvent(_currentSong!);
           _saveStateCache();
         }
       }
@@ -1097,6 +1098,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         filters.add('volume=volume=${_preampGainDb.toStringAsFixed(1)}dB');
       }
 
+      if (_stereoBalance.abs() > 0.03) {
+        final leftG = (1.0 - math.max(0.0, _stereoBalance)).clamp(0.0, 1.0).toStringAsFixed(2);
+        final rightG = (1.0 + math.min(0.0, _stereoBalance)).clamp(0.0, 1.0).toStringAsFixed(2);
+        filters.add('pan=stereo|c0=$leftG*c0|c1=$rightG*c1');
+      }
+
       if (_soundstagePreset == 'Studio') {
         filters.add('extrastereo=m=1.28');
       } else if (_soundstagePreset == 'Concert') {
@@ -1111,7 +1118,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void dispose() {
     _telemetryTimer?.cancel();
+    _sleepTimer?.cancel();
+    _fadeTimer?.cancel();
     _deviceSub?.cancel();
+    _playingSub?.cancel();
+    _completedSub?.cancel();
     _audioPlayer.dispose();
     _trackListScrollController.dispose();
     _artistListScrollController.dispose();
@@ -1280,7 +1291,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'playNextPaths': _playNextQueue.map((s) => s.path).toList(),
         'cachedTracks': _songs.map((s) => s.toJson()).toList(),
       };
-      await f.writeAsString(jsonEncode(map));
+      final tmp = File('${f.path}.tmp');
+      await tmp.writeAsString(jsonEncode(map));
+      await tmp.rename(f.path);
     } catch (_) {}
   }
 
@@ -1554,7 +1567,7 @@ Future<void> _playSong(AudioTrack song) async {
   void _startSleepTimer(int minutes, {bool stopAfterTrack = false}) {
     _sleepTimer?.cancel();
     _fadeTimer?.cancel();
-    _audioPlayer.setVolume(1.0);
+    _audioPlayer.setVolume(100.0);
 
     setState(() {
       _sleepAfterCurrentTrack = stopAfterTrack;
@@ -1585,12 +1598,12 @@ Future<void> _playSong(AudioTrack song) async {
     int currentStep = 0;
     _fadeTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       currentStep++;
-      double volume = (1.0 - (currentStep / fadeSteps)).clamp(0.0, 1.0);
+      double volume = ((1.0 - (currentStep / fadeSteps)) * 100.0).clamp(0.0, 100.0);
       _audioPlayer.setVolume(volume);
       if (currentStep >= fadeSteps) {
         t.cancel();
         _audioPlayer.pause();
-        _audioPlayer.setVolume(1.0);
+        _audioPlayer.setVolume(100.0);
         setState(() => _sleepMinutesRemaining = 0);
       }
     });
@@ -1599,7 +1612,7 @@ Future<void> _playSong(AudioTrack song) async {
   void _cancelSleepTimer() {
     _sleepTimer?.cancel();
     _fadeTimer?.cancel();
-    _audioPlayer.setVolume(1.0);
+    _audioPlayer.setVolume(100.0);
     setState(() {
       _sleepMinutesRemaining = 0;
       _sleepAfterCurrentTrack = false;
@@ -1836,7 +1849,7 @@ Future<void> _playSong(AudioTrack song) async {
                       _buildAudioPathNode(
                         icon: Icons.bolt_rounded,
                         title: _eqEnabled ? 'libmpv DSP Pipeline ($_selectedEqPreset)' : (isBitPerfect ? 'Bit-perfect Direct (1:1 Rate)' : 'Audio Clock Resampler'),
-                        subtitle: _eqEnabled ? '5-Band Parametric EQ Active' : (isBitPerfect ? '$srcKhz kHz -> $outKhz kHz (No Resampling)' : '$srcKhz kHz -> $outKhz kHz'),
+                        subtitle: _eqEnabled ? '10-Band ISO Parametric EQ Active' : (isBitPerfect ? '$srcKhz kHz -> $outKhz kHz (No Resampling)' : '$srcKhz kHz -> $outKhz kHz'),
                         showConnectorDown: true,
                       ),
                       _buildAudioPathNode(icon: Icons.settings_input_composite_rounded, title: 'libmpv Hardware Out', subtitle: '$outFmt • $outKhz kHz • Exclusive=${_usbDacExclusive ? "ON" : "OFF"}', showConnectorDown: true),
@@ -1920,9 +1933,11 @@ Future<void> _playSong(AudioTrack song) async {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => StatefulBuilder(
-        builder: (context, setEqState) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
+        builder: (context, setEqState) => ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.86),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2050,6 +2065,75 @@ const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  Text('Crossfade: ${_crossfadeSeconds == 0 ? "Off" : "${_crossfadeSeconds}s"}',
+                      style: const TextStyle(fontSize: 12)),
+                  Expanded(
+                    child: Slider(
+                      value: _crossfadeSeconds.toDouble().clamp(0.0, 8.0),
+                      min: 0.0,
+                      max: 8.0,
+                      divisions: 8,
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      onChanged: (v) {
+                        setEqState(() => _crossfadeSeconds = v.round());
+                        setState(() {});
+                        _saveNamiV12Prefs();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Pitch: ${_playbackPitch.toStringAsFixed(2)}x',
+                      style: const TextStyle(fontSize: 12)),
+                  Expanded(
+                    child: Slider(
+                      value: _playbackPitch.clamp(0.75, 1.25),
+                      min: 0.75,
+                      max: 1.25,
+                      divisions: 20,
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      onChanged: (v) {
+                        setEqState(() => _playbackPitch = v);
+                        _audioPlayer.setPitch(v);
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _stereoBalance.abs() < 0.04
+                        ? 'Balance: Center'
+                        : (_stereoBalance < 0
+                            ? 'Balance: L ${(-_stereoBalance * 100).round()}%'
+                            : 'Balance: R ${(_stereoBalance * 100).round()}%'),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _stereoBalance.clamp(-1.0, 1.0),
+                      min: -1.0,
+                      max: 1.0,
+                      divisions: 20,
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      onChanged: (v) async {
+                        setEqState(() => _stereoBalance = v);
+                        setState(() {});
+                        await _applyHardwareEqGains();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
                   Text('Loudness Boost: +${_preampGainDb.toStringAsFixed(1)} dB',
                       style: const TextStyle(fontSize: 12)),
                   Slider(
@@ -2110,7 +2194,7 @@ const SizedBox(height: 10),
               ),
             ],
           ),
-        ),
+        )),
       ),
     );
   }
@@ -2207,6 +2291,24 @@ const SizedBox(height: 10),
                                 content: Text(
                                     'Syllable Sweep Highlight: ${_syllableLyricsEnabled ? "ON" : "OFF"}')),
                           );
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Shift Timestamps -0.25s (Earlier)',
+                        icon: const Icon(Icons.fast_rewind_rounded, size: 19, color: Colors.white70),
+                        onPressed: () {
+                          setSheetState(() {
+                            lyricsEditCtrl.text = _shiftLrcTimestamps(lyricsEditCtrl.text, -0.25);
+                          });
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Shift Timestamps +0.25s (Later)',
+                        icon: const Icon(Icons.fast_forward_rounded, size: 19, color: Colors.white70),
+                        onPressed: () {
+                          setSheetState(() {
+                            lyricsEditCtrl.text = _shiftLrcTimestamps(lyricsEditCtrl.text, 0.25);
+                          });
                         },
                       ),
                       IconButton(
@@ -3321,6 +3423,13 @@ const SizedBox(height: 10),
           final totalDur = activeList.fold<Duration>(Duration.zero, (sum, item) => sum + item.duration);
           final activeIndex = _currentSong != null ? (_songs.indexOf(_currentSong!) + 1) : 1;
           final accent = Theme.of(context).colorScheme.primary;
+          final qFilterActive = _queueSearchQuery.isNotEmpty;
+          bool matchesQ(AudioTrack t) => !qFilterActive ||
+              t.title.toLowerCase().contains(_queueSearchQuery) ||
+              t.artist.toLowerCase().contains(_queueSearchQuery) ||
+              t.album.toLowerCase().contains(_queueSearchQuery);
+          final visibleLibTracks = qFilterActive ? _filteredSongs.where(matchesQ).toList() : _filteredSongs;
+          final visibleQueueTracks = qFilterActive ? _playNextQueue.where(matchesQ).toList() : _playNextQueue;
 
           return DraggableScrollableSheet(
             initialChildSize: 0.78,
@@ -3427,6 +3536,23 @@ const SizedBox(height: 10),
                             ],
                           ),
                         ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
+                          child: TextField(
+                            onChanged: (val) => setQueueState(() => _queueSearchQuery = val.trim().toLowerCase()),
+                            style: const TextStyle(fontSize: 12.5, color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: 'Filter queue tracks or artists...',
+                              hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
+                              prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Colors.white54),
+                              isDense: true,
+                              filled: true,
+                              fillColor: const Color(0xFF14141E),
+                              contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                            ),
+                          ),
+                        ),
                         const Divider(color: Colors.white10, height: 1),
                         Expanded(
                           child: _playNextQueue.isEmpty
@@ -3434,7 +3560,7 @@ const SizedBox(height: 10),
                                   scrollController: scrollController,
                                   buildDefaultDragHandles: false,
                                   padding: const EdgeInsets.symmetric(vertical: 6),
-                                  itemCount: _filteredSongs.length,
+                                  itemCount: visibleLibTracks.length,
                                   onReorder: (oldIndex, newIndex) {
                                     setQueueState(() {
                                       if (newIndex > oldIndex) newIndex -= 1;
@@ -3446,17 +3572,17 @@ const SizedBox(height: 10),
                                     setState(() {});
                                   },
                                   itemBuilder: (ctx, idx) => KeyedSubtree(
-                                    key: ValueKey('lib_q_${_filteredSongs[idx].path}_$idx'),
+                                    key: ValueKey('lib_q_${visibleLibTracks[idx].path}_$idx'),
                                     child: _buildNamiQueueRow(
-                                      song: _filteredSongs[idx],
+                                      song: visibleLibTracks[idx],
                                       index: idx,
-                                      isReorderable: true,
+                                      isReorderable: !qFilterActive,
                                       onTap: () {
-                                        _playSong(_filteredSongs[idx]);
+                                        _playSong(visibleLibTracks[idx]);
                                         Navigator.pop(context);
                                       },
                                       onToggleFav: () {
-                                        setQueueState(() => _filteredSongs[idx].isFavorite = !_filteredSongs[idx].isFavorite);
+                                        setQueueState(() => visibleLibTracks[idx].isFavorite = !visibleLibTracks[idx].isFavorite);
                                         setState(() {});
                                         _saveStateCache();
                                       },
@@ -3466,7 +3592,7 @@ const SizedBox(height: 10),
                               : ReorderableListView.builder(
                                   scrollController: scrollController,
                                   padding: const EdgeInsets.symmetric(vertical: 6),
-                                  itemCount: _playNextQueue.length,
+                                  itemCount: visibleQueueTracks.length,
                                   onReorder: (oldIndex, newIndex) {
                                     setQueueState(() {
                                       if (newIndex > oldIndex) newIndex -= 1;
@@ -3476,7 +3602,7 @@ const SizedBox(height: 10),
                                     setState(() {});
                                   },
                                   itemBuilder: (ctx, idx) {
-  final qTrack = _playNextQueue[idx];
+  final qTrack = visibleQueueTracks[idx];
   return Dismissible(
     key: ValueKey('q_${qTrack.path}_$idx'),
     direction: DismissDirection.endToStart,
@@ -3489,7 +3615,7 @@ const SizedBox(height: 10),
     ),
     onDismissed: (_) { setQueueState(() => _playNextQueue.removeAt(idx)); setState(() {}); },
     child: _buildNamiQueueRow(
-      song: qTrack, index: idx, isReorderable: true,
+      song: qTrack, index: idx, isReorderable: !qFilterActive,
       onTap: () { _playSong(qTrack); Navigator.pop(context); },
       onMoveToTop: idx > 0 ? () {
         setQueueState(() {
@@ -3720,6 +3846,7 @@ Container(
           connectedDacName: _connectedDacName,
           thumbCacheSizeFuture: _getThumbCacheSizeLabel(),
           onClearThumbCache: _clearArtworkCache,
+          onFetchMissingCovers: _fetchMissingCoversBatch,
           onOpenEqualizer: _showEqualizerSheet,
           onOpenExtensionRepo: _openExtensionRepoScreen,
           onOpenFolderExplorer: _showFolderExplorerModal,
@@ -3984,7 +4111,7 @@ Container(
                           child: ListTile(
                             leading: Icon(Icons.extension_rounded, color: ext.isInstalled ? accent : Colors.white38),
                             title: Text('${ext.name} • ${ext.version}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                            subtitle: Text('${ext.category} • ${ext.format}\n${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                            subtitle: Text('${ext.category} • ${ext.format} • ${(ext.endpointUrl != null && ext.endpointUrl!.trim().isNotEmpty) ? "Full Stream Endpoint" : "Catalog 30s Preview"}\n${ext.description}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
                             isThreeLine: true,
                             trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -3999,6 +4126,11 @@ Container(
                                 });
                                 setState(() {});
                               },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.network_check_rounded, color: Colors.cyanAccent, size: 19),
+                              tooltip: 'Test Endpoint Health',
+                              onPressed: () => _testMornyeExtensionEndpoint(ext),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
@@ -5495,13 +5627,31 @@ Container(
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    (tempPhoto != null && File(tempPhoto!).existsSync())
-                        ? CircleAvatar(radius: 30, backgroundImage: FileImage(File(tempPhoto!)))
-                        : CircleAvatar(
-                            radius: 30,
-                            backgroundColor: accent.withOpacity(0.18),
-                            child: Icon(Icons.headphones_rounded, color: accent, size: 28),
+                    GestureDetector(
+                      onTap: () async {
+                        final chosen = await _pickPhotoDirectlyFromGallery(ctx, title: 'Choose Profile Photo');
+                        if (chosen != null && chosen.isNotEmpty && File(chosen).existsSync()) {
+                          setProfState(() => tempPhoto = chosen);
+                        }
+                      },
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          (tempPhoto != null && File(tempPhoto!).existsSync())
+                              ? CircleAvatar(radius: 30, backgroundImage: FileImage(File(tempPhoto!)))
+                              : CircleAvatar(
+                                  radius: 30,
+                                  backgroundColor: accent.withOpacity(0.18),
+                                  child: Icon(Icons.headphones_rounded, color: accent, size: 28),
+                                ),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                            child: const Icon(Icons.camera_alt_rounded, size: 11, color: Colors.white),
                           ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: TextField(
@@ -7272,7 +7422,9 @@ Container(
               song.albumArt!,
               width: size,
               height: size,
-              fit: BoxFit.cover, gaplessPlayback: true,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              cacheWidth: (size * 2.5).round().clamp(64, 512),
               errorBuilder: (_, __, ___) => _defaultArt(size, radius),
             ),
           );
@@ -7286,7 +7438,9 @@ Container(
                 f,
                 width: size,
                 height: size,
-                fit: BoxFit.cover, gaplessPlayback: true,
+                fit: BoxFit.cover,
+              gaplessPlayback: true,
+              cacheWidth: (size * 2.5).round().clamp(64, 512),
                 errorBuilder: (_, __, ___) => _defaultArt(size, radius),
               ),
             );
@@ -7417,7 +7571,7 @@ Container(
         Text(artistName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
         const SizedBox(height: 4),
         Text('${artistTracks.length} Tracks • ${albumsMap.length} Albums • $formattedTotal', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-      ])), _buildArtistHeroThreeDotsButton(context, artistName, const [], onUpdated: () => setState(() {})),
+      ])), _buildArtistHeroThreeDotsButton(context, artistName, artistTracks, onUpdated: () => setState(() {})),
     ]),
     const SizedBox(height: 14),
     Row(children: [
@@ -8040,6 +8194,13 @@ void _showCreatePlaylistDialog() {
               subtitle: '${_historyTracks.length} played',
               color: Colors.purpleAccent,
               onTap: () => _showFilteredListScreen('Play History', _historyTracks),
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.category_rounded,
+              title: 'Genres',
+              subtitle: 'Browse by tag',
+              color: Colors.pinkAccent,
+              onTap: _openGenresBrowserScreen,
             ),
             _buildHomeSmartTile(
               icon: Icons.favorite_rounded,
@@ -9458,7 +9619,7 @@ List<String> _getSmartMornyeQuickSearches() {
                           children: [
                             Icon(Icons.bar_chart_rounded, color: accent, size: 19),
                             const SizedBox(width: 8),
-                            const Expanded(child: Text('Listening Activity Cadence', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
+                            Expanded(child: Text('Listening Activity Cadence • ${_computeListeningStreakDays()}d Streak', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold))),
                             Text('${listenHours}h ${listenMins}m total', style: const TextStyle(fontSize: 11, color: Colors.white60)),
                           ],
                         ),
@@ -9468,12 +9629,45 @@ List<String> _getSmartMornyeQuickSearches() {
                           width: double.infinity,
                           child: CustomPaint(
                             painter: _NamiActivityBarChartPainter(
-                              values: recentPlayBars,
-                              labels: const ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'],
+                              values: _timestampedPlayEvents.isNotEmpty ? _computeLast7DaysMinutes() : recentPlayBars,
+                              labels: _timestampedPlayEvents.isNotEmpty ? const ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Yest', 'Today'] : const ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'],
                               accentColor: accent,
                             ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('28-Day Listening Heatmap', style: TextStyle(fontSize: 11.5, color: Colors.white60, fontWeight: FontWeight.w600)),
+                            Text('${_timestampedPlayEvents.length} logged sessions', style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Builder(builder: (_) {
+                          final heat = _compute28DayHeatmapCounts();
+                          final maxH = heat.fold<int>(1, (m, v) => v > m ? v : m);
+                          return GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: 28,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 14,
+                              mainAxisSpacing: 4,
+                              crossAxisSpacing: 4,
+                            ),
+                            itemBuilder: (_, idx) {
+                              final cnt = heat[idx];
+                              final alpha = cnt == 0 ? 0.08 : (0.25 + 0.75 * (cnt / maxH)).clamp(0.25, 1.0);
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: cnt == 0 ? Colors.white.withOpacity(0.07) : accent.withOpacity(alpha),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              );
+                            },
+                          );
+                        }),
                       ],
                     ),
                   ),
@@ -9881,6 +10075,7 @@ class MainSettingsScreen extends StatefulWidget {
   final String connectedDacName;
   final Future<String> thumbCacheSizeFuture;
   final Future<void> Function() onClearThumbCache;
+  final Future<void> Function()? onFetchMissingCovers;
   final VoidCallback onOpenEqualizer;
   final VoidCallback onOpenExtensionRepo;
   final VoidCallback onOpenFolderExplorer;
@@ -9939,6 +10134,7 @@ class MainSettingsScreen extends StatefulWidget {
     required this.connectedDacName,
     required this.thumbCacheSizeFuture,
     required this.onClearThumbCache,
+    this.onFetchMissingCovers,
     required this.onOpenEqualizer,
     required this.onOpenExtensionRepo,
     required this.onOpenFolderExplorer,
@@ -10734,6 +10930,18 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 },
               ),
             ),
+            if (widget.onFetchMissingCovers != null) ...[
+              const Divider(color: Colors.white10, height: 1),
+              ListTile(
+                leading: _settingsBadge(Icons.auto_fix_high_rounded, themeColor),
+                title: const Text('Fetch Missing Covers & Metadata', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                subtitle: const Text('Enrich only unmatched tracks without overwriting existing tags', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onFetchMissingCovers!();
+                },
+              ),
+            ],
             const Divider(color: Colors.white10, height: 1),
             ListTile(
               leading: _settingsBadge(Icons.refresh_rounded, themeColor),
@@ -10865,37 +11073,15 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
     }
     _loadingWaveformPath = path;
     try {
-      final f = File(path);
-      if (!await f.exists()) return;
-      final len = await f.length();
-      if (len <= 4096) return;
-      const bars = 78;
-      const sampleChunk = 512;
-      final raf = await f.open();
-      final peaks = List<double>.filled(bars, 0.25);
-      final skipHeader = math.min(4096, len ~/ 12);
-      final usable = math.max(bars * sampleChunk, len - skipHeader);
-      for (int i = 0; i < bars; i++) {
-        final pos = skipHeader + ((usable * i) ~/ bars);
-        if (pos + sampleChunk < len) {
-          await raf.setPosition(pos);
-          final chunk = await raf.read(sampleChunk);
-          double rms = 0;
-          for (int b = 1; b < chunk.length; b++) {
-            final diff = (chunk[b] - chunk[b - 1]).abs();
-            rms += diff;
-          }
-          peaks[i] = rms / math.max(1, chunk.length);
-        }
+      final normalized = await Isolate.run(() => _computeAudioWaveformIsolate(path));
+      if (normalized != null && normalized.isNotEmpty) {
+        _realWaveformCache[path] = normalized;
+        if (mounted) setState(() {});
       }
-      await raf.close();
-      final minP = peaks.reduce(math.min);
-      final maxP = peaks.reduce(math.max);
-      final span = math.max(1.0, maxP - minP);
-      final normalized = peaks.map((p) => (6.0 + ((p - minP) / span) * 32.0).clamp(6.0, 38.0)).toList();
-      _realWaveformCache[path] = normalized;
-      if (mounted) setState(() {});
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      if (_loadingWaveformPath == path) _loadingWaveformPath = '';
+    }
   }
 
   double _getWaveformBarHeight(int index, String seedTitle, [String? songPath]) {
@@ -12033,4 +12219,39 @@ class _NamiLyricEntry {
   final Duration time;
   final String text;
   const _NamiLyricEntry(this.time, this.text);
+}
+
+
+List<double>? _computeAudioWaveformIsolate(String path) {
+  try {
+    final f = File(path);
+    if (!f.existsSync()) return null;
+    final len = f.lengthSync();
+    if (len <= 4096) return null;
+    const bars = 78;
+    const sampleChunk = 512;
+    final raf = f.openSync();
+    final peaks = List<double>.filled(bars, 0.25);
+    final skipHeader = math.min(4096, len ~/ 12);
+    final usable = math.max(bars * sampleChunk, len - skipHeader);
+    for (int i = 0; i < bars; i++) {
+      final pos = skipHeader + ((usable * i) ~/ bars);
+      if (pos + sampleChunk < len) {
+        raf.setPositionSync(pos);
+        final chunk = raf.readSync(sampleChunk);
+        double rms = 0;
+        for (int b = 1; b < chunk.length; b++) {
+          rms += (chunk[b] - chunk[b - 1]).abs();
+        }
+        peaks[i] = rms / math.max(1, chunk.length);
+      }
+    }
+    raf.closeSync();
+    final minP = peaks.reduce(math.min);
+    final maxP = peaks.reduce(math.max);
+    final span = math.max(1.0, maxP - minP);
+    return peaks.map((p) => (6.0 + ((p - minP) / span) * 32.0).clamp(6.0, 38.0)).toList();
+  } catch (_) {
+    return null;
+  }
 }
