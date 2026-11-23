@@ -149,6 +149,33 @@ def patch_manifest() -> None:
     </application>"""
         txt = txt.replace("</application>", service_xml, 1)
 
+
+    # Force Android v2 embedding (remove v1 FlutterApplication & enforce flutterEmbedding=2)
+    txt = txt.replace('android:name="io.flutter.app.FlutterApplication"', 'android:name="${applicationName}"')
+    if 'android:name="flutterEmbedding"' not in txt:
+        txt = txt.replace(
+            "</application>",
+            '        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>',
+            1,
+        )
+    else:
+        txt = re.sub(
+            r'(<meta-data[^>]*android:name="flutterEmbedding"[^>]*android:value=")1(")',
+            r'\g<1>2\g<2>',
+            txt,
+            flags=re.S,
+        )
+
+    # Remove any stale v1 Java MainActivity if present
+    for _java in glob.glob("android/app/src/main/java/**/MainActivity.java", recursive=True):
+        _jtxt = open(_java, encoding="utf-8", errors="ignore").read()
+        if "io.flutter.app.FlutterActivity" in _jtxt or "GeneratedPluginRegistrant" in _jtxt:
+            os.remove(_java)
+            print(f"Removed legacy v1 {_java}")
+
     open(MANIFEST, "w", encoding="utf-8").write(txt)
     print("Configured AndroidManifest.xml")
 
