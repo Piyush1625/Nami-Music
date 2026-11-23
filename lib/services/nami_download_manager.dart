@@ -138,20 +138,20 @@ class NamiDownloadManager {
 
       await for (final chunk in resp.stream) {
         if (task.status == MornyeDownloadStatus.cancelled) {
-          await sink.close();
+          await sink?.close();
           sink = null;
           if (await tmpFile.exists()) await tmpFile.delete();
           return;
         }
-        sink.add(chunk);
+        sink?.add(chunk);
         received += chunk.length;
         if (total > 0) {
           task.progress = (received / total).clamp(0.0, 0.99);
           _notify();
         }
       }
-      await sink.flush();
-      await sink.close();
+      await sink?.flush();
+      await sink?.close();
       sink = null;
       await tmpFile.rename(task.destPath);
 
