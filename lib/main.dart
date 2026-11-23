@@ -1,7 +1,6 @@
 import 'services/nami_tag_writer.dart';
 import 'services/nami_library_store.dart';
 import 'services/nami_crossfade_engine.dart';
-import 'services/nami_fft_visualizer.dart';
 import 'services/nami_download_manager.dart';
 import 'services/nami_scrobble_service.dart';
 import 'dart:isolate';
@@ -1183,6 +1182,14 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           _userPhotoPath = data['userPhotoPath'];
           _splitMultiArtists = data['splitMultiArtists'] ?? true;
           _autoFetchOnlineMetadata = data['autoFetchOnlineMetadata'] ?? true;
+          final rawArtistPaths = data['artistImagePaths'];
+          if (rawArtistPaths is Map) {
+            rawArtistPaths.forEach((k, v) {
+              if (v is String && File(v).existsSync()) {
+                _artistImagePaths[k.toString()] = v;
+              }
+            });
+          }
           final rawRetry = data['artistImageRetryAfter'];
           if (rawRetry is Map) {
             rawRetry.forEach((k, v) {
@@ -1199,6 +1206,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
           final thumbDir = await _ensureThumbDir();
           final cachedSongs = (data['cachedTracks'] as List?)
                   ?.map((t) => AudioTrack.fromJson(t))
+                  .where((t) => t.path.isNotEmpty && File(t.path).existsSync())
                   .toList() ??
               [];
           for (var s in cachedSongs) {
@@ -1290,6 +1298,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'userPhotoPath': _userPhotoPath,
         'splitMultiArtists': _splitMultiArtists,
         'autoFetchOnlineMetadata': _autoFetchOnlineMetadata,
+        'artistImagePaths': _artistImagePaths,
         'artistImageRetryAfter': _artistImageRetryAfter,
         'artistSeparators': _artistSeparators,
         'accentColor': mounted ? NamiApp.of(context).accentColor.value : null,
@@ -3134,8 +3143,13 @@ const SizedBox(height: 10),
                 final file = File(song.path);
                 if (await file.exists()) await file.delete();
                 setState(() {
-                  _songs.remove(song);
-                  _filteredSongs = List.from(_songs);
+                  _songs.removeWhere((s) => s.path == song.path);
+                  _filteredSongs.removeWhere((s) => s.path == song.path);
+                  _historyTracks.removeWhere((s) => s.path == song.path);
+                  _playNextQueue.removeWhere((s) => s.path == song.path);
+                  for (final pl in _customPlaylists) {
+                    pl.tracks.removeWhere((s) => s.path == song.path);
+                  }
                   if (_currentSong?.path == song.path) {
                     _audioPlayer.stop();
                     _currentSong = null;
@@ -3902,6 +3916,8 @@ Container(
           onClearThumbCache: _clearArtworkCache,
           onFetchMissingCovers: _fetchMissingCoversBatch,
           onOpenEqualizer: _showEqualizerSheet,
+          onRequestStoragePermission: _requestFullStoragePermission,
+          onRequestUsbDacPermission: () => _requestUsbDacPermission(silentIfNone: false),
           onOpenScrobbling: _showListenBrainzSettingsDialog,
           onOpenExtensionRepo: _openExtensionRepoScreen,
           onOpenFolderExplorer: _showFolderExplorerModal,
@@ -3926,6 +3942,7 @@ Container(
           onUsbDacChanged: (v) {
             setState(() => _usbDacExclusive = v);
             _applyDacAndAudioProperties();
+            if (v) _requestUsbDacPermission(silentIfNone: false);
           },
           onGaplessChanged: (v) {
             setState(() => _gaplessPlayback = v);
@@ -4807,12 +4824,77 @@ Container(
     }
   }
 
+  Future<void> _requestFullStoragePermission() async {
+    try {
+      var manageStatus = await Permission.manageExternalStorage.status;
+      if (!manageStatus.isGranted) {
+        manageStatus = await Permission.manageExternalStorage.request();
+      }
+      if (!manageStatus.isGranted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Grant "All Files Access" for tag writing, file deletion & full folder scanning.'),
+            action: SnackBarAction(
+              label: 'Open Settings',
+              onPressed: openAppSettings,
+            ),
+          ),
+        );
+      } else if (manageStatus.isGranted && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Full Storage Access granted!')),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _requestUsbDacPermission({bool silentIfNone = false}) async {
+    try {
+      final res = await _audioDeviceChannel.invokeMethod('requestUsbDacPermission');
+      if (res is Map && mounted) {
+        final status = (res['status'] ?? '').toString();
+        final dev = (res['device'] ?? 'USB DAC').toString();
+        if (status == 'granted') {
+          if (!silentIfNone) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('USB DAC Exclusive access granted: $dev')),
+            );
+          }
+        } else if (status == 'requested') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Requested USB exclusive permission for $dev')),
+          );
+        } else if (!silentIfNone) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Connect a USB DAC to request exclusive USB hardware permission.')),
+          );
+        }
+      }
+    } catch (_) {
+      if (!silentIfNone && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('USB DAC Exclusive mode enabled via libmpv audio-exclusive.')),
+        );
+      }
+    }
+  }
+
   Future<void> _requestPermissionsAndInitBackground() async {
     await requestNotificationPermission();
     PermissionStatus status = await Permission.audio.request();
     await Permission.photos.request();
     if (!status.isGranted) status = await Permission.storage.request();
-    if (!status.isGranted) status = await Permission.manageExternalStorage.request();
+
+    try {
+      final manageStatus = await Permission.manageExternalStorage.status;
+      if (!manageStatus.isGranted) {
+        await Permission.manageExternalStorage.request();
+      }
+    } catch (_) {}
+
+    if (_usbDacExclusive) {
+      await _requestUsbDacPermission(silentIfNone: true);
+    }
 
     try {
       if (await Permission.ignoreBatteryOptimizations.isDenied) {
@@ -4908,11 +4990,22 @@ Container(
     }
     foundTracks.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
+    final livePaths = foundTracks.map((t) => t.path).toSet();
     setState(() {
       _songs = foundTracks;
       _filteredSongs = foundTracks;
+      _historyTracks.removeWhere((t) => !livePaths.contains(t.path) || !File(t.path).existsSync());
+      _playNextQueue.removeWhere((t) => !livePaths.contains(t.path) || !File(t.path).existsSync());
+      for (final pl in _customPlaylists) {
+        pl.tracks.removeWhere((t) => !livePaths.contains(t.path) || !File(t.path).existsSync());
+      }
+      if (_currentSong != null && !File(_currentSong!.path).existsSync()) {
+        _audioPlayer.stop();
+        _currentSong = null;
+      }
       _isScanning = false;
     });
+    _saveStateCache();
 
     _enrichMetadataInBackground(forceReparse: forceReparse);
   }
@@ -6227,7 +6320,7 @@ Container(
               ),
               child: Row(
                 children: [
-                  _buildRoundArtistAvatar(spotlightTracks.first, 28),
+                  _buildRoundArtistAvatar(spotlightTracks.first, 28, artistNameOverride: spotlightArtist),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -6287,7 +6380,7 @@ Container(
                     margin: const EdgeInsets.only(right: 10),
                     child: Column(
                       children: [
-                        _buildRoundArtistAvatar(firstArtTrack, 34),
+                        _buildRoundArtistAvatar(firstArtTrack, 34, artistNameOverride: aName),
                         const SizedBox(height: 6),
                         Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                         Text('${aTracks.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
@@ -6406,32 +6499,45 @@ Container(
     }
   }
 
-  Widget _buildRoundArtistAvatar(AudioTrack? track, double radius) {
-    if (track != null &&
-        track.artist.isNotEmpty &&
-        track.artist != 'Unknown Artist') {
-      _fetchArtistImage(track.artist);
+  Widget _buildRoundArtistAvatar(AudioTrack? track, double radius, {String? artistNameOverride}) {
+    final lookupName = (artistNameOverride != null && artistNameOverride.trim().isNotEmpty)
+        ? artistNameOverride.trim()
+        : (track != null && track.artist.isNotEmpty && track.artist != 'Unknown Artist'
+            ? track.artist
+                .split(RegExp(_artistSeparators.map(RegExp.escape).join('|'), caseSensitive: false))
+                .first
+                .trim()
+            : '');
+    if (lookupName.isNotEmpty && lookupName != 'Unknown Artist') {
+      _fetchArtistImage(lookupName);
     }
     return ValueListenableBuilder<int>(
       valueListenable: _artworkTick,
-      builder: (context, _, __) {
-        if (track != null) {
-          final primary = track.artist
-              .split(RegExp(_artistSeparators.map(RegExp.escape).join('|'),
-                  caseSensitive: false))
-              .first
-              .trim();
-          final artistImgPath = _artistImagePaths[primary];
+      builder: (context, tick, __) {
+        if (lookupName.isNotEmpty) {
+          String? artistImgPath = _artistImagePaths[lookupName];
+          if (artistImgPath == null) {
+            final lowerKey = lookupName.toLowerCase();
+            for (final entry in _artistImagePaths.entries) {
+              if (entry.key.toLowerCase() == lowerKey) {
+                artistImgPath = entry.value;
+                break;
+              }
+            }
+          }
           if (artistImgPath != null) {
             final af = File(artistImgPath);
             if (af.existsSync()) {
               return CircleAvatar(
+                key: ValueKey('artist_av_${lookupName}_${af.path}_$tick'),
                 radius: radius,
                 backgroundColor: const Color(0xFF161622),
                 backgroundImage: FileImage(af),
               );
             }
           }
+        }
+        if (track != null) {
           if (track.albumArt != null && track.albumArt!.isNotEmpty) {
             return CircleAvatar(
               radius: radius,
@@ -6453,8 +6559,7 @@ Container(
         return CircleAvatar(
           radius: radius,
           backgroundColor: const Color(0xFF161622),
-          child: Icon(Icons.person_rounded,
-              size: radius * 0.9, color: Colors.white38),
+          child: Icon(Icons.person_rounded, size: radius * 0.9, color: Colors.white38),
         );
       },
     );
@@ -6828,7 +6933,7 @@ Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
                         child: Column(children: [
-                          Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 38)),
+                          Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 38, artistNameOverride: aName)),
                           const SizedBox(height: 6),
                           Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                           const SizedBox(height: 1),
@@ -6855,7 +6960,7 @@ Container(
                       decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                        leading: _buildRoundArtistAvatar(firstArtTrack, 24),
+                        leading: _buildRoundArtistAvatar(firstArtTrack, 24, artistNameOverride: aName),
                         title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
                         subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
                         trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
@@ -7618,11 +7723,17 @@ Container(
     color: const Color(0xFF14141E),
     borderRadius: BorderRadius.circular(20),
     border: Border.all(color: Colors.white10),
-    image: firstArtTrack.albumArt != null ? DecorationImage(image: MemoryImage(firstArtTrack.albumArt!), fit: BoxFit.cover, opacity: 0.16) : null,
+    image: (_artistImagePaths[artistName] != null && File(_artistImagePaths[artistName]!).existsSync())
+        ? DecorationImage(image: FileImage(File(_artistImagePaths[artistName]!)), fit: BoxFit.cover, opacity: 0.22)
+        : (firstArtTrack.albumArt != null
+            ? DecorationImage(image: MemoryImage(firstArtTrack.albumArt!), fit: BoxFit.cover, opacity: 0.16)
+            : (firstArtTrack.thumbPath != null && File(firstArtTrack.thumbPath!).existsSync()
+                ? DecorationImage(image: FileImage(File(firstArtTrack.thumbPath!)), fit: BoxFit.cover, opacity: 0.16)
+                : null)),
   ),
   child: Column(children: [
     Row(children: [
-      _buildRoundArtistAvatar(firstArtTrack, 46),
+      _buildRoundArtistAvatar(firstArtTrack, 46, artistNameOverride: artistName),
       const SizedBox(width: 14),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(artistName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -8202,7 +8313,6 @@ void _showCreatePlaylistDialog() {
     final favSongs = _songs.where((s) => s.isFavorite).toList();
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
     final unplayedSongs = _songs.where((s) => s.playCount == 0).toList();
-    final hiResSongs = _songs.where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000).toList();
     final cutoff30d = DateTime.now().subtract(const Duration(days: 30)).millisecondsSinceEpoch;
     final recent30dSongs = _songs.where((s) => s.addedTimestampMs >= cutoff30d).toList();
 
@@ -8286,13 +8396,6 @@ void _showCreatePlaylistDialog() {
               subtitle: '${unplayedSongs.length} Tracks',
               color: Colors.tealAccent,
               onTap: () => _showFilteredListScreen('Unplayed Tracks', unplayedSongs),
-            ),
-            _buildHomeSmartTile(
-              icon: Icons.high_quality_rounded,
-              title: '24-Bit Hi-Res',
-              subtitle: '${hiResSongs.length} Tracks',
-              color: Colors.amberAccent,
-              onTap: () => _showFilteredListScreen('24-Bit Hi-Res Audio', hiResSongs),
             ),
             _buildHomeSmartTile(
               icon: Icons.calendar_month_rounded,
@@ -8875,15 +8978,17 @@ List<String> _getSmartMornyeQuickSearches() {
 
   Future<void> _saveArtistImageFromUrlOrFile(String artistName, String sourcePathOrUrl, {VoidCallback? onUpdated}) async {
     try {
-      final dir = Directory('/storage/emulated/0/Music/.nami_artist_art');
-      if (!await dir.exists()) await dir.create(recursive: true);
+      final dir = await _ensureThumbDir();
+      final artistDir = Directory('${dir.path}/artist_custom');
+      if (!await artistDir.exists()) await artistDir.create(recursive: true);
       final safe = artistName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-      final savedFile = File('${dir.path}/$safe.jpg');
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final savedFile = File('${artistDir.path}/${safe}_$ts.jpg');
 
       if (sourcePathOrUrl.startsWith('http://') || sourcePathOrUrl.startsWith('https://')) {
         final res = await http.get(Uri.parse(sourcePathOrUrl), headers: _httpHeaders).timeout(const Duration(seconds: 15));
         if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-          await savedFile.writeAsBytes(res.bodyBytes);
+          await savedFile.writeAsBytes(res.bodyBytes, flush: true);
         } else {
           return;
         }
@@ -8892,6 +8997,18 @@ List<String> _getSmartMornyeQuickSearches() {
         if (!await srcFile.exists()) return;
         await srcFile.copy(savedFile.path);
       }
+
+      final oldPath = _artistImagePaths[artistName];
+      if (oldPath != null && oldPath != savedFile.path) {
+        try {
+          await FileImage(File(oldPath)).evict();
+          if (oldPath.contains('artist_custom')) {
+            final of = File(oldPath);
+            if (await of.exists()) await of.delete();
+          }
+        } catch (_) {}
+      }
+      await FileImage(savedFile).evict();
 
       setState(() {
         _artistImagePaths[artistName] = savedFile.path;
@@ -10421,6 +10538,8 @@ class MainSettingsScreen extends StatefulWidget {
   final Future<void> Function() onClearThumbCache;
   final Future<void> Function()? onFetchMissingCovers;
   final VoidCallback onOpenEqualizer;
+  final Future<void> Function()? onRequestStoragePermission;
+  final Future<void> Function()? onRequestUsbDacPermission;
   final VoidCallback? onOpenScrobbling;
   final VoidCallback onOpenExtensionRepo;
   final VoidCallback onOpenFolderExplorer;
@@ -10481,6 +10600,8 @@ class MainSettingsScreen extends StatefulWidget {
     required this.onClearThumbCache,
     this.onFetchMissingCovers,
     required this.onOpenEqualizer,
+    this.onRequestStoragePermission,
+    this.onRequestUsbDacPermission,
     this.onOpenScrobbling,
     required this.onOpenExtensionRepo,
     required this.onOpenFolderExplorer,
@@ -10731,6 +10852,196 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
     );
   }
 
+  void _showAboutNamiSheet(BuildContext context, Color themeColor) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0E0E15),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.72,
+        minChildSize: 0.45,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (ctx, sc) => ListView(
+          controller: sc,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [themeColor, themeColor.withOpacity(0.55)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 30),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Nami Music Player',
+                        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Colors.white),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Version 2.0.0 • Build v15',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF151520),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.person_rounded, size: 17, color: themeColor),
+                      const SizedBox(width: 8),
+                      const Text('Author & Maintainer', style: TextStyle(fontSize: 12, color: Colors.white60, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text('Piyush (Piyush1625)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'github.com/Piyush1625/nami • Bit-Perfect libmpv + AudioService + Mornye Engine',
+                    style: TextStyle(fontSize: 11.5, color: Colors.white54),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              "WHAT'S NEW IN THIS VERSION",
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54),
+            ),
+            const SizedBox(height: 10),
+            for (final item in const [
+              ('Minimal Settings & About Changelog', 'Reorganized Settings into clean categories with interactive About Nami changelog & author details.'),
+              ('Full Storage & USB DAC Permissions', 'Requests Android All Files Access (MANAGE_EXTERNAL_STORAGE) and USB DAC exclusive permission like Namida.'),
+              ('Clean Now Playing Controls', 'Removed extra top-right theme/visualizer buttons and merged Shuffle + Repeat into one Tap (Repeat) / Hold (Shuffle) button.'),
+              ('Instant Artist Photo Updates', 'Fixed artist photo lookup, disk persistence, and image cache eviction so picked photos apply immediately.'),
+              ('Deleted Track Ghost Fix', 'Deleted audio files are automatically purged from Freshly Added, Home, History, Queue, and Playlists.'),
+              ('Dual-Deck Crossfade & In-File Tag Writer', 'True overlapping dual-deck crossfade, permanent FLAC/MP3 tag & cover writing, Mornye Download Manager, 10-band AutoEQ, and ListenBrainz scrobbling.'),
+            ])
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14141E),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Icon(Icons.check_circle_rounded, size: 15, color: themeColor),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                          const SizedBox(height: 2),
+                          Text(item.$2, style: const TextStyle(fontSize: 11.5, color: Colors.white60, height: 1.35)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSettingsCategoryPage(
+    BuildContext context,
+    String title,
+    List<Widget> Function(BuildContext ctx, StateSetter setSubState) builder,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StatefulBuilder(
+          builder: (ctx, setSubState) => Scaffold(
+            backgroundColor: Theme.of(ctx).scaffoldBackgroundColor,
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 36),
+              children: builder(ctx, setSubState),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _minimalCategoryTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accent,
+    required VoidCallback onTap,
+    Widget? trailing,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101018),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.07)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: _settingsBadge(icon, accent),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5, color: Colors.white)),
+        subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
+        trailing: trailing ?? const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
+        onTap: onTap,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeColor = Theme.of(context).colorScheme.primary;
@@ -10740,595 +11051,457 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Nami Settings', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 36),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 36),
         children: [
-          _buildSectionHeader('Nami Appearance & Interface', Icons.palette_outlined),
-          _buildSettingsCard([
-            ListTile(
-              leading: _settingsBadge(Icons.color_lens_rounded, themeColor),
-              title: const Text('Accent Theme & Hue Canvas', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: const Text('Customize swatches or fine-tune 2D color palette', style: TextStyle(fontSize: 11.5, color: Colors.white54)),
-              trailing: Container(width: 24, height: 24, decoration: BoxDecoration(color: themeColor, shape: BoxShape.circle, border: Border.all(color: Colors.white38))),
-              onTap: _showColorPicker,
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: _swatches
-                    .take(7)
-                    .map((c) => GestureDetector(
-                          onTap: () => NamiApp.of(context).updateTheme(newAccent: c),
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: c,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: themeColor == c ? Colors.white : Colors.white24, width: themeColor == c ? 2.5 : 1),
-                            ),
-                          ),
-                        ))
-                    .toList(),
-              ),
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.auto_awesome_rounded, themeColor),
-              title: const Text('Dynamic Artwork Accent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Adapt UI colors automatically to active cover art', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _autoColor,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _autoColor = v);
-                widget.onAutoColoringChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.blur_circular_rounded, themeColor),
-              title: const Text('Now Playing Blurred Backdrop', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Frosted album artwork background layer in full player', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _blurredBg,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _blurredBg = v);
-                widget.onBlurredBackdropChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.blur_on_rounded, themeColor),
-              title: const Text('Ambient Cover Radial Glow', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _ambientGlow,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _ambientGlow = v);
-                widget.onAmbientGlowChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.high_quality_rounded, themeColor),
-              title: const Text('Show Audio Codec & Bit-Depth Badges', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Display FLAC • 24-Bit pills on track rows & mini-player', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _codecBadges,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _codecBadges = v);
-                widget.onShowCodecBadgesChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.density_small_rounded, themeColor),
-              title: const Text('Compact Track Rows', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Denser list layout to fit more songs on screen', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _compactRows,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _compactRows = v);
-                widget.onCompactTrackTilesChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.format_color_fill_rounded, themeColor),
-              title: const Text('Tint Mini-Player With Accent Color', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _forceMini,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _forceMini = v);
-                widget.onForceMiniColorChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.contrast_rounded, themeColor),
-              title: const Text('Pitch Black AMOLED Theme', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _pitchBlack,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _pitchBlack = v);
-                widget.onPitchBlackChanged(v);
-              },
-            ),
-          ]),
-
-          _buildSectionHeader('Audio Engine (libmpv) & USB DAC', Icons.graphic_eq_rounded),
-          _buildSettingsCard([
-            ListTile(
-              leading: _settingsBadge(Icons.tune_rounded, themeColor),
-              title: const Text('5-Band Parametric Equalizer & DSP', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Configure 60Hz–14kHz EQ, Preamp & Soundstage', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-              onTap: () {
-                Navigator.pop(context);
-                widget.onOpenEqualizer();
-              },
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.usb_rounded, themeColor),
-              title: const Text('USB DAC Exclusive Hardware Routing', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: Text('Active Output: ${widget.connectedDacName}', style: TextStyle(fontSize: 11.5, color: themeColor, fontWeight: FontWeight.w600)),
-              value: _usbDac,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _usbDac = v);
-                widget.onUsbDacChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.all_inclusive_rounded, themeColor),
-              title: const Text('Gapless Audio Transitions', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _gapless,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _gapless = v);
-                widget.onGaplessChanged(v);
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      _settingsBadge(Icons.equalizer_rounded, themeColor),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('ReplayGain Normalization', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                            Text('Balance loudness across tracks or albums', style: TextStyle(fontSize: 11, color: Colors.white54)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<String>(
-                      showSelectedIcon: false,
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                      segments: const [
-                        ButtonSegment(value: 'Off', label: Text('Off')),
-                        ButtonSegment(value: 'Track', label: Text('Track')),
-                        ButtonSegment(value: 'Album', label: Text('Album')),
-                      ],
-                      selected: {_rgMode},
-                      onSelectionChanged: (sel) {
-                        final mode = sel.first;
-                        setState(() => _rgMode = mode);
-                        widget.onReplayGainModeChanged(mode);
+          _minimalCategoryTile(
+            icon: Icons.verified_user_outlined,
+            title: 'Permissions & Hardware',
+            subtitle: 'Full storage access • USB DAC permission (${widget.connectedDacName})',
+            accent: themeColor,
+            onTap: () => _openSettingsCategoryPage(
+              context,
+              'Permissions & Hardware',
+              (ctx, setSub) => [
+                _buildSettingsCard([
+                  ListTile(
+                    leading: _settingsBadge(Icons.folder_special_rounded, themeColor),
+                    title: const Text('Full Storage Access (All Files)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                    subtitle: const Text('Required for FLAC/MP3 tag writing, deleting files & .lrc/.sflx access', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        if (widget.onRequestStoragePermission != null) {
+                          await widget.onRequestStoragePermission!();
+                        } else {
+                          await Permission.manageExternalStorage.request();
+                        }
+                        setSub(() {});
                       },
+                      child: const Text('Grant'),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ]),
-
-          _buildSectionHeader('Playback, Gestures & Lock Screen', Icons.play_circle_outline_rounded),
-          _buildSettingsCard([
-            ListTile(
-              leading: _settingsBadge(Icons.home_outlined, themeColor),
-              title: const Text('Default Startup Screen', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Choose which tab opens when launching Nami', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              trailing: DropdownButton<int>(
-                value: _startupTab,
-                dropdownColor: const Color(0xFF161622),
-                underline: const SizedBox.shrink(),
-                style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12.5),
-                items: List.generate(
-                  tabNames.length,
-                  (i) => DropdownMenuItem(value: i, child: Text(tabNames[i])),
-                ),
-                onChanged: (v) {
-                  if (v != null) {
-                    setState(() => _startupTab = v);
-                    widget.onDefaultStartupTabChanged(v);
-                  }
-                },
-              ),
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.history_toggle_off_rounded, themeColor),
-              title: const Text('Restore Last Session on Startup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Remember last track, seek position & queue', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _resumeSession,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _resumeSession = v);
-                widget.onResumeSessionChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.headset_off_rounded, themeColor),
-              title: const Text('Pause When DAC / Headphones Unplug', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _pauseDisconnect,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _pauseDisconnect = v);
-                widget.onPauseOnDisconnectChanged(v);
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      _settingsBadge(Icons.replay_10_rounded, themeColor),
-                      const SizedBox(width: 14),
-                      const Expanded(child: Text('Timestamp Double-Tap Seek', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600))),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<int>(
-                      showSelectedIcon: false,
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                      segments: const [
-                        ButtonSegment(value: 5, label: Text('5s')),
-                        ButtonSegment(value: 10, label: Text('10s')),
-                        ButtonSegment(value: 15, label: Text('15s')),
-                      ],
-                      selected: {_seekSec},
-                      onSelectionChanged: (sel) {
-                        setState(() => _seekSec = sel.first);
-                        widget.onDoubleTapSeekChanged(sel.first);
+                  const Divider(color: Colors.white10, height: 1),
+                  ListTile(
+                    leading: _settingsBadge(Icons.usb_rounded, themeColor),
+                    title: const Text('USB DAC Exclusive Permission', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                    subtitle: Text('Active output: ${widget.connectedDacName}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        if (widget.onRequestUsbDacPermission != null) {
+                          await widget.onRequestUsbDacPermission!();
+                        }
+                        setSub(() {});
                       },
+                      child: const Text('Request'),
                     ),
                   ),
-                ],
-              ),
+                ]),
+              ],
             ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.notifications_active_outlined, themeColor),
-              title: const Text('Android Lock Screen & Media Notification', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _mediaNotif,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _mediaNotif = v);
-                widget.onNotificationChanged(v);
-              },
-            ),
-          ]),
+          ),
 
-          _buildSectionHeader('Lyrics & Metadata Engine', Icons.lyrics_outlined),
-          _buildSettingsCard([
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.subtitles_rounded, themeColor),
-              title: const Text('Syllable-by-Syllable Karaoke Sweep', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Progressive word highlight on active lyric line', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _syllableLyrics,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _syllableLyrics = v);
-                widget.onSyllableLyricsChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.lyrics_rounded, themeColor),
-              title: const Text('Prefer Embedded Track Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              value: _preferEmbedded,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _preferEmbedded = v);
-                widget.onPreferEmbeddedChanged(v);
-              },
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.cloud_download_outlined, themeColor),
-              title: const Text('Auto-Fetch Missing Artwork & Tags', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Enrich tracks missing embedded cover art online', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _autoFetchOnline,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _autoFetchOnline = v);
-                widget.onAutoFetchOnlineChanged(v);
-              },
-            ),
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.call_split_rounded, themeColor),
-              title: const Text('Split Collaborating Artists', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Separate multi-artist credits into individual profiles', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _splitArtists,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _splitArtists = v);
-                widget.onSplitArtistsChanged(v);
-              },
-            ),
-            if (_splitArtists)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Artist Separator Tokens', style: TextStyle(fontSize: 11.5, color: Colors.white60, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
+          _minimalCategoryTile(
+            icon: Icons.graphic_eq_rounded,
+            title: 'Audio & Playback',
+            subtitle: '10-Band AutoEQ • Crossfade • DAC Exclusive • ReplayGain ($_rgMode)',
+            accent: themeColor,
+            onTap: () => _openSettingsCategoryPage(
+              context,
+              'Audio & Playback',
+              (ctx, setSub) => [
+                _buildSettingsCard([
+                  ListTile(
+                    leading: _settingsBadge(Icons.tune_rounded, themeColor),
+                    title: const Text('10-Band Equalizer, AutoEQ & DSP', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                    subtitle: const Text('ISO bands, Harman IEM profiles, Crossfade, Pitch & L/R Balance', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                    onTap: widget.onOpenEqualizer,
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('USB DAC Exclusive Mode', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Direct hardware bit-perfect output when DAC is attached', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                    value: _usbDac,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _usbDac = v);
+                      setState(() => _usbDac = v);
+                      widget.onUsbDacChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Gapless Playback', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _gapless,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _gapless = v);
+                      setState(() => _gapless = v);
+                      widget.onGaplessChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Pause on Headphone / DAC Disconnect', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _pauseDisconnect,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _pauseDisconnect = v);
+                      setState(() => _pauseDisconnect = v);
+                      widget.onPauseOnDisconnectChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Resume Last Track on Launch', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _resumeSession,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _resumeSession = v);
+                      setState(() => _resumeSession = v);
+                      widget.onResumeSessionChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        ..._separators.map((sep) => Chip(
-                              label: Text('"$sep"', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                              backgroundColor: const Color(0xFF181822),
-                              deleteIcon: const Icon(Icons.close_rounded, size: 15),
-                              onDeleted: _separators.length > 1
-                                  ? () {
-                                      setState(() => _separators.remove(sep));
-                                      widget.onArtistSeparatorsChanged(_separators);
-                                    }
-                                  : null,
-                            )),
-                        ActionChip(
-                          avatar: Icon(Icons.add_rounded, size: 16, color: themeColor),
-                          label: const Text('Add', style: TextStyle(fontSize: 12)),
-                          backgroundColor: themeColor.withOpacity(0.16),
-                          onPressed: _showAddSeparatorDialog,
+                        const Text('ReplayGain', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        Wrap(
+                          spacing: 6,
+                          children: ['Off', 'Track', 'Album'].map((m) => ChoiceChip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text(m, style: const TextStyle(fontSize: 11)),
+                                selected: _rgMode == m,
+                                selectedColor: themeColor,
+                                onSelected: (_) {
+                                  setSub(() => _rgMode = m);
+                                  setState(() => _rgMode = m);
+                                  widget.onReplayGainModeChanged(m);
+                                },
+                              )).toList(),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-          ]),
-
-          _buildSectionHeader('Library Folders, Extensions & Storage', Icons.storage_rounded),
-          _buildSettingsCard([
-            SwitchListTile(
-              secondary: _settingsBadge(Icons.timer_off_outlined, themeColor),
-              title: Text('Ignore Short Audio Clips (< ${_minSec}s)', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Exclude ringtones, voice notes & notification sounds', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              value: _ignoreShort,
-              activeColor: themeColor,
-              onChanged: (v) {
-                setState(() => _ignoreShort = v);
-                widget.onIgnoreShortClipsChanged(v);
-              },
-            ),
-            if (_ignoreShort)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Minimum Track Duration', style: TextStyle(fontSize: 12, color: Colors.white60)),
-                    SegmentedButton<int>(
-                      showSelectedIcon: false,
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                      segments: const [
-                        ButtonSegment(value: 15, label: Text('15s')),
-                        ButtonSegment(value: 30, label: Text('30s')),
-                        ButtonSegment(value: 60, label: Text('60s')),
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Double-Tap Seek', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        Wrap(
+                          spacing: 6,
+                          children: [5, 10, 15, 30].map((s) => ChoiceChip(
+                                visualDensity: VisualDensity.compact,
+                                label: Text('${s}s', style: const TextStyle(fontSize: 11)),
+                                selected: _seekSec == s,
+                                selectedColor: themeColor,
+                                onSelected: (_) {
+                                  setSub(() => _seekSec = s);
+                                  setState(() => _seekSec = s);
+                                  widget.onDoubleTapSeekChanged(s);
+                                },
+                              )).toList(),
+                        ),
                       ],
-                      selected: {_minSec},
-                      onSelectionChanged: (sel) {
-                        setState(() => _minSec = sel.first);
-                        widget.onMinTrackSecondsChanged(sel.first);
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+
+          _minimalCategoryTile(
+            icon: Icons.palette_outlined,
+            title: 'Appearance',
+            subtitle: '${_pitchBlack ? "AMOLED Pitch Black" : "Dark"} • Accent Color • Layout',
+            accent: themeColor,
+            onTap: () => _openSettingsCategoryPage(
+              context,
+              'Appearance',
+              (ctx, setSub) => [
+                _buildSettingsCard([
+                  SwitchListTile(
+                    title: const Text('Pitch-Black AMOLED Theme', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _pitchBlack,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _pitchBlack = v);
+                      setState(() => _pitchBlack = v);
+                      widget.onPitchBlackChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  ListTile(
+                    title: const Text('Accent Color & 2D Hue Picker', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    trailing: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(color: themeColor, shape: BoxShape.circle, border: Border.all(color: Colors.white24)),
+                    ),
+                    onTap: _showColorPicker,
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Adaptive Cover Accent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _autoColor,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _autoColor = v);
+                      setState(() => _autoColor = v);
+                      widget.onAutoColoringChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Blurred Now Playing Backdrop', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _blurredBg,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _blurredBg = v);
+                      setState(() => _blurredBg = v);
+                      widget.onBlurredBackdropChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Audio Codec & Bit-Depth Badges', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _codecBadges,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _codecBadges = v);
+                      setState(() => _codecBadges = v);
+                      widget.onShowCodecBadgesChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Compact Track Rows', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _compactRows,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _compactRows = v);
+                      setState(() => _compactRows = v);
+                      widget.onCompactTrackTilesChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Startup Tab', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        DropdownButton<int>(
+                          value: _startupTab.clamp(0, 3),
+                          dropdownColor: const Color(0xFF161622),
+                          underline: const SizedBox.shrink(),
+                          items: List.generate(
+                            4,
+                            (i) => DropdownMenuItem(value: i, child: Text(tabNames[i], style: const TextStyle(fontSize: 12.5))),
+                          ),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setSub(() => _startupTab = val);
+                              setState(() => _startupTab = val);
+                              widget.onDefaultStartupTabChanged(val);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+
+          _minimalCategoryTile(
+            icon: Icons.folder_outlined,
+            title: 'Library & Storage',
+            subtitle: '${_folders.length} scan folders • Blacklist • Covers & Cache',
+            accent: themeColor,
+            onTap: () => _openSettingsCategoryPage(
+              context,
+              'Library & Storage',
+              (ctx, setSub) => [
+                _buildSettingsCard([
+                  ListTile(
+                    leading: _settingsBadge(Icons.folder_open_rounded, themeColor),
+                    title: const Text('Folder Explorer & Blacklist', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Browse folders & exclude unwanted directories', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                    onTap: widget.onOpenFolderExplorer,
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Ignore Short Audio Clips', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    subtitle: Text('Skip clips shorter than ${_minSec}s', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                    value: _ignoreShort,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _ignoreShort = v);
+                      setState(() => _ignoreShort = v);
+                      widget.onIgnoreShortClipsChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Split Multi-Artist Collaborations', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    subtitle: Text('Separators: ${_separators.join(" ")}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                    value: _splitArtists,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _splitArtists = v);
+                      setState(() => _splitArtists = v);
+                      widget.onSplitArtistsChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  FutureBuilder<String>(
+                    future: _cacheSizeFuture,
+                    builder: (_, snap) => ListTile(
+                      leading: _settingsBadge(Icons.cleaning_services_rounded, themeColor),
+                      title: const Text('Clear Artwork Cache', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                      subtitle: Text('Used: ${snap.data ?? "Calculating..."}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                      onTap: () async {
+                        await widget.onClearThumbCache();
+                        setSub(() => _cacheSizeFuture = widget.thumbCacheSizeFuture);
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  if (widget.onFetchMissingCovers != null) ...[
+                    const Divider(color: Colors.white10, height: 1),
+                    ListTile(
+                      leading: _settingsBadge(Icons.auto_fix_high_rounded, themeColor),
+                      title: const Text('Fetch Missing Covers & Metadata', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Enrich unmatched tracks only', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.pop(context);
+                        widget.onFetchMissingCovers!();
                       },
                     ),
                   ],
-                ),
-              ),
-            const Divider(color: Colors.white10, height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Library Scan Folders', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-                      TextButton.icon(
-                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                        icon: Icon(Icons.create_new_folder_outlined, size: 17, color: themeColor),
-                        label: const Text('Add Folder', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        onPressed: () {
-                          final ctrl = TextEditingController(text: '/storage/emulated/0/');
-                          showDialog(
-                            context: context,
-                            builder: (dCtx) => AlertDialog(
-                              backgroundColor: const Color(0xFF14141F),
-                              title: const Text('Add Music Folder Path'),
-                              content: TextField(
-                                controller: ctrl,
-                                autofocus: true,
-                                decoration: const InputDecoration(hintText: '/storage/emulated/0/Music'),
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: themeColor),
-                                  onPressed: () {
-                                    final p = ctrl.text.trim();
-                                    if (p.isNotEmpty && !_folders.contains(p)) {
-                                      setState(() => _folders.add(p));
-                                      widget.onScanFoldersChanged(_folders);
-                                    }
-                                    Navigator.pop(dCtx);
-                                  },
-                                  child: const Text('Add'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                  const Divider(color: Colors.white10, height: 1),
+                  ListTile(
+                    leading: _settingsBadge(Icons.refresh_rounded, themeColor),
+                    title: const Text('Force Full Library Rescan', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Re-read FLAC/ID3/M4A tags & purge deleted files', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                    onTap: () {
+                      widget.onRescan();
+                      Navigator.pop(ctx);
+                      Navigator.pop(context);
+                    },
                   ),
-                  const SizedBox(height: 6),
-                  ..._folders.map((folder) => Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF161622),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.folder_rounded, size: 16, color: themeColor),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                folder.replaceFirst('/storage/emulated/0', '~'),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12, color: Colors.white70),
-                              ),
-                            ),
-                            if (_folders.length > 1)
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() => _folders.remove(folder));
-                                  widget.onScanFoldersChanged(_folders);
-                                },
-                                child: const Icon(Icons.close_rounded, size: 16, color: Colors.white54),
-                              ),
-                          ],
-                        ),
-                      )),
-                ],
-              ),
+                ]),
+              ],
             ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: _settingsBadge(Icons.folder_open_rounded, themeColor),
-              title: const Text('Storage Folder Explorer', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-              onTap: () {
-                Navigator.pop(context);
-                widget.onOpenFolderExplorer();
-              },
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: _settingsBadge(Icons.extension_rounded, themeColor),
-              title: const Text('Mornye Extension Repository (.sflx)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-              onTap: widget.onOpenExtensionRepo,
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: _settingsBadge(Icons.backup_rounded, themeColor),
-              title: const Text('Export Library & Playlists Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Save JSON to /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              onTap: widget.onExportBackup,
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: _settingsBadge(Icons.restore_rounded, themeColor),
-              title: const Text('Restore Library Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Import /Download/nami_backup.json', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              onTap: widget.onImportBackup,
-            ),
-            const Divider(color: Colors.white10, height: 1),
-            FutureBuilder<String>(
-              future: _cacheSizeFuture,
-              builder: (context, snap) => ListTile(
-                leading: _settingsBadge(Icons.cleaning_services_rounded, themeColor),
-                title: const Text('Clear Artwork Thumbnail Cache', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                subtitle: Text('Used: ${snap.data ?? "Calculating..."}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
-                onTap: () async {
-                  await widget.onClearThumbCache();
-                  setState(() {
-                    _cacheSizeFuture = widget.thumbCacheSizeFuture;
-                  });
-                },
-              ),
-            ),
-            if (widget.onOpenScrobbling != null) ...[
-              const Divider(color: Colors.white10, height: 1),
-              ListTile(
-                leading: _settingsBadge(Icons.podcasts_rounded, themeColor),
-                title: const Text('ListenBrainz Scrobbling', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                subtitle: const Text('Auto-scrobble plays & sync offline listening history', style: TextStyle(fontSize: 11, color: Colors.white54)),
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onOpenScrobbling!();
-                },
-              ),
-            ],
-            if (widget.onFetchMissingCovers != null) ...[
-              const Divider(color: Colors.white10, height: 1),
-              ListTile(
-                leading: _settingsBadge(Icons.auto_fix_high_rounded, themeColor),
-                title: const Text('Fetch Missing Covers & Metadata', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-                subtitle: const Text('Enrich only unmatched tracks without overwriting existing tags', style: TextStyle(fontSize: 11, color: Colors.white54)),
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onFetchMissingCovers!();
-                },
-              ),
-            ],
-            const Divider(color: Colors.white10, height: 1),
-            ListTile(
-              leading: _settingsBadge(Icons.refresh_rounded, themeColor),
-              title: const Text('Force Full Metadata & Cover Rescan', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Re-extract FLAC/ID3/M4A tags & fetch missing covers', style: TextStyle(fontSize: 11, color: Colors.white54)),
-              onTap: () {
-                widget.onRescan();
-                Navigator.pop(context);
-              },
-            ),
-          ]),
+          ),
 
-          _buildSectionHeader('About Nami', Icons.info_outline_rounded),
-          _buildSettingsCard([
-            ListTile(
-              leading: _settingsBadge(Icons.graphic_eq_rounded, themeColor),
-              title: const Text('Nami Music Player', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-              subtitle: const Text('Version 2.0.0 • Bit-Perfect libmpv + AudioService Engine', style: TextStyle(fontSize: 11.5, color: Colors.white60)),
-              trailing: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: themeColor.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: themeColor.withOpacity(0.45)),
-                ),
-                child: Text('v2.0.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: themeColor)),
-              ),
+          _minimalCategoryTile(
+            icon: Icons.extension_outlined,
+            title: 'Lyrics, Extensions & Sync',
+            subtitle: 'Mornye Repo (.sflx) • ListenBrainz • Backup & Restore',
+            accent: themeColor,
+            onTap: () => _openSettingsCategoryPage(
+              context,
+              'Lyrics, Extensions & Sync',
+              (ctx, setSub) => [
+                _buildSettingsCard([
+                  ListTile(
+                    leading: _settingsBadge(Icons.extension_rounded, themeColor),
+                    title: const Text('Mornye Extension Repository (.sflx)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                    onTap: widget.onOpenExtensionRepo,
+                  ),
+                  if (widget.onOpenScrobbling != null) ...[
+                    const Divider(color: Colors.white10, height: 1),
+                    ListTile(
+                      leading: _settingsBadge(Icons.podcasts_rounded, themeColor),
+                      title: const Text('ListenBrainz Scrobbling', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Auto-scrobble plays & sync offline queue', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        widget.onOpenScrobbling!();
+                      },
+                    ),
+                  ],
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Syllable Karaoke Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _syllableLyrics,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _syllableLyrics = v);
+                      setState(() => _syllableLyrics = v);
+                      widget.onSyllableLyricsChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Prefer Embedded Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _preferEmbedded,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _preferEmbedded = v);
+                      setState(() => _preferEmbedded = v);
+                      widget.onPreferEmbeddedChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  SwitchListTile(
+                    title: const Text('Auto-Fetch Online Metadata', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    value: _autoFetchOnline,
+                    activeColor: themeColor,
+                    onChanged: (v) {
+                      setSub(() => _autoFetchOnline = v);
+                      setState(() => _autoFetchOnline = v);
+                      widget.onAutoFetchOnlineChanged(v);
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  ListTile(
+                    leading: _settingsBadge(Icons.cloud_upload_outlined, themeColor),
+                    title: const Text('Export Library & Playlists Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    onTap: widget.onExportBackup,
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  ListTile(
+                    leading: _settingsBadge(Icons.restore_rounded, themeColor),
+                    title: const Text('Restore Library Backup', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    onTap: widget.onImportBackup,
+                  ),
+                ]),
+              ],
             ),
-          ]),
+          ),
+
+          const SizedBox(height: 8),
+          _minimalCategoryTile(
+            icon: Icons.info_outline_rounded,
+            title: 'About Nami',
+            subtitle: 'v2.0.0 • Author: Piyush (Piyush1625) • Tap for Changelog',
+            accent: themeColor,
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                color: themeColor.withOpacity(0.16),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: themeColor.withOpacity(0.4)),
+              ),
+              child: Text('v2.0.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: themeColor)),
+            ),
+            onTap: () => _showAboutNamiSheet(context, themeColor),
+          ),
         ],
       ),
     );
@@ -11389,12 +11562,8 @@ class NowPlayingModal extends StatefulWidget {
   State<NowPlayingModal> createState() => _NowPlayingModalState();
 }
 
-class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProviderStateMixin {
+class _NowPlayingModalState extends State<NowPlayingModal> {
   int _viewMode = 0;
-  int _npThemeMode = 0; // 0 = Classic Glow, 1 = Full-Art Blur, 2 = Vinyl Disc, 3 = Minimalist
-  bool _visualizerEnabled = true;
-  late final AnimationController _vinylSpinCtrl;
-  final NamiFftVisualizer _fftVisualizer = NamiFftVisualizer();
   final Map<String, List<double>> _realWaveformCache = {};
   String _loadingWaveformPath = '';
   late bool _shuffleLocal;
@@ -11540,8 +11709,6 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
   @override
   void dispose() {
     _seekFlashTimer?.cancel();
-    _fftVisualizer.dispose();
-    _vinylSpinCtrl.dispose();
     _lyricsScrollCtrl.dispose();
     super.dispose();
   }
@@ -11576,7 +11743,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
           backgroundColor: const Color(0xFF07070B),
           body: Stack(
             children: [
-              if ((widget.blurredBackdrop || _npThemeMode == 1) && _npThemeMode != 3 && song?.albumArt != null && song!.albumArt!.isNotEmpty)
+              if (widget.blurredBackdrop && song?.albumArt != null && song!.albumArt!.isNotEmpty)
                 Positioned.fill(
                   child: Opacity(
                     opacity: 0.24,
@@ -11645,56 +11812,14 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
                           ],
                         ),
                       ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              setState(() => _visualizerEnabled = !_visualizerEnabled);
-                              SharedPreferences.getInstance().then((p) => p.setBool('nami_np_visualizer_v1', _visualizerEnabled));
-                            },
-                            child: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: _visualizerEnabled ? accent.withOpacity(0.24) : Colors.white10,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Icon(Icons.graphic_eq_rounded, color: _visualizerEnabled ? accent : Colors.white60, size: 16),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              const names = ['Classic', 'Full-Art', 'Vinyl', 'Minimal'];
-                              setState(() => _npThemeMode = (_npThemeMode + 1) % 4);
-                              SharedPreferences.getInstance().then((p) => p.setInt('nami_np_theme_mode_v1', _npThemeMode));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(duration: const Duration(milliseconds: 900), content: Text('Now Playing Theme: ${names[_npThemeMode]}')),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(14)),
-                              child: Text(
-                                const ['Classic', 'Full-Art', 'Vinyl', 'Minimal'][_npThemeMode],
-                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white70),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () => _showMoreAndLoopSheet(song),
-                            child: Container(
-                              width: 34,
-                              height: 34,
-                              decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
-                              child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
-                            ),
-                          ),
-                        ],
+                      GestureDetector(
+                        onTap: () => _showMoreAndLoopSheet(song),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(17)),
+                          child: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 18),
+                        ),
                       ),
                     ],
                   ),
@@ -11741,45 +11866,13 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
                                         ),
                                       ],
                                     ),
-                                    child: _npThemeMode == 2
-                                        ? AnimatedBuilder(
-                                            animation: _vinylSpinCtrl,
-                                            builder: (_, child) => Transform.rotate(
-                                              angle: isP ? _vinylSpinCtrl.value * 2 * math.pi : 0.0,
-                                              child: child,
-                                            ),
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                color: const Color(0xFF0B0B10),
-                                                border: Border.all(color: Colors.white12, width: 6),
-                                                boxShadow: [BoxShadow(color: glowColor.withOpacity(0.32), blurRadius: 26)],
-                                              ),
-                                              padding: const EdgeInsets.all(24),
-                                              child: Stack(
-                                                alignment: Alignment.center,
-                                                children: [
-                                                  ClipOval(child: SizedBox.expand(child: artWidget)),
-                                                  Container(
-                                                    width: 34,
-                                                    height: 34,
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFF0A0A0E),
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(color: Colors.white30, width: 2),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          )
-                                        : Hero(
-                                            tag: 'nami_np_art_${song?.path ?? ""}',
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(_npThemeMode == 3 ? 12 : 20),
-                                              child: SizedBox.expand(child: artWidget),
-                                            ),
-                                          ),
+                                    child: Hero(
+                                      tag: 'nami_np_art_${song?.path ?? ""}',
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: SizedBox.expand(child: artWidget),
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
@@ -11938,46 +12031,7 @@ return GestureDetector(
 
                   const Spacer(flex: 2),
 
-                  if (_visualizerEnabled)
-                    ValueListenableBuilder<List<double>>(
-                      valueListenable: _fftVisualizer.bands,
-                      builder: (vCtx, fftBands, _) => StreamBuilder<Duration>(
-                        stream: widget.audioPlayer.stream.position,
-                        builder: (vCtx2, vSnap) {
-                          final ms = (vSnap.data ?? Duration.zero).inMilliseconds;
-                          final isPlaying = widget.audioPlayer.state.playing;
-                          final useNative = _fftVisualizer.isNativeActive && fftBands.length >= 32;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: SizedBox(
-                              height: 24,
-                              width: double.infinity,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: List.generate(32, (b) {
-                                  final env = _getWaveformBarHeight((b * 2.4).round().clamp(0, 77), song?.title ?? 'Nami', song?.path) / 38.0;
-                                  final pulse = !isPlaying
-                                      ? 0.14
-                                      : (useNative
-                                          ? fftBands[b]
-                                          : (0.30 + 0.70 * math.sin((ms / 115.0) + b * 0.65).abs() * env));
-                                  return AnimatedContainer(
-                                    duration: const Duration(milliseconds: 65),
-                                    width: 3.2,
-                                    height: (4.0 + pulse * 20.0).clamp(3.0, 24.0),
-                                    decoration: BoxDecoration(
-                                      color: accent.withOpacity(isPlaying ? (0.45 + 0.55 * pulse) : 0.25),
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  );
-                                }),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                  
                   StreamBuilder<Duration>(
                     stream: widget.audioPlayer.stream.position,
                     builder: (context, posSnap) {
@@ -12183,30 +12237,65 @@ return GestureDetector(
                                 decoration: BoxDecoration(color: accent.withOpacity(0.24), borderRadius: BorderRadius.circular(8)),
                                 child: Text(_seekFlashLabel!, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: accent)),
                               ),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              icon: Icon(Icons.shuffle_rounded, size: 20, color: _shuffleLocal ? accent : Colors.white70),
-                              onPressed: () {
-                                widget.onToggleShuffle();
-                                setState(() => _shuffleLocal = !_shuffleLocal);
-                              },
-                            ),
-                            const SizedBox(width: 12),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              icon: Icon(
-                                _repeatLocal == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
-                                size: 20,
-                                color: _repeatLocal > 0 ? accent : Colors.white70,
+                            Tooltip(
+                              message: 'Tap: Repeat • Hold: Shuffle',
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  widget.onCycleRepeat();
+                                  final nextRep = (_repeatLocal + 1) % 3;
+                                  setState(() => _repeatLocal = nextRep);
+                                  const labels = ['Repeat Off', 'Repeat All', 'Repeat One'];
+                                  ScaffoldMessenger.of(context)
+                                    ..hideCurrentSnackBar()
+                                    ..showSnackBar(
+                                      SnackBar(
+                                        duration: const Duration(milliseconds: 900),
+                                        content: Text(labels[nextRep]),
+                                      ),
+                                    );
+                                },
+                                onLongPress: () {
+                                  HapticFeedback.mediumImpact();
+                                  widget.onToggleShuffle();
+                                  final nextShuf = !_shuffleLocal;
+                                  setState(() => _shuffleLocal = nextShuf);
+                                  ScaffoldMessenger.of(context)
+                                    ..hideCurrentSnackBar()
+                                    ..showSnackBar(
+                                      SnackBar(
+                                        duration: const Duration(milliseconds: 900),
+                                        content: Text(nextShuf ? 'Shuffle ON' : 'Shuffle OFF'),
+                                      ),
+                                    );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(6),
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Icon(
+                                        _shuffleLocal
+                                            ? Icons.shuffle_rounded
+                                            : (_repeatLocal == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded),
+                                        size: 21,
+                                        color: (_shuffleLocal || _repeatLocal > 0) ? accent : Colors.white70,
+                                      ),
+                                      if (_shuffleLocal && _repeatLocal > 0)
+                                        Positioned(
+                                          right: -3,
+                                          top: -3,
+                                          child: Container(
+                                            width: 6,
+                                            height: 6,
+                                            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              onPressed: () {
-                                widget.onCycleRepeat();
-                                setState(() => _repeatLocal = (_repeatLocal + 1) % 3);
-                              },
                             ),
                             const SizedBox(width: 12),
                             IconButton(
