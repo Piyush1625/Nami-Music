@@ -1343,9 +1343,16 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             await _audioPlayer.pause();
           }
           final changed = devName != _connectedDacName || devType != _connectedDacType || isExt != _isExternalAudioConnected;
+          final wasExternal = _isExternalAudioConnected;
           _connectedDacName = devName;
           _connectedDacType = devType;
           _isExternalAudioConnected = isExt;
+          if (_autoDacExclusiveProfile && wasExternal != isExt) {
+            _usbDacExclusive = isExt;
+            if (isExt) _eqEnabled = false;
+            await _applyDacAndAudioProperties();
+            await _applyHardwareEqGains();
+          }
           _lastKnownDac = devName;
           if (changed && mounted) setState(() {});
         }
@@ -1374,7 +1381,16 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         if (activeMode == 'FLAC' && !song.path.toLowerCase().endsWith('.flac')) {
           return false;
         }
+        if (activeMode == 'Lossless') {
+          final pLow = song.path.toLowerCase();
+          if (!(pLow.endsWith('.flac') || pLow.endsWith('.alac') || pLow.endsWith('.wav') || pLow.endsWith('.aiff'))) {
+            return false;
+          }
+        }
         if (activeMode == 'HiRes' && !(song.bitDepth >= 24 || song.sampleRateHz > 48000)) {
+          return false;
+        }
+        if (activeMode == 'HiRate' && song.sampleRateHz <= 48000) {
           return false;
         }
         if (activeMode == 'Fav' && !song.isFavorite) {
@@ -3453,6 +3469,13 @@ const SizedBox(height: 10),
     child: _buildNamiQueueRow(
       song: qTrack, index: idx, isReorderable: true,
       onTap: () { _playSong(qTrack); Navigator.pop(context); },
+      onMoveToTop: idx > 0 ? () {
+        setQueueState(() {
+          final moved = _playNextQueue.removeAt(idx);
+          _playNextQueue.insert(0, moved);
+        });
+        setState(() {});
+      } : null,
       onToggleFav: () { setQueueState(() => qTrack.isFavorite = !qTrack.isFavorite); setState(() {}); _saveStateCache(); },
       onRemove: () { setQueueState(() => _playNextQueue.removeAt(idx)); setState(() {}); },
     ),
@@ -3537,6 +3560,7 @@ Container(
     required VoidCallback onTap,
     required VoidCallback onToggleFav,
     VoidCallback? onRemove,
+    VoidCallback? onMoveToTop,
   }) {
     final isCurrent = _currentSong?.path == song.path;
     final accent = Theme.of(context).colorScheme.primary;
@@ -3611,6 +3635,15 @@ Container(
             else
               const Icon(Icons.reorder_rounded, color: Colors.white24, size: 20),
             const SizedBox(width: 4),
+            if (onMoveToTop != null)
+              IconButton(
+                tooltip: 'Move to Top',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.vertical_align_top_rounded, color: Colors.white60, size: 18),
+                onPressed: onMoveToTop,
+              ),
             if (onRemove != null)
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -6368,7 +6401,7 @@ Container(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
             children: [
-              for (final entry in [('All', 'All'), ('FLAC', 'FLAC'), ('HiRes', '24-Bit'), ('Fav', 'Favorites')])
+              for (final entry in [('All', 'All'), ('FLAC', 'FLAC'), ('Lossless', 'Lossless'), ('HiRes', '24-Bit'), ('HiRate', '>48kHz'), ('Fav', 'Favorites')])
                 Padding(
                   padding: const EdgeInsets.only(right: 7),
                   child: ChoiceChip(
@@ -7935,6 +7968,10 @@ void _showCreatePlaylistDialog() {
     final accent = Theme.of(context).colorScheme.primary;
     final favSongs = _songs.where((s) => s.isFavorite).toList();
     final mostPlayed = List<AudioTrack>.from(_songs)..sort((a, b) => b.playCount.compareTo(a.playCount));
+    final unplayedSongs = _songs.where((s) => s.playCount == 0).toList();
+    final hiResSongs = _songs.where((s) => s.bitDepth >= 24 || s.sampleRateHz > 48000).toList();
+    final cutoff30d = DateTime.now().subtract(const Duration(days: 30)).millisecondsSinceEpoch;
+    final recent30dSongs = _songs.where((s) => s.addedTimestampMs >= cutoff30d).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 110),
@@ -8002,6 +8039,27 @@ void _showCreatePlaylistDialog() {
               subtitle: 'Top rotation',
               color: Colors.orangeAccent,
               onTap: () => _showFilteredListScreen('Most Played', mostPlayed.take(50).toList()),
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.fiber_new_rounded,
+              title: 'Unplayed Gems',
+              subtitle: '${unplayedSongs.length} Tracks',
+              color: Colors.tealAccent,
+              onTap: () => _showFilteredListScreen('Unplayed Tracks', unplayedSongs),
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.high_quality_rounded,
+              title: '24-Bit Hi-Res',
+              subtitle: '${hiResSongs.length} Tracks',
+              color: Colors.amberAccent,
+              onTap: () => _showFilteredListScreen('24-Bit Hi-Res Audio', hiResSongs),
+            ),
+            _buildHomeSmartTile(
+              icon: Icons.calendar_month_rounded,
+              title: 'Recent (30d)',
+              subtitle: '${recent30dSongs.length} Tracks',
+              color: Colors.lightBlueAccent,
+              onTap: () => _showFilteredListScreen('Added Last 30 Days', recent30dSongs),
             ),
           ],
         ),
@@ -9494,6 +9552,95 @@ List<String> _getSmartMornyeQuickSearches() {
         ),
       ),
     );
+  }
+
+
+
+  bool _autoDacExclusiveProfile = true;
+  String _queueSearchQuery = '';
+
+  String _shiftLrcTimestamps(String rawLrc, double offsetSeconds) {
+    if (offsetSeconds.abs() < 0.001) return rawLrc;
+    final lineReg = RegExp(r'\[(\d{1,2}):(\d{2})(?:[\.:](\d{1,3}))?\]');
+    return rawLrc.split('\n').map((line) {
+      return line.replaceAllMapped(lineReg, (m) {
+        final mins = int.tryParse(m.group(1)!) ?? 0;
+        final secs = int.tryParse(m.group(2)!) ?? 0;
+        final msStr = (m.group(3) ?? '0').padRight(3, '0').substring(0, 3);
+        final ms = int.tryParse(msStr) ?? 0;
+        final origMs = (mins * 60000) + (secs * 1000) + ms;
+        final shiftedMs = math.max(0, origMs + (offsetSeconds * 1000).round());
+        final nMin = (shiftedMs ~/ 60000).toString().padLeft(2, '0');
+        final nSec = ((shiftedMs % 60000) ~/ 1000).toString().padLeft(2, '0');
+        final nHundredths = ((shiftedMs % 1000) ~/ 10).toString().padLeft(2, '0');
+        return '[$nMin:$nSec.$nHundredths]';
+      });
+    }).join('\n');
+  }
+
+  Future<void> _fetchMissingCoversBatch() async {
+    final missing = _songs
+        .where((s) => s.albumArt == null || s.artist == 'Unknown Artist' || s.album == 'Unknown Album')
+        .toList();
+    if (missing.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All tracks already have cover art & metadata!')),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fetching metadata & covers for ${missing.length} unmatched track(s)...')),
+      );
+    }
+    final thumbDir = await _ensureThumbDir();
+    int updated = 0;
+    for (final s in missing) {
+      s.isOnlineEnriched = false;
+      await _enrichTrackOnlineIfMissing(s, thumbDir, force: true);
+      if (s.albumArt != null || s.artist != 'Unknown Artist') updated++;
+      if (updated % 4 == 0 && mounted) {
+        _artworkTick.value++;
+        setState(() {});
+      }
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    _artworkTick.value++;
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Updated $updated of ${missing.length} unmatched tracks!')),
+      );
+    }
+    await _saveStateCache();
+  }
+
+  Future<void> _testMornyeExtensionEndpoint(MornyeExtension ext) async {
+    final url = (ext.endpointUrl ?? '').trim();
+    if (url.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ext.name}: Built-in catalog mode (30s preview). Add an endpoint URL via .sflx to enable full streams.')),
+        );
+      }
+      return;
+    }
+    try {
+      final res = await http.get(Uri.parse(url), headers: _httpHeaders).timeout(const Duration(seconds: 6));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ext.name} endpoint responded: HTTP ${res.statusCode}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ext.name} endpoint unreachable: $e')),
+        );
+      }
+    }
   }
 
 }
