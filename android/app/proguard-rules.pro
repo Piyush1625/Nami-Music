@@ -20,3 +20,7 @@
 
 # Nami native Kotlin MethodChannels (USB DAC, Audio Output, Gallery Picker)
 -keep class com.piyush.nami.** { *; }
+
+# Optional Play Core deferred component classes referenced by Flutter engine
+-dontwarn com.google.android.play.core.**
+-dontwarn java.lang.invoke.StringConcatFactory
