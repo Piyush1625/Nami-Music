@@ -1,3 +1,9 @@
+import 'services/nami_tag_writer.dart';
+import 'services/nami_library_store.dart';
+import 'services/nami_crossfade_engine.dart';
+import 'services/nami_fft_visualizer.dart';
+import 'services/nami_download_manager.dart';
+import 'services/nami_scrobble_service.dart';
 import 'dart:isolate';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audio_service/audio_service.dart';
@@ -996,7 +1002,12 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadStateCache();
       await _loadNamiV12Prefs();
+      await NamiScrobbleService.instance.init();
+      NamiDownloadManager.instance.onTrackSaved = () async {
+        if (mounted) await _fastScanDeviceMusic(forceReparse: false);
+      };
       await _requestPermissionsAndInitBackground();
+      _startReactiveFolderWatchers();
     });
 
     _playingSub = _audioPlayer.stream.playing.listen((state) {
@@ -1055,6 +1066,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         if (_currentTrackSecondsListened == 25 && _currentSong != null) {
           _currentSong!.playCount++;
           _recordTimestampedPlayEvent(_currentSong!);
+          NamiScrobbleService.instance.scrobbleTrack(
+            title: _currentSong!.title,
+            artist: cleanArtistStr(_currentSong!.artist),
+            album: _currentSong!.album,
+          );
           _saveStateCache();
         }
       }
@@ -1123,6 +1139,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
     _deviceSub?.cancel();
     _playingSub?.cancel();
     _completedSub?.cancel();
+    _stopReactiveFolderWatchers();
+    _crossfadeEngine.dispose();
+    NamiLibraryStore.flushNow();
     _audioPlayer.dispose();
     _trackListScrollController.dispose();
     _artistListScrollController.dispose();
@@ -1153,9 +1172,11 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   Future<void> _loadStateCache() async {
     try {
+      final thumbDirBase = await _ensureThumbDir();
+      final splitData = await NamiLibraryStore.readSplitTables(thumbDirBase);
       final f = await _cacheFile;
-      if (await f.exists()) {
-        final data = jsonDecode(await f.readAsString());
+      if (splitData != null || await f.exists()) {
+        final data = splitData ?? jsonDecode(await f.readAsString());
         if (data is Map<String, dynamic>) {
           _totalListenSeconds = data['totalListenSeconds'] ?? 0;
           _userName = data['userName'] ?? 'Piyush';
@@ -1186,7 +1207,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
             final tf = File(s.thumbPath ?? expectedThumb);
             if (await tf.exists()) {
               s.thumbPath = tf.path;
-              s.albumArt = await tf.readAsBytes();
+              s.albumArt = null;
             }
           }
           _shuffleEnabled = data['shuffleEnabled'] ?? false;
@@ -1291,9 +1312,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
         'playNextPaths': _playNextQueue.map((s) => s.path).toList(),
         'cachedTracks': _songs.map((s) => s.toJson()).toList(),
       };
-      final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode(map));
-      await tmp.rename(f.path);
+      NamiLibraryStore.scheduleSave(() async {
+        final dir = await _ensureThumbDir();
+        await NamiLibraryStore.writeSplitTables(dir, map);
+      });
     } catch (_) {}
   }
 
@@ -1468,16 +1490,32 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
 Future<void> _playSong(AudioTrack song) async {
     if (song.path.isEmpty) return;
+    final prevPath = _audioPlayer.state.playing ? _currentSong?.path : null;
+    final prevPos = _audioPlayer.state.position;
     _currentSong = song;
     _currentTrackSecondsListened = 0;
     _historyTracks.remove(song);
     _historyTracks.insert(0, song);
     _syncMediaNotification(song);
-    if (_autoColoring && song.albumArt != null) {
-      final dominant =
-          _extractDominantColor(song.albumArt, const Color(0xFFE53935));
-      NamiApp.of(context).updateTheme(newAccent: dominant);
+    if (_autoColoring) {
+      if (song.albumArt != null) {
+        final dominant =
+            _extractDominantColor(song.albumArt, const Color(0xFFE53935));
+        NamiApp.of(context).updateTheme(newAccent: dominant);
+      } else if (song.thumbPath != null) {
+        NamiLibraryStore.readLazyCoverBytes(song.thumbPath).then((bytes) {
+          if (bytes != null && mounted && _currentSong?.path == song.path) {
+            final dominant = _extractDominantColor(bytes, const Color(0xFFE53935));
+            NamiApp.of(context).updateTheme(newAccent: dominant);
+          }
+        });
+      }
     }
+    NamiScrobbleService.instance.submitPlayingNow(
+      title: song.title,
+      artist: cleanArtistStr(song.artist),
+      album: song.album,
+    );
     if (mounted) setState(() {});
     _fetchLyricsOnline(song);
 
@@ -1495,18 +1533,15 @@ Future<void> _playSong(AudioTrack song) async {
     }
 
     try {
-      if (_crossfadeSeconds > 0 && _audioPlayer.state.playing) {
-        final steps = (_crossfadeSeconds * 5).clamp(2, 20);
-        final stepMs = ((_crossfadeSeconds * 450) ~/ steps).clamp(25, 180);
-        for (int s = steps - 1; s >= 1; s--) {
-          await _audioPlayer.setVolume((s / steps) * 100.0);
-          await Future.delayed(Duration(milliseconds: stepMs));
-        }
-      }
-      await _audioPlayer.stop();
-      await _audioPlayer.setVolume(100.0);
-      await _audioPlayer.open(Media(song.path));
-      await _audioPlayer.play();
+      await _crossfadeEngine.transition(
+        primaryPlayer: _audioPlayer,
+        outgoingPath: prevPath,
+        outgoingPos: prevPos,
+        incomingPath: song.path,
+        crossfadeSeconds: _crossfadeSeconds,
+        playbackSpeed: _playbackSpeed,
+        playbackPitch: _playbackPitch,
+      );
       if (_audioPlayer.state.duration != null &&
           _audioPlayer.state.duration!.inSeconds > 0) {
         song.duration = _audioPlayer.state.duration!;
@@ -3014,12 +3049,31 @@ const SizedBox(height: 10),
                           await File(lrcPath).writeAsString(song.rawLyrics);
                         } catch (_) {}
                       }
+                      final coverBytesToEmbed = customArt ??
+                          song.albumArt ??
+                          await NamiLibraryStore.readLazyCoverBytes(song.thumbPath);
+                      final wroteToDisk = await NamiTagWriter.writeTagsToFile(
+                        path: song.path,
+                        title: song.title,
+                        artist: song.artist,
+                        album: song.album,
+                        genre: song.genre,
+                        year: song.year,
+                        lyrics: song.rawLyrics,
+                        coverBytes: coverBytesToEmbed,
+                      );
                       if (context.mounted) Navigator.pop(context);
                       _saveStateCache();
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Tags & metadata updated!')));
+                          SnackBar(
+                            content: Text(
+                              wroteToDisk
+                                  ? 'Tags & cover permanently written to audio file!'
+                                  : 'Tags & metadata saved to Nami library!',
+                            ),
+                          ),
+                        );
                       }
                     },
                     child: const Text('Save'),
@@ -3848,6 +3902,7 @@ Container(
           onClearThumbCache: _clearArtworkCache,
           onFetchMissingCovers: _fetchMissingCoversBatch,
           onOpenEqualizer: _showEqualizerSheet,
+          onOpenScrobbling: _showListenBrainzSettingsDialog,
           onOpenExtensionRepo: _openExtensionRepoScreen,
           onOpenFolderExplorer: _showFolderExplorerModal,
           onExportBackup: _exportBackup,
@@ -3855,6 +3910,7 @@ Container(
           onScanFoldersChanged: (list) {
             setState(() => _scanFolders = list);
             _saveStateCache();
+            _startReactiveFolderWatchers();
             _fastScanDeviceMusic(forceReparse: false);
           },
           onIgnoreShortClipsChanged: (v) {
@@ -4712,36 +4768,37 @@ Container(
         return;
       }
 
-      final outDir = Directory(_mornyeDownloadFolder);
-      if (!await outDir.exists()) {
-        await outDir.create(recursive: true);
-      }
-      final res = await http
-          .get(Uri.parse(targetUrl), headers: _httpHeaders)
-          .timeout(const Duration(seconds: 25));
-      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
-        final safeName = '${item.artist} - ${item.title}'
-            .replaceAll(RegExp(r'[/\:*?"<>|]'), '_');
-        final suffix = isFullStream ? '' : '_30s_preview';
-        final outFile = File('$_mornyeDownloadFolder/$safeName$suffix.m4a');
-        await outFile.writeAsBytes(res.bodyBytes);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                isFullStream
-                    ? 'Saved full track "$safeName.m4a" to $_mornyeDownloadFolder'
-                    : 'Saved 30s preview "$safeName$suffix.m4a" (public catalog preview limit; add an extension endpoint URL in Repo for full streams)',
-              ),
-            ),
-          );
-        }
-        await _fastScanDeviceMusic();
-      }
-    } catch (e) {
+      final safeName = '${item.artist} - ${item.title}'
+          .replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
+      final lowerUrl = targetUrl.toLowerCase();
+      final ext = lowerUrl.contains('.flac')
+          ? '.flac'
+          : (lowerUrl.contains('.mp3') ? '.mp3' : '.m4a');
+      final suffix = isFullStream ? '' : '_30s_preview';
+      final destPath = '$_mornyeDownloadFolder/$safeName$suffix$ext';
+
+      NamiDownloadManager.instance.enqueue(
+        MornyeDownloadTask(
+          id: item.itemKey,
+          title: item.title,
+          artist: item.artist,
+          album: item.album,
+          url: targetUrl,
+          artworkUrl: item.artworkUrl,
+          destPath: destPath,
+          isFullStream: isFullStream,
+        ),
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Download failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Queued "${item.title}" in Download Manager'),
+            action: SnackBarAction(
+              label: 'Queue',
+              onPressed: _showMornyeDownloadsSheet,
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -8385,6 +8442,26 @@ void _showCreatePlaylistDialog() {
                     ],
                   ),
                 ),
+                ValueListenableBuilder<List<MornyeDownloadTask>>(
+                  valueListenable: NamiDownloadManager.instance.tasksNotifier,
+                  builder: (_, tasks, __) {
+                    final activeCount = tasks
+                        .where((t) =>
+                            t.status == MornyeDownloadStatus.queued ||
+                            t.status == MornyeDownloadStatus.downloading ||
+                            t.status == MornyeDownloadStatus.tagging)
+                        .length;
+                    return IconButton(
+                      tooltip: 'Download Manager',
+                      icon: Badge(
+                        isLabelVisible: activeCount > 0,
+                        label: Text('$activeCount', style: const TextStyle(fontSize: 9.5)),
+                        child: const Icon(Icons.downloading_rounded, size: 20),
+                      ),
+                      onPressed: _showMornyeDownloadsSheet,
+                    );
+                  },
+                ),
                 TextButton.icon(
                   icon: const Icon(Icons.extension_rounded, size: 16),
                   label: const Text('Repo'),
@@ -10046,6 +10123,273 @@ List<String> _getSmartMornyeQuickSearches() {
     );
   }
 
+
+
+  final NamiDualDeckCrossfade _crossfadeEngine = NamiDualDeckCrossfade();
+  final List<StreamSubscription<FileSystemEvent>> _folderWatchSubs = [];
+  Timer? _folderWatchDebounce;
+
+  void _startReactiveFolderWatchers() {
+    _stopReactiveFolderWatchers();
+    for (final dirPath in _scanFolders) {
+      try {
+        final d = Directory(dirPath);
+        if (d.existsSync()) {
+          final sub = d.watch(recursive: true).listen((event) {
+            final l = event.path.toLowerCase();
+            if (l.endsWith('.flac') ||
+                l.endsWith('.mp3') ||
+                l.endsWith('.m4a') ||
+                l.endsWith('.wav') ||
+                l.endsWith('.ogg')) {
+              _folderWatchDebounce?.cancel();
+              _folderWatchDebounce = Timer(const Duration(seconds: 2), () {
+                if (mounted && !_isScanning) {
+                  _fastScanDeviceMusic(forceReparse: false);
+                }
+              });
+            }
+          }, onError: (_) {});
+          _folderWatchSubs.add(sub);
+        }
+      } catch (_) {}
+    }
+  }
+
+  void _stopReactiveFolderWatchers() {
+    _folderWatchDebounce?.cancel();
+    for (final s in _folderWatchSubs) {
+      s.cancel();
+    }
+    _folderWatchSubs.clear();
+  }
+
+  void _showMornyeDownloadsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF101018),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => ValueListenableBuilder<List<MornyeDownloadTask>>(
+        valueListenable: NamiDownloadManager.instance.tasksNotifier,
+        builder: (ctx, tasks, _) {
+          final accent = Theme.of(ctx).colorScheme.primary;
+          return SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.68,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Icon(Icons.downloading_rounded, color: accent),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Download Manager (${tasks.length})',
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      if (tasks.isNotEmpty)
+                        TextButton(
+                          onPressed: NamiDownloadManager.instance.clearFinished,
+                          child: const Text('Clear Done'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: tasks.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No active or recent downloads.\nTap Download on any Mornye track to queue it with auto-tagging.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white54, fontSize: 13),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: tasks.length,
+                            itemBuilder: (_, i) {
+                              final t = tasks[i];
+                              final statusText = switch (t.status) {
+                                MornyeDownloadStatus.queued => 'Queued...',
+                                MornyeDownloadStatus.downloading =>
+                                    'Downloading ${(t.progress * 100).round()}%',
+                                MornyeDownloadStatus.tagging =>
+                                    'Auto-tagging cover & synced .lrc...',
+                                MornyeDownloadStatus.done =>
+                                    t.isFullStream ? 'Saved & Tagged (Full)' : 'Saved & Tagged (30s Preview)',
+                                MornyeDownloadStatus.cancelled => 'Cancelled',
+                                MornyeDownloadStatus.error => 'Failed: ${t.errorMessage ?? "Error"}',
+                              };
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF161622),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.white10),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                t.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                              ),
+                                              Text(
+                                                '${t.artist} • $statusText',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontSize: 11, color: Colors.white60),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (t.status == MornyeDownloadStatus.downloading ||
+                                            t.status == MornyeDownloadStatus.queued)
+                                          IconButton(
+                                            tooltip: 'Cancel',
+                                            icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
+                                            onPressed: () => NamiDownloadManager.instance.cancelTask(t.id),
+                                          )
+                                        else if (t.status == MornyeDownloadStatus.error ||
+                                            t.status == MornyeDownloadStatus.cancelled)
+                                          IconButton(
+                                            tooltip: 'Retry',
+                                            icon: Icon(Icons.refresh_rounded, color: accent, size: 20),
+                                            onPressed: () => NamiDownloadManager.instance.retryTask(t.id),
+                                          )
+                                        else if (t.status == MornyeDownloadStatus.done)
+                                          const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+                                      ],
+                                    ),
+                                    if (t.status == MornyeDownloadStatus.downloading ||
+                                        t.status == MornyeDownloadStatus.tagging) ...[
+                                      const SizedBox(height: 6),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: t.status == MornyeDownloadStatus.tagging ? null : t.progress,
+                                          minHeight: 4,
+                                          backgroundColor: Colors.white10,
+                                          valueColor: AlwaysStoppedAnimation<Color>(accent),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showListenBrainzSettingsDialog() {
+    final tokenCtrl = TextEditingController(text: NamiScrobbleService.instance.token);
+    bool lbEnabled = NamiScrobbleService.instance.enabled;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLbState) => AlertDialog(
+          backgroundColor: const Color(0xFF14141F),
+          title: const Text('ListenBrainz Scrobbling', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Enable Auto-Scrobbling', style: TextStyle(fontSize: 13.5)),
+                subtitle: Text(
+                  '${NamiScrobbleService.instance.totalScrobbled} scrobbled • ${NamiScrobbleService.instance.pendingQueue.length} pending offline',
+                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                ),
+                value: lbEnabled,
+                activeColor: Theme.of(ctx).colorScheme.primary,
+                onChanged: (v) => setLbState(() => lbEnabled = v),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: tokenCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'ListenBrainz User Token',
+                  hintText: 'Paste token from listenbrainz.org/settings',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (NamiScrobbleService.instance.pendingQueue.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.cloud_upload_rounded, size: 16),
+                  label: Text('Sync ${NamiScrobbleService.instance.pendingQueue.length} Offline Scrobbles'),
+                  onPressed: () async {
+                    final synced = await NamiScrobbleService.instance.flushPending();
+                    if (ctx.mounted) {
+                      setLbState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(synced > 0 ? 'Synced $synced scrobbles!' : 'Sync failed — check token or internet')),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.primary),
+              onPressed: () async {
+                await NamiScrobbleService.instance.saveConfig(
+                  userToken: tokenCtrl.text,
+                  isEnabled: lbEnabled,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(lbEnabled ? 'ListenBrainz scrobbling enabled!' : 'ListenBrainz scrobbling paused')),
+                  );
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 
 class MainSettingsScreen extends StatefulWidget {
@@ -10077,6 +10421,7 @@ class MainSettingsScreen extends StatefulWidget {
   final Future<void> Function() onClearThumbCache;
   final Future<void> Function()? onFetchMissingCovers;
   final VoidCallback onOpenEqualizer;
+  final VoidCallback? onOpenScrobbling;
   final VoidCallback onOpenExtensionRepo;
   final VoidCallback onOpenFolderExplorer;
   final VoidCallback onExportBackup;
@@ -10136,6 +10481,7 @@ class MainSettingsScreen extends StatefulWidget {
     required this.onClearThumbCache,
     this.onFetchMissingCovers,
     required this.onOpenEqualizer,
+    this.onOpenScrobbling,
     required this.onOpenExtensionRepo,
     required this.onOpenFolderExplorer,
     required this.onExportBackup,
@@ -10930,6 +11276,18 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 },
               ),
             ),
+            if (widget.onOpenScrobbling != null) ...[
+              const Divider(color: Colors.white10, height: 1),
+              ListTile(
+                leading: _settingsBadge(Icons.podcasts_rounded, themeColor),
+                title: const Text('ListenBrainz Scrobbling', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                subtitle: const Text('Auto-scrobble plays & sync offline listening history', style: TextStyle(fontSize: 11, color: Colors.white54)),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onOpenScrobbling!();
+                },
+              ),
+            ],
             if (widget.onFetchMissingCovers != null) ...[
               const Divider(color: Colors.white10, height: 1),
               ListTile(
@@ -11036,6 +11394,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
   int _npThemeMode = 0; // 0 = Classic Glow, 1 = Full-Art Blur, 2 = Vinyl Disc, 3 = Minimalist
   bool _visualizerEnabled = true;
   late final AnimationController _vinylSpinCtrl;
+  final NamiFftVisualizer _fftVisualizer = NamiFftVisualizer();
   final Map<String, List<double>> _realWaveformCache = {};
   String _loadingWaveformPath = '';
   late bool _shuffleLocal;
@@ -11181,6 +11540,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> with SingleTickerProv
   @override
   void dispose() {
     _seekFlashTimer?.cancel();
+    _fftVisualizer.dispose();
     _vinylSpinCtrl.dispose();
     _lyricsScrollCtrl.dispose();
     super.dispose();
@@ -11579,38 +11939,44 @@ return GestureDetector(
                   const Spacer(flex: 2),
 
                   if (_visualizerEnabled)
-                    StreamBuilder<Duration>(
-                      stream: widget.audioPlayer.stream.position,
-                      builder: (vCtx, vSnap) {
-                        final ms = (vSnap.data ?? Duration.zero).inMilliseconds;
-                        final isPlaying = widget.audioPlayer.state.playing;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: SizedBox(
-                            height: 22,
-                            width: double.infinity,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: List.generate(32, (b) {
-                                final env = _getWaveformBarHeight((b * 2.4).round().clamp(0, 77), song?.title ?? 'Nami', song?.path) / 38.0;
-                                final pulse = isPlaying
-                                    ? (0.35 + 0.65 * math.sin((ms / 115.0) + b * 0.65).abs() * env)
-                                    : 0.16;
-                                return AnimatedContainer(
-                                  duration: const Duration(milliseconds: 90),
-                                  width: 3.2,
-                                  height: (4.0 + pulse * 18.0).clamp(3.0, 22.0),
-                                  decoration: BoxDecoration(
-                                    color: accent.withOpacity(isPlaying ? (0.45 + 0.55 * pulse) : 0.25),
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                );
-                              }),
+                    ValueListenableBuilder<List<double>>(
+                      valueListenable: _fftVisualizer.bands,
+                      builder: (vCtx, fftBands, _) => StreamBuilder<Duration>(
+                        stream: widget.audioPlayer.stream.position,
+                        builder: (vCtx2, vSnap) {
+                          final ms = (vSnap.data ?? Duration.zero).inMilliseconds;
+                          final isPlaying = widget.audioPlayer.state.playing;
+                          final useNative = _fftVisualizer.isNativeActive && fftBands.length >= 32;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: SizedBox(
+                              height: 24,
+                              width: double.infinity,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: List.generate(32, (b) {
+                                  final env = _getWaveformBarHeight((b * 2.4).round().clamp(0, 77), song?.title ?? 'Nami', song?.path) / 38.0;
+                                  final pulse = !isPlaying
+                                      ? 0.14
+                                      : (useNative
+                                          ? fftBands[b]
+                                          : (0.30 + 0.70 * math.sin((ms / 115.0) + b * 0.65).abs() * env));
+                                  return AnimatedContainer(
+                                    duration: const Duration(milliseconds: 65),
+                                    width: 3.2,
+                                    height: (4.0 + pulse * 20.0).clamp(3.0, 24.0),
+                                    decoration: BoxDecoration(
+                                      color: accent.withOpacity(isPlaying ? (0.45 + 0.55 * pulse) : 0.25),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  );
+                                }),
+                              ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   StreamBuilder<Duration>(
                     stream: widget.audioPlayer.stream.position,
