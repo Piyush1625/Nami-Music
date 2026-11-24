@@ -6362,25 +6362,49 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         Positioned(
           right: 20,
           bottom: 92,
-          child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'tracks_shuffle_fab',
-                  backgroundColor: const Color(0xFFE53935),
-                  foregroundColor: Colors.white,
-                  tooltip: 'Shuffle Play',
-                  onPressed: _shufflePlay,
-                  child: const Icon(Icons.shuffle_rounded, size: 20),
+          child: /* v26_merged_shuffle_locate */
+          Tooltip(
+            message: 'Tap to Shuffle • Hold to Locate Current Track',
+            child: NamiSpringTap(
+              pressedScale: 0.90,
+              onTap: () {
+                _shufflePlay();
+              },
+              onLongPress: () {
+                _locateActivePlayingTrack();
+              },
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(17),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.38),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                FloatingActionButton.small(
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            onPressed: _locateActivePlayingTrack,
-            child: const Icon(Icons.my_location_rounded, color: Colors.white, size: 20),
-          ),
-              ],
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.shuffle_rounded, color: Colors.black, size: 24),
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: Icon(
+                        Icons.my_location_rounded,
+                        size: 11,
+                        color: Colors.black.withValues(alpha: 0.65),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
+          ),
         ),
       ],
     );
