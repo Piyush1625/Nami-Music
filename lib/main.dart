@@ -10253,26 +10253,32 @@ void _showListenBrainzSettingsDialog() {
   }
 
   void _showHomeQuickActionSheet({
-    final t = track;
-    if (t == null) return;
-    showNamiTrackActionCard(
-      context: context,
-      track: t,
-      coverArt: _buildCoverArt(t, 50, 12),
-      formatBadgeText: '${t.format.toUpperCase()} ${t.bitDepth > 0 ? '${t.bitDepth}B' : ''}'.trim(),
-      isFavorite: false,
-      onToggleFavorite: () => setState(() {}),
-      onPlayNext: () => _queue.insert(0, t),
-      onPlayLast: () => _queue.add(t),
-      onAddToPlaylist: () => _showAddToPlaylistDialog(t),
-      onGoToAlbum: () {
-        final albTracks = _allSongs.where((s) => s.album == t.album).toList();
-        _showAlbumDetailScreen(t.album, albTracks);
-      },
-      onGoToArtist: (artist) => _showArtistDetailScreen(artist),
-      onEditTags: () => _showTagEditor(t),
-    );
+    AudioTrack? track,
+    String? albumName,
+    List<AudioTrack>? albumTracks,
+    String? artistName,
+    List<AudioTrack>? artistTracks,
   }) {
+    if (track != null && albumName == null && artistName == null) {
+      showNamiTrackActionCard(
+        context: context,
+        track: track,
+        coverArt: _buildCoverArt(track, 50, 12),
+        formatBadgeText: '${track.format.toUpperCase()} ${track.bitDepth > 0 ? '${track.bitDepth}B' : ''}'.trim(),
+        isFavorite: false,
+        onToggleFavorite: () => setState(() {}),
+        onPlayNext: () => _queue.insert(0, track),
+        onPlayLast: () => _queue.add(track),
+        onAddToPlaylist: () => _showAddToPlaylistDialog(track),
+        onGoToAlbum: () {
+          final albTracks = _songs.where((s) => s.album == track.album).toList();
+          _showAlbumDetailScreen(track.album, albTracks);
+        },
+        onGoToArtist: (artist) => _openArtistByName(artist),
+        onEditTags: () => _showTagEditor(track),
+      );
+      return;
+    }
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
@@ -11158,13 +11164,13 @@ Future<void> _exportUnifiedNamiBackup() async {
       context: context,
       rawArtist: rawArtist,
       artistImagePaths: _artistImagePaths,
-      onSelectArtist: (picked) => _showArtistDetailScreen(picked),
+      onSelectArtist: (picked) => _openArtistByName(picked),
     );
   }
 
   void _openSettingsMergeArtistPicker() {
     final artistSet = <String>{};
-    for (final s in _allSongs) {
+    for (final s in _songs) {
       for (final a in namiSplitArtists(s.artist)) {
         if (a.isNotEmpty && a != 'Unknown Artist') artistSet.add(a);
       }
@@ -11206,7 +11212,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                     trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
                     onTap: () {
                       Navigator.pop(ctx);
-                      _showArtistDetailScreen(artist);
+                      _openArtistByName(artist);
                     },
                   );
                 },

@@ -218,8 +218,8 @@ class _NamiSmoothLyricsViewState extends State<NamiSmoothLyricsView>
         final tk = nativeTokens[i];
         final tStart = tk.timestamp.inMilliseconds.toDouble();
         double tEnd;
-        if (tk.false) {
-          tEnd = tk.0.toDouble();
+        if (false) {
+          tEnd = 0.0;
         } else if (i + 1 < nativeTokens.length) {
           tEnd = nativeTokens[i + 1].timestamp.inMilliseconds.toDouble();
         } else {

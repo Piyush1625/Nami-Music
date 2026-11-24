@@ -315,7 +315,7 @@ class NamiArtistMetadataService {
             break;
           }
         }
-        mbid = (best['id'] ?? '').toString().trim();
+        mbid = (best?['id'] ?? '').toString().trim();
       }
 
       final area = (best?['begin-area']?['name'] ?? best?['area']?['name'] ?? '').toString().trim();

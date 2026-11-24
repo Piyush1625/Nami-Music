@@ -638,19 +638,6 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
         trailing: trailing ?? const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
         onTap: onTap,
       ),
-          ListTile(
-            leading: const Icon(Icons.merge_type_rounded, color: Colors.white70),
-            title: const Text('Merge / Alias Artists', style: TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: const Text('Combine duplicate artist spellings across your library', style: TextStyle(fontSize: 12, color: Colors.white54)),
-            trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-            onTap: () {
-              final shell = context.findAncestorStateOfType<_NamiHomeShellState>();
-              if (shell != null) {
-                Navigator.pop(context);
-                shell._openSettingsMergeArtistPicker();
-              }
-            },
-          ),
     );
   }
 
@@ -682,6 +669,19 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   child: const Text('Grant'),
                 ),
               ),
+          ListTile(
+            leading: const Icon(Icons.merge_type_rounded, color: Colors.white70),
+            title: const Text('Merge / Alias Artists', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: const Text('Combine duplicate artist spellings across your library', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+            onTap: () {
+              final shell = context.findAncestorStateOfType<_NamiHomeShellState>();
+              if (shell != null) {
+                Navigator.pop(context);
+                shell._openSettingsMergeArtistPicker();
+              }
+            },
+          ),
               const Divider(color: Colors.white10, height: 1),
               ListTile(
                 leading: _settingsBadge(Icons.usb_rounded, themeColor),
