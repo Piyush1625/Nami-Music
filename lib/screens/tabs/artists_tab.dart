@@ -395,7 +395,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
     );
   }
 
-  Widget _buildArtistHeroThreeDotsButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {
+  Widget _buildArtistHeroThreeDotsButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {VoidCallback? onUpdated}) {
     return IconButton(
       tooltip: 'Artist Options',
       icon: Container(
@@ -431,7 +431,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                     _refreshArtistPhotoFromStreaming(artistName, onUpdated: onUpdated);
                   },
                 ),
-                NamiFloatingActionItem(
+NamiFloatingActionItem(
                   icon: Icons.drive_file_rename_outline_rounded,
                   title: 'Rename Artist',
                   subtitle: 'Update artist name across all tracks',
@@ -447,116 +447,6 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
           ],
         );
       },
-    );
-  }) {
-    return PopupMenuButton<String>(
-      icon: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: Colors.black45,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24),
-        ),
-        child: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
-      ),
-      tooltip: 'Artist Photo & Options',
-      color: const Color(0xFF181822),
-      onSelected: (val) async {
-            if (val == 'fetch_streaming_meta') {
-              NamiArtistMetadataService.invalidate(artistName);
-              _refreshArtistPhotoFromStreaming(artistName, onUpdated: onUpdated);
-              return;
-            }
-        if (val == 'fetch_options') {
-          await _showArtistFetchedPhotoSelector(ctx, artistName, onUpdated: onUpdated);
-        } else if (val == 'pick_gallery') {
-          final picked = await _pickPhotoDirectlyFromGallery(ctx, title: 'Select Artist Photo ($artistName)');
-          if (picked != null && picked.isNotEmpty) {
-            await _saveArtistImageFromUrlOrFile(artistName, picked, onUpdated: onUpdated);
-            if (mounted) {
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                SnackBar(content: Text('Updated artist photo for $artistName')),
-              );
-            }
-          }
-        } else if (val == 'reset_photo') {
-          setState(() {
-            _artistImagePaths.remove(artistName);
-            _artworkTick.value++;
-          });
-          await _saveStateCache();
-          if (onUpdated != null) onUpdated();
-          if (mounted) {
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              SnackBar(content: Text('Reset artist photo for $artistName')),
-            );
-          }
-        } else if (val == 'queue_all') {
-          setState(() {
-            for (final s in artistSongs) {
-              if (!_playNextQueue.contains(s)) _playNextQueue.add(s);
-            }
-          });
-          if (mounted) {
-            ScaffoldMessenger.of(ctx).showSnackBar(
-              SnackBar(content: Text('Added ${artistSongs.length} tracks to Play Next queue')),
-            );
-          }
-        }
-      },
-      itemBuilder: (_) => const [
-        const PopupMenuItem(
-              value: 'fetch_streaming_meta',
-              child: Row(
-                children: [
-                  Icon(Icons.auto_fix_high_rounded, size: 18, color: Colors.white),
-                  SizedBox(width: 10),
-                  Text('Fetch Spotify / Apple Music'),
-                ],
-              ),
-            ),
-            PopupMenuItem(
-          value: 'fetch_options',
-          child: Row(
-            children: [
-              Icon(Icons.collections_outlined, size: 18, color: Color(0xFFE53935)),
-              SizedBox(width: 10),
-              Text('Choose Fetched Artist Photos'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'pick_gallery',
-          child: Row(
-            children: [
-              Icon(Icons.photo_library_outlined, size: 18),
-              SizedBox(width: 10),
-              Text('Pick Photo from Gallery'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'reset_photo',
-          child: Row(
-            children: [
-              Icon(Icons.restore_rounded, size: 18),
-              SizedBox(width: 10),
-              Text('Reset Artist Photo'),
-            ],
-          ),
-        ),
-        PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'queue_all',
-          child: Row(
-            children: [
-              Icon(Icons.queue_music_rounded, size: 18),
-              SizedBox(width: 10),
-              Text('Add All Tracks to Queue'),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
