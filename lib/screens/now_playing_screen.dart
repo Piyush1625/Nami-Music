@@ -383,11 +383,12 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   builder: (_, playSnap) {
                                     final playingNow = playSnap.data ?? widget.audioPlayer.state.playing;
                                     return AnimatedScale(
-                                      scale: playingNow ? 1.0 : 0.93,
+                                      scale: (!NamiUxPrefs.breathingCoverArt || playingNow) ? 1.0 : 0.93,
                                       duration: const Duration(milliseconds: 300),
                                       curve: Curves.easeOutCubic,
                                       child: GestureDetector(/* v19_art_double_tap */
                                   onDoubleTap: () {
+                                    if (!NamiUxPrefs.doubleTapArtLyrics) return;
                                     HapticFeedback.mediumImpact();
                                     setState(() {
                                       _viewMode = _viewMode == 1 ? 0 : 1;

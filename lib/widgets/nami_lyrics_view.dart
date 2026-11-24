@@ -345,7 +345,7 @@ class _NamiSmoothLyricsViewState extends State<NamiSmoothLyricsView>
             final line = widget.lines[i];
             final isActive = i == _activeLineIndex;
             final dist = _activeLineIndex < 0 ? 0 : (i - _activeLineIndex).abs();
-            final blurSigma = _userScrolling
+            final blurSigma = (_userScrolling || !NamiUxPrefs.lyricsBlurDepth)
                 ? 0.0
                 : (dist == 0
                     ? 0.0

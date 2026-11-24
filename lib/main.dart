@@ -43,6 +43,7 @@ part 'screens/tabs/mornye_tab.dart';
 part 'widgets/nami_v22_polish.dart';
 part 'widgets/nami_v24_ui.dart';
 part 'widgets/nami_v25_motion.dart';
+part 'widgets/nami_v26_settings.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -460,6 +461,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
+    NamiUxPrefs.ensureLoaded();
     activeInstance = this;
     
     
@@ -10274,10 +10276,11 @@ void _showListenBrainzSettingsDialog() {
           ),
           NamiFloatingActionItem(
             icon: Icons.auto_fix_high_rounded,
-            title: 'Fetch Spotify / Apple Music',
+            title: 'Choose Artist Photo Online',
+            subtitle: 'Pick from JioSaavn IN, Apple Music IN & Spotify',
             onTap: () {
               NamiArtistMetadataService.invalidate(artistName);
-              _refreshArtistPhotoFromStreaming(artistName);
+              _openArtistPhotoOnlinePicker(artistName, tracks: list);
             },
           ),
         ],
@@ -11489,6 +11492,100 @@ Future<void> _exportUnifiedNamiBackup() async {
         }
       },
     );
+  }
+
+  Future<void> _purgeBadArtistPlaceholders() async {
+    int removed = 0;
+    final keysToRemove = <String>[];
+    for (final entry in _artistImagePaths.entries) {
+      final f = File(entry.value);
+      if (!f.existsSync()) {
+        keysToRemove.add(entry.key);
+        continue;
+      }
+      final len = await f.length();
+      // Deezer white-mic & broken icon placeholders are tiny (< 4.8KB) or empty
+      if (len < 4800) {
+        try {
+          await f.delete();
+        } catch (_) {}
+        keysToRemove.add(entry.key);
+      }
+    }
+    for (final k in keysToRemove) {
+      _artistImagePaths.remove(k);
+      NamiArtistMetadataService.invalidate(k);
+      removed++;
+    }
+    if (mounted) {
+      setState(() {
+        _artworkTick.value++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            removed > 0
+                ? 'Cleared $removed placeholder artist photo(s). Re-fetching real portraits...'
+                : 'No broken placeholder artist photos found. Checking missing artists...',
+          ),
+        ),
+      );
+    }
+    _saveStateCache();
+    _batchFetchMissingArtistPhotos();
+  }
+
+  Future<void> _batchFetchMissingArtistPhotos() async {
+    final artistTracksMap = <String, List<String>>{};
+    for (final s in _songs) {
+      for (final a in namiSplitArtists(s.artist)) {
+        if (a.isEmpty || a == 'Unknown Artist') continue;
+        artistTracksMap.putIfAbsent(a, () => []).add(s.title);
+      }
+    }
+    final missing = artistTracksMap.keys.where((a) {
+      final p = _artistImagePaths[a];
+      return p == null || !File(p).existsSync();
+    }).take(25).toList();
+
+    if (missing.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All artists already have photos!')),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fetching official portraits for ${missing.length} artists...')),
+      );
+    }
+
+    int fetched = 0;
+    for (final artist in missing) {
+      try {
+        final url = await NamiArtistMetadataService.fetchBestArtistPhotoUrl(
+          artist,
+          sampleTracks: artistTracksMap[artist]?.take(2).toList() ?? const [],
+        );
+        if (NamiArtistMetadataService.isValidRealPhotoUrl(url)) {
+          await _saveArtistImageFromUrlOrFile(artist, url!);
+          fetched++;
+        }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _artworkTick.value++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fetched $fetched new artist portrait(s)!')),
+      );
+    }
+    _saveStateCache();
   }
 }
 

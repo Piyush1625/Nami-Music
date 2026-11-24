@@ -446,8 +446,9 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                   title: 'Fetch Spotify / Apple Music',
                   subtitle: 'Download official artist portrait & bio',
                   onTap: () {
+                    /* v26_artist_visual_picker */
                     NamiArtistMetadataService.invalidate(artistName);
-                    _refreshArtistPhotoFromStreaming(artistName, onUpdated: onUpdated);
+                    _openArtistPhotoOnlinePicker(artistName, onUpdated: onUpdated);
                   },
                 ),
 NamiFloatingActionItem(

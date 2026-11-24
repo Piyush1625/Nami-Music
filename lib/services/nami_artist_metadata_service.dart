@@ -54,6 +54,26 @@ class NamiArtistProfile {
 }
 
 class NamiArtistMetadataService {
+  static bool indiaFirst = true;
+
+  /// Filters out Deezer white-microphone placeholders (empty hash `//` or md5 of empty string)
+  /// and generic JioSaavn / iTunes default icons so blank white circles never get cached.
+  static bool isValidRealPhotoUrl(String? url) {
+    if (url == null) return false;
+    final u = url.trim();
+    if (!u.startsWith('http')) return false;
+    final l = u.toLowerCase();
+    if (l.contains('images/artist//') ||
+        l.contains('d41d8cd98f00b204e9800998ecf8427e') ||
+        l.contains('default_') ||
+        l.contains('artist-default') ||
+        l.contains('placeholder') ||
+        l.contains('noimage') ||
+        l.contains('no_image')) {
+      return false;
+    }
+    return true;
+  }
   static const Map<String, String> _jsonHeaders = {
     'User-Agent': 'NamiMusicPlayer/2.4 (https://github.com/Piyush1625/Nami-Music)',
     'Accept': 'application/json',
@@ -88,7 +108,7 @@ class NamiArtistMetadataService {
 
     // Run India-first lookups in parallel: JioSaavn (IN) + Apple Music (IN) + Spotify/MusicBrainz
     final results = await Future.wait<Map<String, String?>>([
-      _fetchFromAppleMusic(cleanName, sampleTracks: sampleTracks, sampleAlbums: sampleAlbums, country: 'IN'),
+      _fetchFromAppleMusic(cleanName, sampleTracks: sampleTracks, sampleAlbums: sampleAlbums, country: indiaFirst ? 'IN' : 'US'),
       _fetchFromJioSaavnArtist(cleanName),
       _fetchFromSpotifyViaMusicBrainz(cleanName, sampleTracks: sampleTracks),
     ]);
@@ -206,7 +226,7 @@ class NamiArtistMetadataService {
     final merged = <NamiMediaCandidate>[];
     for (final list in buckets) {
       for (final item in list) {
-        if (item.imageUrl.startsWith('http') && seen.add(item.imageUrl)) {
+        if (isValidRealPhotoUrl(item.imageUrl) && seen.add(item.imageUrl)) {
           merged.add(item);
         }
       }
@@ -229,7 +249,7 @@ class NamiArtistMetadataService {
     final merged = <NamiMediaCandidate>[];
     for (final list in buckets) {
       for (final item in list) {
-        if (item.imageUrl.startsWith('http') && seen.add(item.imageUrl)) {
+        if (isValidRealPhotoUrl(item.imageUrl) && seen.add(item.imageUrl)) {
           merged.add(item);
         }
       }
@@ -392,7 +412,7 @@ class NamiArtistMetadataService {
         final list = (jsonDecode(res.body)['data'] as List?)?.whereType<Map>().toList() ?? [];
         for (final item in list) {
           final pic = (item['picture_xl'] ?? item['picture_big'] ?? '').toString().trim();
-          if (pic.startsWith('http')) {
+          if (isValidRealPhotoUrl(pic)) {
             out.add(NamiMediaCandidate(
               title: (item['name'] ?? query).toString(),
               subtitle: '${item['nb_fan'] ?? 0} fans',
@@ -417,7 +437,7 @@ class NamiArtistMetadataService {
         for (final item in list) {
           final alb = item['album'];
           final pic = (alb is Map ? (alb['cover_xl'] ?? alb['cover_big'] ?? '') : '').toString().trim();
-          if (pic.startsWith('http')) {
+          if (isValidRealPhotoUrl(pic)) {
             out.add(NamiMediaCandidate(
               title: (item['title'] ?? query).toString(),
               subtitle: (item['artist']?['name'] ?? '').toString(),
@@ -698,7 +718,7 @@ class NamiArtistMetadataService {
         final list = (data['data'] as List?)?.whereType<Map>().toList() ?? [];
         if (list.isNotEmpty) {
           final pic = (list.first['picture_xl'] ?? list.first['picture_big'] ?? '').toString().trim();
-          if (pic.startsWith('http')) return pic;
+          if (isValidRealPhotoUrl(pic)) return pic;
         }
       }
     } catch (_) {}

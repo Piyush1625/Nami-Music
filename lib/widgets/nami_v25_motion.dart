@@ -122,7 +122,7 @@ class _NamiSpringTapState extends State<NamiSpringTap> {
       onTap: widget.onTap == null
           ? null
           : () {
-              if (widget.haptic) HapticFeedback.selectionClick();
+              if (widget.haptic && NamiUxPrefs.hapticsEnabled) HapticFeedback.selectionClick();
               widget.onTap!();
             },
       onLongPress: widget.onLongPress == null
@@ -213,7 +213,7 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
-    if (_dismissing) return;
+    if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
     _springCtrl.stop();
     final next = (_dragY + d.delta.dy).clamp(0.0, 420.0);
     if ((next - _dragY).abs() > 0.2) {
