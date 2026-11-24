@@ -409,6 +409,11 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
       tooltip: 'Artist Photo & Options',
       color: const Color(0xFF181822),
       onSelected: (val) async {
+            if (val == 'fetch_streaming_meta') {
+              NamiArtistMetadataService.invalidate(artistName);
+              _refreshArtistPhotoFromStreaming(artistName, onUpdated: onUpdated);
+              return;
+            }
         if (val == 'fetch_options') {
           await _showArtistFetchedPhotoSelector(ctx, artistName, onUpdated: onUpdated);
         } else if (val == 'pick_gallery') {
@@ -447,7 +452,17 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
         }
       },
       itemBuilder: (_) => const [
-        PopupMenuItem(
+        const PopupMenuItem(
+              value: 'fetch_streaming_meta',
+              child: Row(
+                children: [
+                  Icon(Icons.auto_fix_high_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 10),
+                  Text('Fetch Spotify / Apple Music'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
           value: 'fetch_options',
           child: Row(
             children: [

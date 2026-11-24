@@ -9,6 +9,7 @@ class NowPlayingModal extends StatefulWidget {
   final bool blurredBackdrop;
   final int doubleTapSeekSec;
   final bool syllableLyricsEnabled;
+  final ValueChanged<String>? onGoToArtist;
   final bool shuffleEnabled;
   final int repeatMode;
   final VoidCallback onToggleShuffle,
@@ -34,6 +35,7 @@ class NowPlayingModal extends StatefulWidget {
     required this.blurredBackdrop,
     required this.doubleTapSeekSec,
     required this.syllableLyricsEnabled,
+    this.onGoToArtist,
     required this.shuffleEnabled,
     required this.repeatMode,
     required this.onToggleShuffle,
@@ -358,13 +360,23 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         ),
                                       ],
                                     ),
-                                    child: Hero(
+                                    child: GestureDetector(/* v19_art_double_tap */
+                                  onDoubleTap: () {
+                                    HapticFeedback.mediumImpact();
+                                    setState(() {
+                                      _viewMode = _viewMode == 1 ? 0 : 1;
+                                      _lastScrolledLyricIndex = -1;
+                                    });
+                                    if (_viewMode == 1) widget.onRefreshLyrics();
+                                  },
+                                  child: Hero(
                                       tag: 'nami_np_art_${song?.path ?? ""}',
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(20),
                                         child: SizedBox.expand(child: artWidget),
                                       ),
                                     ),
+                                ),
                                   ),
                                 );
                               },
@@ -438,53 +450,15 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       WidgetsBinding.instance.addPostFrameCallback((_) => _autoScrollToActiveLyric(activeIdx));
                                       final sweepProgress = _computeLineSyllableProgress(lyrics, activeIdx, pos);
 
-                                      return ListView.builder(
-                                        controller: _lyricsScrollCtrl,
-                                        itemExtent: _lyricLineExtent,
-                                        padding: const EdgeInsets.symmetric(vertical: _lyricLineExtent * 4),
-                                        itemCount: lyrics.length,
-                                        itemBuilder: (context, idx) {
-                                          final isCenter5th = idx == activeIdx;
-                                          final distance = (idx - activeIdx).abs();
-                                          final lineText = lyrics[idx].text;
-
-                                          if (isCenter5th && widget.syllableLyricsEnabled) {
-  return GestureDetector(
-    onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-    child: AnimatedScale(
-      scale: 1.06, duration: const Duration(milliseconds: 300),
-      child: Container(
-        alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => LinearGradient(
-            colors: const [Colors.white, Colors.white, Colors.white30, Colors.white30],
-            stops: [0.0, sweepProgress, (sweepProgress + 0.06).clamp(0.0, 1.0), 1.0],
-          ).createShader(bounds),
-          child: Text(lineText, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18.0, fontWeight: FontWeight.w800)),
-        ),
-      ),
-    ),
-  );
-}
-return GestureDetector(
-  onTap: () => widget.audioPlayer.seek(lyrics[idx].timestamp),
-  child: AnimatedScale(
-    scale: isCenter5th ? 1.06 : (distance == 1 ? 0.96 : 0.90), duration: const Duration(milliseconds: 300),
-    child: Container(
-      alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Text(lineText, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: isCenter5th ? 18.0 : (distance == 1 ? 14.5 : 12.5),
-          fontWeight: isCenter5th ? FontWeight.w800 : FontWeight.w500,
-          color: isCenter5th ? Colors.white : (distance == 1 ? Colors.white60 : (distance <= 3 ? Colors.white30 : Colors.white12)),
-        )),
-    ),
-  ),
-);
-                  },
-                                      );
+                                      return NamiSmoothLyricsView(
+                                      lines: lyrics,
+                                      positionStream: widget.audioPlayer.stream.position,
+                                      initialPosition: widget.audioPlayer.state.position,
+                                      playingStream: widget.audioPlayer.stream.playing,
+                                      initialPlaying: widget.audioPlayer.state.playing,
+                                      accentColor: Theme.of(context).colorScheme.primary,
+                                      onSeek: (d) => widget.audioPlayer.seek(d),
+                                    );
                                     },
                                   ),
                                 ),
@@ -506,7 +480,24 @@ return GestureDetector(
                             children: [
                               Text(song?.title ?? 'Not Playing', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
                               const SizedBox(height: 4),
-                              Text(cleanArtistStr(song?.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white70)),
+                              GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            final raw = song?.artist ?? '';
+                            if (raw.trim().isEmpty || widget.onGoToArtist == null) return;
+                            HapticFeedback.selectionClick();
+                            showNamiArtistPickerOrNavigate(
+                              context: context,
+                              rawArtist: raw,
+                              artistImagePaths: const <String, String>{},
+                              onSelectArtist: (picked) {
+                                Navigator.of(context).pop();
+                                widget.onGoToArtist!(picked);
+                              },
+                            );
+                          },
+                          child: Text(cleanArtistStr(song?.artist), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white70)),
+                        ),
                             ],
                           ),
                         ),

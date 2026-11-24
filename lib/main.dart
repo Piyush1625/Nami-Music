@@ -2677,106 +2677,23 @@ const SizedBox(height: 10),
   }
 
   void _showTrackOptionsMenu(AudioTrack song) {
-    showModalBottomSheet(
+    showNamiTrackActionCard(
       context: context,
-      backgroundColor: const Color(0xFF101016),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  _buildCoverArt(song, 48, 8),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        Text('${cleanArtistStr(song.artist)} • ${song.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.playlist_play_rounded),
-                title: const Text('Play Next'),
-                onTap: () {
-                  setState(() => _playNextQueue.add(song));
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${song.title} to play next')));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.playlist_add_rounded),
-                title: const Text('Add to Playlist'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAddToPlaylistDialog(song);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.lyrics_outlined),
-                title: const Text('Lyrics Metadata & Editor'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showNamiLyricsManagerSheet(song);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_note_rounded),
-                title: const Text('Edit Tags & Cover'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showTagEditorDialog(song);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.person_rounded),
-                title: const Text('Go to Artist'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _buildArtistGroupsMap();
-                  final primary = _splitMultiArtists
-                      ? song.artist.split(RegExp(_artistSeparators.map(RegExp.escape).join('|'), caseSensitive: false)).first.trim()
-                      : song.artist;
-                  final tracks = artistGroups[primary] ?? _songs.where((s) => s.artist.toLowerCase().contains(primary.toLowerCase())).toList();
-                  _showArtistDetailScreen(primary.isNotEmpty ? primary : cleanArtistStr(song.artist), tracks);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.album_rounded),
-                title: const Text('Go to Album'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAlbumDetailScreen(song.album, _songs.where((s) => s.album == song.album).toList());
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: const Text('File Info & Audio Properties'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showTrackFileInfoSheet(song);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
-                title: const Text('Delete Forever', style: TextStyle(color: Colors.redAccent)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAdvancedDeleteDialog(song);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+      track: song,
+      coverArt: _buildCoverArt(song, 50, 12),
+      formatBadgeText: '${song.path.split('.').last.toUpperCase()} ${song.bitDepth > 0 ? '${song.bitDepth}B' : ''}'.trim(),
+      isFavorite: false,
+      onToggleFavorite: () => setState(() {}),
+      onPlayNext: () { setState(() => _playNextQueue.add(song));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${song.title} to play next'))); },
+      onPlayLast: () => setState(() => _playNextQueue.add(song)),
+      onAddToPlaylist: () { _showAddToPlaylistDialog(song); },
+      onGoToAlbum: () { _showAlbumDetailScreen(song.album, _songs.where((s) => s.album == song.album).toList()); },
+      onGoToArtist: (artist) => _openArtistByName(artist),
+      onLyricsEditor: () { _showNamiLyricsManagerSheet(song); },
+      onEditTags: () { _showTagEditorDialog(song); },
+      onFileInfo: () { _showTrackFileInfoSheet(song); },
+      onDeleteForever: () { _showAdvancedDeleteDialog(song); },
     );
   }
 
@@ -7277,6 +7194,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         transitionDuration: const Duration(milliseconds: 260),
         reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (context, animation, secondaryAnimation) => NowPlayingModal(
+        onGoToArtist: (artist) => _openArtistByName(artist),
           audioPlayer: _audioPlayer,
           currentSongNotifier: _currentSongNotifier,
           allSongs: _songs,
@@ -10324,7 +10242,7 @@ void _showListenBrainzSettingsDialog() {
                     final p = NamiV16Prefs.instance.resolveCanonicalArtist(
                       track.artist.split(RegExp(_artistSeparators.map(RegExp.escape).join('|'), caseSensitive: false)).first,
                     );
-                    _showArtistDetailScreen(p, artistGroups[p] ?? [track]);
+                    _openArtistOrPicker(track.artist);
                   },
                 ),
                 ListTile(
