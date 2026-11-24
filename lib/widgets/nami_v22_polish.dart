@@ -150,7 +150,7 @@ void showNamiSignalChainSheet({
   final accent = Theme.of(context).colorScheme.primary;
   final ext = (song?.path.split('.').last ?? 'AUDIO').toUpperCase();
   final bitDepth = song?.bitDepth ?? 0;
-  final sampleRate = song?.sampleRate ?? 0;
+  final sampleRate = (song?.sampleRateHz ?? 0).toDouble();
   final srStr = sampleRate > 0 ? '${(sampleRate / 1000).toStringAsFixed(1)} kHz' : 'Native Rate';
   final bdStr = bitDepth > 0 ? '$bitDepth-Bit' : 'Lossless';
   final isBitPerfect = !eqEnabled && (ext == 'FLAC' || ext == 'ALAC' || ext == 'WAV');
