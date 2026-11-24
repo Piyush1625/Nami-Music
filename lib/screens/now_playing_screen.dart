@@ -232,13 +232,8 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
         return Scaffold(
           backgroundColor: const Color(0xFF07070B),
-          body: GestureDetector(/* v22_amoled_ambient_wash */
-        onVerticalDragEnd: (details) {
-          if ((details.primaryVelocity ?? 0) > 480) {
-            HapticFeedback.selectionClick();
-            Navigator.of(context).maybePop();
-          }
-        },
+          body: NamiInteractiveDragDismiss(
+        onDismiss: () => Navigator.of(context).maybePop(),
         child: Stack(
           children: [
             Positioned.fill(

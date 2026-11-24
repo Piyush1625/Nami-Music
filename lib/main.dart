@@ -42,6 +42,7 @@ part 'screens/tabs/playlists_tab.dart';
 part 'screens/tabs/mornye_tab.dart';
 part 'widgets/nami_v22_polish.dart';
 part 'widgets/nami_v24_ui.dart';
+part 'widgets/nami_v25_motion.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -180,9 +181,17 @@ bool pitchBlack = true;
         pitchBlack ? const Color(0xFF0C0C12) : const Color(0xFF13131C);
 
     return MaterialApp(
+      scrollBehavior: const NamiButterScrollBehavior(),
       title: 'Nami',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        splashFactory: InkSparkle.splashFactory,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: NamiSmoothPageTransitionsBuilder(),
+            TargetPlatform.iOS: NamiSmoothPageTransitionsBuilder(),
+          },
+        ),
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bgColor,
@@ -1140,6 +1149,7 @@ Future<void> _playSong(AudioTrack song) async {
 
   void _showSleepTimerDialog() {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF14141F),
       shape: const RoundedRectangleBorder(
@@ -1276,6 +1286,7 @@ Future<void> _playSong(AudioTrack song) async {
 
   void _showAudioPathDetails(AudioTrack song) {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF121218),
       shape: const RoundedRectangleBorder(
@@ -1444,6 +1455,7 @@ Future<void> _playSong(AudioTrack song) async {
 
   void _showEqualizerSheet() {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF14141F),
@@ -1729,6 +1741,7 @@ const SizedBox(height: 10),
     bool isEditingInline = false;
 
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2251,6 +2264,7 @@ const SizedBox(height: 10),
     }
 
     await showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: parentContext,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF0C0C14),
@@ -2366,6 +2380,7 @@ const SizedBox(height: 10),
     final coverPathCtrl = TextEditingController();
 
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF101018),
       isScrollControlled: true,
@@ -2649,6 +2664,7 @@ const SizedBox(height: 10),
   }
   void _showAddToPlaylistDialog(AudioTrack song) {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF14141F),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -2708,6 +2724,7 @@ const SizedBox(height: 10),
     final sizeMb = song.fileSize > 0 ? '${(song.fileSize / (1024 * 1024)).toStringAsFixed(2)} MB' : 'Unknown';
     final khz = (song.sampleRateHz / 1000.0).toStringAsFixed(1);
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF12121A),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -2748,6 +2765,7 @@ const SizedBox(height: 10),
 
   void _showFolderExplorerModal() {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF14141F),
@@ -2873,6 +2891,7 @@ const SizedBox(height: 10),
 
   void _showQueueBottomSheet(BuildContext context) {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -5179,6 +5198,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
 
     if (!mounted) return;
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF14141F),
@@ -6701,6 +6721,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
 
   void _showBatchAddToPlaylistDialog(List<AudioTrack> batch) {
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF14141F),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -7627,6 +7648,7 @@ void _showCreatePlaylistDialog() {
                     icon: const Icon(Icons.playlist_add_rounded),
                     onPressed: () {
                       showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
                         context: context,
                         isScrollControlled: true,
                         backgroundColor: const Color(0xFF12121A),
@@ -8689,6 +8711,7 @@ List<String> _getSmartMornyeQuickSearches() {
     bool started = false;
 
     await showModalBottomSheet<void>(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: parentCtx,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF12121A),
@@ -8897,6 +8920,7 @@ List<String> _getSmartMornyeQuickSearches() {
 
     if (!mounted) return null;
     return showModalBottomSheet<String>(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: parentCtx,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF12121A),
@@ -10008,6 +10032,7 @@ void _showListenBrainzSettingsDialog() {
       ('duration', 'Duration', Icons.timer_outlined),
     ];
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF12121A),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -10076,6 +10101,7 @@ void _showListenBrainzSettingsDialog() {
     String? pickedCoverPath;
 
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF101018),
@@ -10294,6 +10320,7 @@ void _showListenBrainzSettingsDialog() {
     }
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF101018),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -10409,6 +10436,7 @@ void _showListenBrainzSettingsDialog() {
 void _showLiveOutputProfileSheet() {
     final accent = Theme.of(context).colorScheme.primary;
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       backgroundColor: const Color(0xFF12121A),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -10516,6 +10544,7 @@ void _showLiveOutputProfileSheet() {
     final prefs = NamiV16Prefs.instance;
 
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF12121A),
@@ -10948,6 +10977,7 @@ Future<void> _exportUnifiedNamiBackup() async {
   }) {
     String q = '';
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF0E0E15),
@@ -11057,7 +11087,8 @@ Future<void> _exportUnifiedNamiBackup() async {
           Row(
             children: [
               // Left: Frosted Home circle button
-              GestureDetector(
+              NamiSpringTap(
+                pressedScale: 0.90,
                 onTap: () {
                   HapticFeedback.selectionClick();
                   setState(() => _selectedIndex = 0);
@@ -11216,7 +11247,8 @@ Future<void> _exportUnifiedNamiBackup() async {
               ),
               const SizedBox(width: 10),
               // Right: Frosted Scoped Search circle button
-              GestureDetector(
+              NamiSpringTap(
+                pressedScale: 0.90,
                 onTap: () {
                   HapticFeedback.selectionClick();
                   _showScopedTracksSearchSheet(scopeTitle: scopeTitle, scopeTracks: scopeTracks);
@@ -11281,6 +11313,7 @@ Future<void> _exportUnifiedNamiBackup() async {
     }
     final artists = artistSet.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF0E0E15),

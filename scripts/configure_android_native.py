@@ -22,6 +22,7 @@ import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.os.Environment
 import android.net.Uri
@@ -31,6 +32,29 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : AudioServiceActivity() {
     private val AUDIO_DEVICE_CHANNEL = "com.piyush.nami/audio_device"
+
+        override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableHighRefreshRate()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun enableHighRefreshRate() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val activeDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay
+                val current = activeDisplay?.mode ?: return
+                val bestMode = activeDisplay.supportedModes
+                    .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+                    .maxByOrNull { it.refreshRate }
+                if (bestMode != null && bestMode.modeId != current.modeId) {
+                    val lp = window.attributes
+                    lp.preferredDisplayModeId = bestMode.modeId
+                    window.attributes = lp
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

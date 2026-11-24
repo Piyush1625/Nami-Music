@@ -107,11 +107,9 @@ class NamiQuickFilterBar extends StatelessWidget {
         itemBuilder: (_, idx) {
           final opt = options[idx];
           final active = opt == selected;
-          return GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              onSelected(opt);
-            },
+          return NamiSpringTap(
+            pressedScale: 0.94,
+            onTap: () => onSelected(opt),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOutCubic,
@@ -201,6 +199,7 @@ void showNamiSignalChainSheet({
   }
 
   showModalBottomSheet(
+    sheetAnimationStyle: namiSmoothSheetStyle,
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
