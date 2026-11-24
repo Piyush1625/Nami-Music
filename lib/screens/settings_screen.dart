@@ -660,7 +660,6 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   onPressed: () => _namiHandleAllFilesGrant(),
                   child: const Text('Grant'),
                 ),
-              ,
             onTap: () => _namiHandleAllFilesGrant(),
           ),
           ListTile(
@@ -682,7 +681,6 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   onPressed: () => _namiHandleUsbDacRequest(),
                   child: const Text('Request'),
                 ),
-              ,
             onTap: () => _namiHandleUsbDacRequest(),
           ),
             ]),
