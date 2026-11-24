@@ -44,6 +44,7 @@ part 'widgets/nami_v22_polish.dart';
 part 'widgets/nami_v24_ui.dart';
 part 'widgets/nami_v25_motion.dart';
 part 'widgets/nami_v26_settings.dart';
+part 'widgets/nami_v27_audiophile.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -461,6 +462,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
+    _initV27AudiophileBridge();
     NamiUxPrefs.ensureLoaded();
     activeInstance = this;
     
@@ -11610,6 +11612,44 @@ Future<void> _exportUnifiedNamiBackup() async {
       );
     }
     _saveStateCache();
+  }
+
+  void _syncV27WidgetAndSession() {
+    final song = _currentSong;
+    final playing = _audioPlayer.state.playing;
+    NamiAudiophileEngine.updateHomeWidget(
+      title: song?.title ?? 'Nami Music',
+      artist: song != null ? cleanArtistStr(song.artist) : 'Tap to open player',
+      isPlaying: playing,
+      coverPath: song?.thumbPath,
+    );
+    if (song != null) {
+      NamiAudiophileEngine.saveSession(
+        currentSong: song,
+        position: _audioPlayer.state.position,
+        queue: _playNextQueue,
+      );
+    }
+  }
+
+  void _initV27AudiophileBridge() {
+    NamiUxPrefs.ensureLoaded().then((_) {
+      NamiAudiophileEngine.applyMpvProperties(_audioPlayer);
+    });
+    NamiAudiophileEngine.bindWidgetControls(
+      onPlayPause: () {
+        if (_audioPlayer.state.playing) {
+          _audioPlayer.pause();
+        } else {
+          _audioPlayer.play();
+        }
+      },
+      onNext: () => _playNextTrack(),
+      onPrev: () => _playPrevTrack(),
+    );
+    _audioPlayer.stream.playing.listen((_) {
+      if (mounted) _syncV27WidgetAndSession();
+    });
   }
 }
 

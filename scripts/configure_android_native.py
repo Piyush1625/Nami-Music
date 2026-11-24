@@ -58,6 +58,28 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val widgetChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.piyush.nami/widget")
+        widgetChannel.setMethodCallHandler { call, result ->
+            if (call.method == "updateWidget") {
+                val prefs = getSharedPreferences(NamiMusicWidgetProvider.PREFS, Context.MODE_PRIVATE)
+                prefs.edit()
+                    .putString("title", call.argument<String>("title") ?: "Nami Music")
+                    .putString("artist", call.argument<String>("artist") ?: "")
+                    .putBoolean("isPlaying", call.argument<Boolean>("isPlaying") ?: false)
+                    .putString("coverPath", call.argument<String>("coverPath") ?: "")
+                    .apply()
+                NamiMusicWidgetProvider.updateAll(this)
+                result.success(true)
+            } else {
+                result.notImplemented()
+            }
+        }
+        NamiMusicWidgetProvider.onWidgetAction = { action ->
+            runOnUiThread {
+                try { widgetChannel.invokeMethod(action, null) } catch (_: Exception) {}
+            }
+        }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_DEVICE_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

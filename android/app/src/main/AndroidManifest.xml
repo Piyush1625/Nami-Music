@@ -49,5 +49,19 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+            <receiver
+            android:name=".NamiMusicWidgetProvider"
+            android:exported="true"
+            android:label="Nami Music">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.piyush.nami.WIDGET_PLAY_PAUSE" />
+                <action android:name="com.piyush.nami.WIDGET_NEXT" />
+                <action android:name="com.piyush.nami.WIDGET_PREV" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/nami_widget_info" />
+        </receiver>
     </application>
 </manifest>

@@ -11,6 +11,9 @@ class NamiUxPrefs {
   static bool doubleTapArtLyrics = true;
   static bool swipeDownDismiss = true;
   static String motionSpeed = 'balanced'; // 'snappy' | 'balanced' | 'silky'
+  static bool gaplessPlayback = true;
+  static String replayGainMode = 'track'; // 'no' | 'track' | 'album'
+  static bool persistSession = true;
 
   static final ValueNotifier<Duration?> sleepRemaining = ValueNotifier<Duration?>(null);
   static Timer? _sleepTicker;
@@ -38,6 +41,9 @@ class NamiUxPrefs {
       doubleTapArtLyrics = prefs.getBool('nami_v26_double_tap_art') ?? true;
       swipeDownDismiss = prefs.getBool('nami_v26_swipe_dismiss') ?? true;
       motionSpeed = prefs.getString('nami_v26_motion_speed') ?? 'balanced';
+      gaplessPlayback = prefs.getBool('nami_v27_gapless') ?? true;
+      replayGainMode = prefs.getString('nami_v27_replaygain') ?? 'track';
+      persistSession = prefs.getBool('nami_v27_persist_session') ?? true;
       NamiArtistMetadataService.indiaFirst = indiaFirstMetadata;
     } catch (_) {}
   }
@@ -53,6 +59,9 @@ class NamiUxPrefs {
       await prefs.setBool('nami_v26_double_tap_art', doubleTapArtLyrics);
       await prefs.setBool('nami_v26_swipe_dismiss', swipeDownDismiss);
       await prefs.setString('nami_v26_motion_speed', motionSpeed);
+      await prefs.setBool('nami_v27_gapless', gaplessPlayback);
+      await prefs.setString('nami_v27_replaygain', replayGainMode);
+      await prefs.setBool('nami_v27_persist_session', persistSession);
     } catch (_) {}
   }
 
@@ -220,6 +229,20 @@ class _NamiSettingsStudioSectionState extends State<NamiSettingsStudioSection> {
 
     return Column(
       children: [
+        // 0. Audiophile Playback & Daily Driver Card (Gapless, ReplayGain, Session, Widget)
+        NamiAudiophileStudioCard(
+          accentColor: accent,
+          onApplyAudioProps: () {
+            final shell = _NamiHomeShellState.activeInstance;
+            if (shell != null) {
+              NamiAudiophileEngine.applyMpvProperties(shell._audioPlayer);
+            }
+          },
+          onSyncWidgetNow: () {
+            _NamiHomeShellState.activeInstance?._syncV27WidgetAndSession();
+          },
+        ),
+
         // 1. Sleep Timer Card
         ValueListenableBuilder<Duration?>(
           valueListenable: NamiUxPrefs.sleepRemaining,

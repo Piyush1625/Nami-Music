@@ -28,6 +28,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free Disk Space for Android NDK
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk-bundle || true
+          df -h
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
