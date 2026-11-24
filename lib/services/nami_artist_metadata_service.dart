@@ -43,7 +43,7 @@ class NamiArtistProfile {
 
 class NamiArtistMetadataService {
   static const Map<String, String> _jsonHeaders = {
-    'User-Agent': 'NamiMusicPlayer/2.2 (https://github.com/Piyush1625/Nami-Music)',
+    'User-Agent': 'NamiMusicPlayer/2.3 (https://github.com/Piyush1625/Nami-Music)',
     'Accept': 'application/json',
   };
 
@@ -64,6 +64,8 @@ class NamiArtistMetadataService {
     String artistName, {
     int localTracks = 0,
     int localAlbums = 0,
+    List<String> sampleTracks = const [],
+    List<String> sampleAlbums = const [],
     bool forceRefresh = false,
   }) async {
     final cleanName = artistName.trim();
@@ -72,21 +74,22 @@ class NamiArtistMetadataService {
       return _cache[key]!;
     }
 
-    // Run Apple Music and Spotify/MusicBrainz lookups in parallel
     final results = await Future.wait<Map<String, String?>>([
-      _fetchFromAppleMusic(cleanName),
-      _fetchFromSpotifyViaMusicBrainz(cleanName),
+      _fetchFromAppleMusic(cleanName, sampleTracks: sampleTracks, sampleAlbums: sampleAlbums),
+      _fetchFromSpotifyViaMusicBrainz(cleanName, sampleTracks: sampleTracks),
     ]);
 
     final apple = results[0];
     final spotify = results[1];
 
-    String? photoUrl = spotify['photoUrl'] ?? apple['photoUrl'];
-    String photoSource = spotify['photoUrl'] != null
-        ? 'Spotify'
-        : (apple['photoUrl'] != null ? 'Apple Music' : '');
+    // Prefer Apple Music photo when we disambiguated via a local track, else Spotify -> Apple -> Deezer
+    String? photoUrl = (apple['matchedByTrack'] == '1' ? apple['photoUrl'] : null) ??
+        spotify['photoUrl'] ??
+        apple['photoUrl'];
+    String photoSource = (photoUrl != null && photoUrl == apple['photoUrl'])
+        ? 'Apple Music'
+        : (photoUrl != null && photoUrl == spotify['photoUrl'] ? 'Spotify' : '');
 
-    // If neither Spotify nor Apple Music yielded a photo, try Deezer as last fallback
     if (photoUrl == null || photoUrl.isEmpty) {
       final dz = await _fetchDeezerPhotoFallback(cleanName);
       if (dz != null && dz.isNotEmpty) {
@@ -99,7 +102,7 @@ class NamiArtistMetadataService {
     String bioSource = (bio != null && bio.isNotEmpty) ? 'Apple Music' : '';
 
     if (bio == null || bio.isEmpty) {
-      final wikiBio = await _fetchWikipediaBio(cleanName);
+      final wikiBio = await _fetchWikipediaMusicBio(cleanName, genreHint: apple['genre']);
       if (wikiBio != null && wikiBio.isNotEmpty) {
         bio = wikiBio;
         bioSource = 'Wikipedia';
@@ -134,46 +137,88 @@ class NamiArtistMetadataService {
     return profile;
   }
 
-  static Future<String?> fetchBestArtistPhotoUrl(String artistName, {bool forceRefresh = false}) async {
-    final profile = await fetchArtistProfile(artistName, forceRefresh: forceRefresh);
+  static Future<String?> fetchBestArtistPhotoUrl(
+    String artistName, {
+    List<String> sampleTracks = const [],
+    bool forceRefresh = false,
+  }) async {
+    final profile = await fetchArtistProfile(
+      artistName,
+      sampleTracks: sampleTracks,
+      forceRefresh: forceRefresh,
+    );
     return profile.photoUrl;
   }
 
-  static Future<Map<String, String?>> _fetchFromAppleMusic(String artistName) async {
+  static Future<Map<String, String?>> _fetchFromAppleMusic(
+    String artistName, {
+    List<String> sampleTracks = const [],
+    List<String> sampleAlbums = const [],
+  }) async {
     final out = <String, String?>{};
     try {
-      final searchUri = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(artistName)}&entity=musicArtist&limit=6',
-      );
-      final res = await http.get(searchUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
-      if (res.statusCode != 200) return out;
-      final decoded = jsonDecode(res.body);
-      final list = (decoded['results'] as List?)?.whereType<Map>().toList() ?? [];
-      if (list.isEmpty) return out;
+      String? link;
+      String? genre;
 
-      final lowerTarget = artistName.toLowerCase();
-      Map best = list.first;
-      for (final item in list) {
-        final n = (item['artistName'] ?? '').toString().trim().toLowerCase();
-        if (n == lowerTarget) {
-          best = item;
-          break;
+      // 1. Disambiguate using a local track/album first (e.g. "Divine 100 Million" -> Indian rapper DIVINE)
+      final contextHint = sampleTracks.isNotEmpty
+          ? sampleTracks.first
+          : (sampleAlbums.isNotEmpty ? sampleAlbums.first : '');
+      if (contextHint.isNotEmpty) {
+        final trackUri = Uri.parse(
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent('$artistName $contextHint')}&entity=song&limit=6',
+        );
+        final tRes = await http.get(trackUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
+        if (tRes.statusCode == 200) {
+          final dec = jsonDecode(tRes.body);
+          final list = (dec['results'] as List?)?.whereType<Map>().toList() ?? [];
+          final lowerTarget = artistName.toLowerCase();
+          for (final item in list) {
+            final aName = (item['artistName'] ?? '').toString().toLowerCase();
+            final aUrl = (item['artistViewUrl'] ?? '').toString().trim();
+            if (aUrl.isNotEmpty && (aName == lowerTarget || aName.contains(lowerTarget))) {
+              link = aUrl;
+              genre = (item['primaryGenreName'] ?? '').toString().trim();
+              out['matchedByTrack'] = '1';
+              break;
+            }
+          }
         }
       }
 
-      final genre = (best['primaryGenreName'] ?? '').toString().trim();
-      if (genre.isNotEmpty) out['genre'] = genre;
+      // 2. Fallback to direct musicArtist search
+      if (link == null || link.isEmpty) {
+        final searchUri = Uri.parse(
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent(artistName)}&entity=musicArtist&limit=6',
+        );
+        final res = await http.get(searchUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
+        if (res.statusCode == 200) {
+          final decoded = jsonDecode(res.body);
+          final list = (decoded['results'] as List?)?.whereType<Map>().toList() ?? [];
+          if (list.isNotEmpty) {
+            final lowerTarget = artistName.toLowerCase();
+            Map best = list.first;
+            for (final item in list) {
+              final n = (item['artistName'] ?? '').toString().trim().toLowerCase();
+              if (n == lowerTarget) {
+                best = item;
+                break;
+              }
+            }
+            genre ??= (best['primaryGenreName'] ?? '').toString().trim();
+            link = (best['artistLinkUrl'] ?? '').toString().trim();
+          }
+        }
+      }
 
-      final link = (best['artistLinkUrl'] ?? '').toString().trim();
-      if (link.isEmpty) return out;
+      if (genre != null && genre.isNotEmpty) out['genre'] = genre;
+      if (link == null || link.isEmpty) return out;
       out['url'] = link;
 
-      // Scrape official Apple Music artist page for high-res artist portrait & editorial bio
       final pageRes = await http.get(Uri.parse(link), headers: _webHeaders).timeout(const Duration(seconds: 8));
       if (pageRes.statusCode != 200) return out;
       final html = pageRes.body;
 
-      // 1. Official Apple Music artist image (og:image / mzstatic)
       final ogImgM = RegExp(
         r'<meta[^>]+(?:property|name)=["\x27]og:image["\x27][^>]+content=["\x27]([^"\x27]+)["\x27]',
         caseSensitive: false,
@@ -191,7 +236,6 @@ class NamiArtistMetadataService {
         out['photoUrl'] = imgUrl;
       }
 
-      // 2. Editorial bio from Apple Music embedded JSON or JSON-LD
       final edStd = RegExp(r'"editorialNotes"\s*:\s*\{[^}]*?"standard"\s*:\s*"((?:[^"\\]|\\.)+)"').firstMatch(html);
       final edShort = RegExp(r'"editorialNotes"\s*:\s*\{[^}]*?"short"\s*:\s*"((?:[^"\\]|\\.)+)"').firstMatch(html);
       final rawBio = edStd?.group(1) ?? edShort?.group(1);
@@ -215,37 +259,72 @@ class NamiArtistMetadataService {
     return out;
   }
 
-  static Future<Map<String, String?>> _fetchFromSpotifyViaMusicBrainz(String artistName) async {
+  static Future<Map<String, String?>> _fetchFromSpotifyViaMusicBrainz(
+    String artistName, {
+    List<String> sampleTracks = const [],
+  }) async {
     final out = <String, String?>{};
     try {
-      final mbUri = Uri.parse(
-        'https://musicbrainz.org/ws/2/artist/?query=artist:${Uri.encodeComponent(artistName)}&fmt=json&limit=4',
-      );
-      final res = await http.get(mbUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
-      if (res.statusCode != 200) return out;
-      final data = jsonDecode(res.body);
-      final artists = (data['artists'] as List?)?.whereType<Map>().toList() ?? [];
-      if (artists.isEmpty) return out;
+      String? mbid;
+      Map? best;
 
-      final lowerTarget = artistName.toLowerCase();
-      Map best = artists.first;
-      for (final a in artists) {
-        final n = (a['name'] ?? '').toString().trim().toLowerCase();
-        if (n == lowerTarget) {
-          best = a;
-          break;
+      // Try recording lookup first when we have a sample track so homonymous artists (e.g. "Divine") resolve accurately
+      if (sampleTracks.isNotEmpty) {
+        final recUri = Uri.parse(
+          'https://musicbrainz.org/ws/2/recording/?query=recording:${Uri.encodeComponent(sampleTracks.first)}%20AND%20artist:${Uri.encodeComponent(artistName)}&fmt=json&limit=3',
+        );
+        final recRes = await http.get(recUri, headers: _jsonHeaders).timeout(const Duration(seconds: 6));
+        if (recRes.statusCode == 200) {
+          final rData = jsonDecode(recRes.body);
+          final recs = (rData['recordings'] as List?)?.whereType<Map>().toList() ?? [];
+          for (final rec in recs) {
+            final credits = (rec['artist-credit'] as List?)?.whereType<Map>().toList() ?? [];
+            for (final cr in credits) {
+              final art = cr['artist'];
+              if (art is Map) {
+                final n = (art['name'] ?? '').toString().trim().toLowerCase();
+                if (n == artistName.toLowerCase()) {
+                  mbid = (art['id'] ?? '').toString().trim();
+                  best = art;
+                  break;
+                }
+              }
+            }
+            if (mbid != null && mbid.isNotEmpty) break;
+          }
         }
       }
 
-      final mbid = (best['id'] ?? '').toString().trim();
-      final area = (best['begin-area']?['name'] ?? best['area']?['name'] ?? '').toString().trim();
+      if (mbid == null || mbid.isEmpty) {
+        final mbUri = Uri.parse(
+          'https://musicbrainz.org/ws/2/artist/?query=artist:${Uri.encodeComponent(artistName)}&fmt=json&limit=5',
+        );
+        final res = await http.get(mbUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
+        if (res.statusCode != 200) return out;
+        final data = jsonDecode(res.body);
+        final artists = (data['artists'] as List?)?.whereType<Map>().toList() ?? [];
+        if (artists.isEmpty) return out;
+
+        final lowerTarget = artistName.toLowerCase();
+        best = artists.first;
+        for (final a in artists) {
+          final n = (a['name'] ?? '').toString().trim().toLowerCase();
+          final ended = a['life-span']?['ended'] == true;
+          if (n == lowerTarget && !ended) {
+            best = a;
+            break;
+          }
+        }
+        mbid = (best['id'] ?? '').toString().trim();
+      }
+
+      final area = (best?['begin-area']?['name'] ?? best?['area']?['name'] ?? '').toString().trim();
       if (area.isNotEmpty) out['origin'] = area;
-      final begin = (best['life-span']?['begin'] ?? '').toString().trim();
+      final begin = (best?['life-span']?['begin'] ?? '').toString().trim();
       if (begin.length >= 4) out['activeSince'] = begin.substring(0, 4);
 
       if (mbid.isEmpty) return out;
 
-      // Lookup URL relations to get the official open.spotify.com/artist/<id> link
       final relUri = Uri.parse('https://musicbrainz.org/ws/2/artist/$mbid?inc=url-rels&fmt=json');
       final relRes = await http.get(relUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
       if (relRes.statusCode != 200) return out;
@@ -263,20 +342,16 @@ class NamiArtistMetadataService {
       if (spotifyUrl == null) return out;
       out['url'] = spotifyUrl;
 
-      // 1. Official Spotify oEmbed returns Spotify's exact i.scdn.co artist portrait without auth
       try {
         final oembedUri = Uri.parse('https://open.spotify.com/oembed?url=${Uri.encodeComponent(spotifyUrl)}');
         final oeRes = await http.get(oembedUri, headers: _jsonHeaders).timeout(const Duration(seconds: 6));
         if (oeRes.statusCode == 200) {
           final oe = jsonDecode(oeRes.body);
           final thumb = (oe['thumbnail_url'] ?? '').toString().trim();
-          if (thumb.startsWith('http')) {
-            out['photoUrl'] = thumb;
-          }
+          if (thumb.startsWith('http')) out['photoUrl'] = thumb;
         }
       } catch (_) {}
 
-      // 2. Fetch Spotify public artist page meta for monthly listeners & description
       try {
         final spRes = await http.get(Uri.parse(spotifyUrl), headers: _webHeaders).timeout(const Duration(seconds: 7));
         if (spRes.statusCode == 200) {
@@ -295,12 +370,8 @@ class NamiArtistMetadataService {
           if (ogDesc != null && ogDesc.isNotEmpty) {
             final cleanDesc = _decodeHtmlEntities(ogDesc).trim();
             final listM = RegExp(r'([\d.,]+[KMB]?\s+monthly\s+listeners)', caseSensitive: false).firstMatch(cleanDesc);
-            if (listM != null) {
-              out['listeners'] = listM.group(1);
-            }
-            if (cleanDesc.length > 25) {
-              out['bio'] = cleanDesc;
-            }
+            if (listM != null) out['listeners'] = listM.group(1);
+            if (cleanDesc.length > 25) out['bio'] = cleanDesc;
           }
         }
       } catch (_) {}
@@ -325,20 +396,37 @@ class NamiArtistMetadataService {
     return null;
   }
 
-  static Future<String?> _fetchWikipediaBio(String artistName) async {
-    try {
-      final slug = Uri.encodeComponent(artistName.trim().replaceAll(' ', '_'));
-      final res = await http
-          .get(Uri.parse('https://en.wikipedia.org/api/rest_v1/page/summary/$slug'), headers: _jsonHeaders)
-          .timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data is Map) {
-          final extract = (data['extract'] ?? '').toString().trim();
-          if (extract.length > 40) return extract;
+  static bool _looksLikeMusicBio(String text) {
+    final l = text.toLowerCase();
+    const kws = ['rapper', 'singer', 'musician', 'band', 'songwriter', 'composer', 'producer', 'hip hop', 'album', 'music', 'discography', 'dj'];
+    return kws.any((k) => l.contains(k));
+  }
+
+  static Future<String?> _fetchWikipediaMusicBio(String artistName, {String? genreHint}) async {
+    final candidates = <String>[
+      if (genreHint != null && genreHint.toLowerCase().contains('hip')) '$artistName (rapper)',
+      '$artistName (rapper)',
+      '$artistName (musician)',
+      '$artistName (singer)',
+      artistName,
+    ];
+    for (final title in candidates) {
+      try {
+        final slug = Uri.encodeComponent(title.trim().replaceAll(' ', '_'));
+        final res = await http
+            .get(Uri.parse('https://en.wikipedia.org/api/rest_v1/page/summary/$slug'), headers: _jsonHeaders)
+            .timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (data is Map) {
+            final extract = (data['extract'] ?? '').toString().trim();
+            if (extract.length > 40 && _looksLikeMusicBio(extract)) {
+              return extract;
+            }
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
     return null;
   }
 
