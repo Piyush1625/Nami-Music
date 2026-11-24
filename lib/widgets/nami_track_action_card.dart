@@ -541,3 +541,272 @@ class _NamiCardIconBtn extends StatelessWidget {
     );
   }
 }
+
+class NamiFloatingActionItem {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Color? iconColor;
+  final Color? textColor;
+  final bool showDividerBefore;
+  final VoidCallback onTap;
+
+  const NamiFloatingActionItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.subtitle,
+    this.iconColor,
+    this.textColor,
+    this.showDividerBefore = false,
+  });
+}
+
+void showNamiFloatingActionSheet({
+  required BuildContext context,
+  required String title,
+  String? subtitle,
+  Widget? leading,
+  required List<NamiFloatingActionItem> actions,
+  String? footerLeftLabel,
+  IconData? footerLeftIcon,
+  VoidCallback? onFooterLeftTap,
+  String? footerRightLabel,
+  IconData? footerRightIcon,
+  VoidCallback? onFooterRightTap,
+}) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (ctx) {
+      final hasFooter = (footerLeftLabel != null && onFooterLeftTap != null) ||
+          (footerRightLabel != null && onFooterRightTap != null);
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xF00B0B12),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withOpacity(0.11)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.70),
+                      blurRadius: 28,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 15, 16, 12),
+                      child: Row(
+                        children: [
+                          if (leading != null) ...[
+                            leading,
+                            const SizedBox(width: 12),
+                          ],
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 15.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                if (subtitle != null && subtitle.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12, color: Colors.white60),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: Colors.white10),
+                    ...actions.expand((item) {
+                      return [
+                        if (item.showDividerBefore) const Divider(height: 1, color: Colors.white10),
+                        ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
+                          leading: Icon(item.icon, color: item.iconColor ?? Colors.white70, size: 21),
+                          title: Text(
+                            item.title,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: item.textColor ?? Colors.white,
+                            ),
+                          ),
+                          subtitle: item.subtitle != null
+                              ? Text(
+                                  item.subtitle!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                )
+                              : null,
+                          trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white24, size: 18),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            Navigator.pop(ctx);
+                            item.onTap();
+                          },
+                        ),
+                      ];
+                    }),
+                    if (hasFooter) ...[
+                      const Divider(height: 1, color: Colors.white10),
+                      Row(
+                        children: [
+                          if (footerLeftLabel != null && onFooterLeftTap != null)
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  Navigator.pop(ctx);
+                                  onFooterLeftTap();
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (footerLeftIcon != null) ...[
+                                        Icon(footerLeftIcon, color: Colors.white, size: 19),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Text(
+                                        footerLeftLabel,
+                                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (footerLeftLabel != null && footerRightLabel != null)
+                            Container(width: 1, height: 24, color: Colors.white12),
+                          if (footerRightLabel != null && onFooterRightTap != null)
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  Navigator.pop(ctx);
+                                  onFooterRightTap();
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (footerRightIcon != null) ...[
+                                        Icon(footerRightIcon, color: Colors.white, size: 19),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Text(
+                                        footerRightLabel,
+                                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ] else
+                      const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Future<String?> showNamiRenameDialog({
+  required BuildContext context,
+  required String title,
+  required String currentName,
+  required String hintText,
+}) async {
+  final ctrl = TextEditingController(text: currentName);
+  ctrl.selection = TextSelection(baseOffset: 0, extentOffset: currentName.length);
+  final accent = Theme.of(context).colorScheme.primary;
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF101018),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: BorderSide(color: Colors.white.withOpacity(0.11)),
+      ),
+      title: Text(title, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: Colors.white)),
+      content: TextField(
+        controller: ctrl,
+        autofocus: true,
+        style: const TextStyle(color: Colors.white, fontSize: 14.5),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: const TextStyle(color: Colors.white38),
+          filled: true,
+          fillColor: const Color(0xFF171724),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: accent, width: 1.2),
+          ),
+        ),
+        onSubmitted: (v) {
+          final trimmed = v.trim();
+          if (trimmed.isNotEmpty) Navigator.pop(ctx, trimmed);
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: accent,
+            foregroundColor: Colors.black,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () {
+            final trimmed = ctrl.text.trim();
+            if (trimmed.isNotEmpty) Navigator.pop(ctx, trimmed);
+          },
+          child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
+      ],
+    ),
+  );
+}

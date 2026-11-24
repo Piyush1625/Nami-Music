@@ -159,44 +159,41 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
   }
 
   void _showMoreAndLoopSheet(AudioTrack? song) {
-    showModalBottomSheet(
+    showNamiFloatingActionSheet(
       context: context,
-      backgroundColor: const Color(0xFF101016),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.lyrics_outlined),
-                title: const Text('Lyrics Metadata & Editor'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  widget.onOpenLyricsManager();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.bedtime_outlined),
-                title: const Text('Sleep Timer'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  widget.onShowSleepTimer();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.more_horiz_rounded),
-                title: const Text('Track Options & Tag Editor'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  widget.onOpenMoreMenu();
-                },
-              ),
-            ],
-          ),
+      title: song?.title ?? 'Now Playing',
+      subtitle: song != null ? '${cleanArtistStr(song.artist)} • ${song.album}' : null,
+      actions: [
+        NamiFloatingActionItem(
+          icon: Icons.lyrics_rounded,
+          title: 'Lyrics Metadata & Editor',
+          subtitle: 'Sync offset, fetch or edit lyrics',
+          onTap: () => widget.onOpenLyricsManager(),
         ),
-      ),
+        NamiFloatingActionItem(
+          icon: Icons.tune_rounded,
+          title: 'Track Options & Tag Editor',
+          subtitle: 'Artist, album, cover art, queue & file info',
+          onTap: () => widget.onOpenMoreMenu(),
+        ),
+        if (song != null && widget.onGoToArtist != null)
+          NamiFloatingActionItem(
+            icon: Icons.groups_rounded,
+            title: 'Go to Artist',
+            subtitle: cleanArtistStr(song.artist),
+            onTap: () {
+              showNamiArtistPickerOrNavigate(
+                context: context,
+                rawArtist: song.artist,
+                artistImagePaths: const <String, String>{},
+                onSelectArtist: (picked) {
+                  Navigator.of(context).pop();
+                  widget.onGoToArtist!(picked);
+                },
+              );
+            },
+          ),
+      ],
     );
   }
 

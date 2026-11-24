@@ -395,7 +395,60 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
     );
   }
 
-  Widget _buildArtistHeroThreeDotsButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {VoidCallback? onUpdated}) {
+  Widget _buildArtistHeroThreeDotsButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {
+    return IconButton(
+      tooltip: 'Artist Options',
+      icon: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.45),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.14)),
+        ),
+        child: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 19),
+      ),
+      onPressed: () {
+        final imgPath = _artistImagePaths[artistName];
+        final hasImg = imgPath != null && File(imgPath).existsSync();
+        showNamiFloatingActionSheet(
+          context: context,
+          title: artistName,
+          subtitle: 'Artist Options',
+          leading: CircleAvatar(
+            radius: 22,
+            backgroundColor: Colors.white10,
+            backgroundImage: hasImg ? FileImage(File(imgPath)) : null,
+            child: hasImg ? null : const Icon(Icons.person_rounded, color: Colors.white70),
+          ),
+          actions: [
+                NamiFloatingActionItem(
+                  icon: Icons.auto_fix_high_rounded,
+                  title: 'Fetch Spotify / Apple Music',
+                  subtitle: 'Download official artist portrait & bio',
+                  onTap: () {
+                    NamiArtistMetadataService.invalidate(artistName);
+                    _refreshArtistPhotoFromStreaming(artistName, onUpdated: onUpdated);
+                  },
+                ),
+                NamiFloatingActionItem(
+                  icon: Icons.drive_file_rename_outline_rounded,
+                  title: 'Rename Artist',
+                  subtitle: 'Update artist name across all tracks',
+                  showDividerBefore: true,
+                  onTap: () async {
+                    final renamed = await _renameArtistEverywhere(artistName);
+                    if (renamed != null && context.mounted) {
+                      Navigator.of(context).pop();
+                      _openArtistByName(renamed);
+                    }
+                  },
+                ),
+          ],
+        );
+      },
+    );
+  }) {
     return PopupMenuButton<String>(
       icon: Container(
         padding: const EdgeInsets.all(6),

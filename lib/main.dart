@@ -10177,6 +10177,94 @@ void _showListenBrainzSettingsDialog() {
     String? artistName,
     List<AudioTrack>? artistTracks,
   }) {
+    if (albumName != null && track == null) {
+      /* v20_floating_album_artist */
+      final list = albumTracks ?? _songs.where((s) => s.album == albumName).toList();
+      showNamiFloatingActionSheet(
+        context: context,
+        title: albumName,
+        subtitle: '${list.length} Tracks',
+        leading: list.isNotEmpty ? _buildCoverArt(list.first, 44, 10) : null,
+        actions: [
+          NamiFloatingActionItem(
+            icon: Icons.album_rounded,
+            title: 'Open Album',
+            onTap: () => _showAlbumDetailScreen(albumName, list),
+          ),
+          NamiFloatingActionItem(
+            icon: Icons.drive_file_rename_outline_rounded,
+            title: 'Rename Album',
+            subtitle: 'Change album name across all tracks',
+            onTap: () => _renameAlbumEverywhere(albumName),
+          ),
+        ],
+        footerLeftLabel: 'Play All',
+        footerLeftIcon: Icons.play_arrow_rounded,
+        onFooterLeftTap: () {
+          if (list.isNotEmpty) _playSong(list.first);
+        },
+        footerRightLabel: 'Shuffle',
+        footerRightIcon: Icons.shuffle_rounded,
+        onFooterRightTap: () {
+          if (list.isNotEmpty) {
+            final shuf = List<AudioTrack>.from(list)..shuffle();
+            _playSong(shuf.first);
+          }
+        },
+      );
+      return;
+    }
+    if (artistName != null && track == null) {
+      final list = artistTracks ?? _songs.where((s) => s.artist.toLowerCase().contains(artistName.toLowerCase())).toList();
+      final imgPath = _artistImagePaths[artistName];
+      final hasImg = imgPath != null && File(imgPath).existsSync();
+      showNamiFloatingActionSheet(
+        context: context,
+        title: artistName,
+        subtitle: '${list.length} Tracks',
+        leading: CircleAvatar(
+          radius: 22,
+          backgroundColor: Colors.white10,
+          backgroundImage: hasImg ? FileImage(File(imgPath)) : null,
+          child: hasImg ? null : const Icon(Icons.person_rounded, color: Colors.white70),
+        ),
+        actions: [
+          NamiFloatingActionItem(
+            icon: Icons.person_rounded,
+            title: 'Open Artist',
+            onTap: () => _showArtistDetailScreen(artistName, list),
+          ),
+          NamiFloatingActionItem(
+            icon: Icons.drive_file_rename_outline_rounded,
+            title: 'Rename Artist',
+            subtitle: 'Change artist name across all tracks',
+            onTap: () => _renameArtistEverywhere(artistName),
+          ),
+          NamiFloatingActionItem(
+            icon: Icons.auto_fix_high_rounded,
+            title: 'Fetch Spotify / Apple Music',
+            onTap: () {
+              NamiArtistMetadataService.invalidate(artistName);
+              _refreshArtistPhotoFromStreaming(artistName);
+            },
+          ),
+        ],
+        footerLeftLabel: 'Play All',
+        footerLeftIcon: Icons.play_arrow_rounded,
+        onFooterLeftTap: () {
+          if (list.isNotEmpty) _playSong(list.first);
+        },
+        footerRightLabel: 'Shuffle',
+        footerRightIcon: Icons.shuffle_rounded,
+        onFooterRightTap: () {
+          if (list.isNotEmpty) {
+            final shuf = List<AudioTrack>.from(list)..shuffle();
+            _playSong(shuf.first);
+          }
+        },
+      );
+      return;
+    }
     if (track != null && albumName == null && artistName == null) {
       showNamiTrackActionCard(
         context: context,
@@ -11149,6 +11237,80 @@ Future<void> _exportUnifiedNamiBackup() async {
         ),
       ),
     );
+  }
+
+  Future<String?> _renameArtistEverywhere(String oldName) async {
+    final oldTrim = oldName.trim();
+    final newName = await showNamiRenameDialog(
+      context: context,
+      title: 'Rename Artist',
+      currentName: oldTrim,
+      hintText: 'Enter new artist name',
+    );
+    if (newName == null || newName.isEmpty || newName == oldTrim) return null;
+
+    final oldLower = oldTrim.toLowerCase();
+    int updated = 0;
+    for (final s in _songs) {
+      final parts = namiSplitArtists(s.artist);
+      if (parts.any((p) => p.toLowerCase() == oldLower)) {
+        final replaced = parts.map((p) => p.toLowerCase() == oldLower ? newName : p).toList();
+        s.artist = replaced.join(', ');
+        updated++;
+      } else if (s.artist.trim().toLowerCase() == oldLower) {
+        s.artist = newName;
+        updated++;
+      }
+    }
+
+    if (_artistImagePaths.containsKey(oldTrim)) {
+      final oldImg = _artistImagePaths.remove(oldTrim);
+      if (oldImg != null) _artistImagePaths[newName] = oldImg;
+    }
+    NamiArtistMetadataService.invalidate(oldTrim);
+    NamiArtistMetadataService.invalidate(newName);
+
+    if (mounted) {
+      setState(() {
+        _artworkTick.value++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Renamed artist to "$newName" ($updated tracks updated)')),
+      );
+    }
+    _saveStateCache();
+    return newName;
+  }
+
+  Future<String?> _renameAlbumEverywhere(String oldAlbum) async {
+    final oldTrim = oldAlbum.trim();
+    final newAlbum = await showNamiRenameDialog(
+      context: context,
+      title: 'Rename Album',
+      currentName: oldTrim,
+      hintText: 'Enter new album name',
+    );
+    if (newAlbum == null || newAlbum.isEmpty || newAlbum == oldTrim) return null;
+
+    final oldLower = oldTrim.toLowerCase();
+    int updated = 0;
+    for (final s in _songs) {
+      if (s.album.trim().toLowerCase() == oldLower) {
+        s.album = newAlbum;
+        updated++;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _artworkTick.value++;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Renamed album to "$newAlbum" ($updated tracks updated)')),
+      );
+    }
+    _saveStateCache();
+    return newAlbum;
   }
 }
 
