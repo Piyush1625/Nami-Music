@@ -10264,18 +10264,18 @@ void _showListenBrainzSettingsDialog() {
         context: context,
         track: track,
         coverArt: _buildCoverArt(track, 50, 12),
-        formatBadgeText: '${track.format.toUpperCase()} ${track.bitDepth > 0 ? '${track.bitDepth}B' : ''}'.trim(),
+        formatBadgeText: '${track.path.split('.').last.toUpperCase()} ${track.bitDepth > 0 ? '${track.bitDepth}B' : ''}'.trim(),
         isFavorite: false,
         onToggleFavorite: () => setState(() {}),
-        onPlayNext: () => _queue.insert(0, track),
-        onPlayLast: () => _queue.add(track),
+        onPlayNext: () => setState(() => _playNextQueue.insert(0, track)),
+        onPlayLast: () => setState(() => _playNextQueue.add(track)),
         onAddToPlaylist: () => _showAddToPlaylistDialog(track),
         onGoToAlbum: () {
           final albTracks = _songs.where((s) => s.album == track.album).toList();
           _showAlbumDetailScreen(track.album, albTracks);
         },
         onGoToArtist: (artist) => _openArtistByName(artist),
-        onEditTags: () => _showTagEditor(track),
+        onEditTags: () => _showTagEditorDialog(track),
       );
       return;
     }
@@ -11158,6 +11158,15 @@ Future<void> _exportUnifiedNamiBackup() async {
     }
   }
 
+
+  void _openArtistByName(String artist) {
+    final target = artist.trim().toLowerCase();
+    final tracks = _songs.where((s) =>
+      namiSplitArtists(s.artist).any((a) => a.toLowerCase() == target) ||
+      s.artist.toLowerCase().contains(target)
+    ).toList();
+    _showArtistDetailScreen(artist, tracks);
+  }
 
   void _openArtistOrPicker(String rawArtist) {
     showNamiArtistPickerOrNavigate(
