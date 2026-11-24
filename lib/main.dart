@@ -208,6 +208,7 @@ class NamiHomeShell extends StatefulWidget {
 }
 
 class _NamiHomeShellState extends State<NamiHomeShell> {
+  final Set<String> _artistImageFetching = <String>{};
   int _selectedIndex = 0;
 
       late final Player _audioPlayer;
@@ -12060,14 +12061,14 @@ List<String> _getSmartMornyeQuickSearches() {
                 final isPlaying = playSnap.data ?? _audioPlayer.state.playing;
                 return GestureDetector(
                   onTap: () {
-                    if (song != null) _openNowPlayingModal();
+                    if (song != null) _showNowPlayingScreen();
                   },
                   onHorizontalDragEnd: (details) {
                     final vx = details.primaryVelocity ?? 0;
                     if (vx < -250) {
-                      _playNextSong();
+                      _playNextTrack();
                     } else if (vx > 250) {
-                      _playPreviousSong();
+                      _playPrevTrack();
                     }
                   },
                   child: Container(
