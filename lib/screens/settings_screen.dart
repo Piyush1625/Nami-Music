@@ -1320,7 +1320,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
             _minimalCategoryTile(
               icon: Icons.graphic_eq_rounded,
               title: 'Audio & Playback',
-              subtitle: '${v2.3.0 (v22).audioModePreset == "tuned" ? "Tuned Mode" : "Bit-Perfect"} • ${widget.activeEqPresetLabel ?? "AutoEQ"} • RG: $_rgMode',
+              subtitle: '${v16.audioModePreset == "tuned" ? "Tuned Mode" : "Bit-Perfect"} • ${widget.activeEqPresetLabel ?? "AutoEQ"} • RG: $_rgMode',
               accent: themeColor,
               statusDotColor: _usbDac ? Colors.greenAccent : Colors.cyanAccent,
               onTap: openAudioPage,
