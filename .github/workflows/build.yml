@@ -2,7 +2,7 @@ name: Build & Release Nami Android APK
 
 on:
   push:
-    branches: [ main, media-kit-engine ]
+    branches: [ main ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
