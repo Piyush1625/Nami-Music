@@ -1,3 +1,4 @@
+import 'services/nami_artist_metadata_service.dart';
 import 'services/nami_v16_prefs.dart';
 import 'services/nami_github_updater.dart';
 import 'services/nami_mornye_store.dart';
@@ -6071,36 +6072,47 @@ Container(
   }
 
 
-  Future<void> _fetchArtistImage(String rawArtistName) async {
-    final primary = rawArtistName
-        .split(RegExp(_artistSeparators.map(RegExp.escape).join('|'),
-            caseSensitive: false))
-        .first
-        .trim();
-    if (primary.isEmpty ||
-        primary == 'Unknown Artist' ||
-        _artistImagePaths.containsKey(primary)) {
-      return;
-    }
+  Future<void> _fetchArtistImage(String artistName) async {
+    final clean = artistName.trim();
+    if (clean.isEmpty || clean == 'Unknown Artist') return;
+    final existing = _artistImagePaths[clean];
+    if (existing != null && File(existing).existsSync()) return;
+    if (_artistImageFetching.contains(clean)) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final retryAfter = _artistImageRetryAfter[clean] ?? 0;
+    if (nowMs < retryAfter) return;
 
-    if (!_artistDiskChecked.contains(primary)) {
-      _artistDiskChecked.add(primary);
-      final thumbDir = await _ensureThumbDir();
-      final f = File(
-          '${thumbDir.path}/artist_${_deterministicPathHash(primary.toLowerCase())}.jpg');
-      if (await f.exists()) {
-        _artistImagePaths[primary] = f.path;
-        _artworkTick.value++;
-        return;
+    _artistImageFetching.add(clean);
+    try {
+      final photoUrl = await NamiArtistMetadataService.fetchBestArtistPhotoUrl(clean);
+      if (photoUrl != null && photoUrl.isNotEmpty) {
+        final res = await http.get(Uri.parse(photoUrl), headers: _httpHeaders).timeout(const Duration(seconds: 12));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          final dir = await _ensureThumbDir();
+          final artistDir = Directory('${dir.path}/artist_photos');
+          if (!await artistDir.exists()) await artistDir.create(recursive: true);
+          final safe = clean.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+          final f = File('${artistDir.path}/$safe.jpg');
+          await f.writeAsBytes(res.bodyBytes, flush: true);
+          await FileImage(f).evict();
+          if (mounted) {
+            setState(() {
+              _artistImagePaths[clean] = f.path;
+              _artworkTick.value++;
+            });
+          } else {
+            _artistImagePaths[clean] = f.path;
+          }
+          _artistImageRetryAfter.remove(clean);
+          _saveStateCache();
+          return;
+        }
       }
-    }
-
-    final retryAt = _artistImageRetryAfter[primary] ?? 0;
-    if (DateTime.now().millisecondsSinceEpoch < retryAt) return;
-
-    if (_artistImageQueued.add(primary)) {
-      _artistImageQueue.add(primary);
-      _drainArtistImageQueue();
+      _artistImageRetryAfter[clean] = nowMs + const Duration(hours: 6).inMilliseconds;
+    } catch (_) {
+      _artistImageRetryAfter[clean] = nowMs + const Duration(hours: 2).inMilliseconds;
+    } finally {
+      _artistImageFetching.remove(clean);
     }
   }
 
@@ -7447,6 +7459,19 @@ Container(
                       backgroundColor: const Color(0xFF000000),
                       actions: [
                         IconButton(
+                          tooltip: 'Refresh Artist Photo (Spotify / Apple Music)',
+                          icon: const Icon(Icons.auto_fix_high_rounded, color: Colors.white),
+                          onPressed: () async {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('Fetching official Spotify / Apple Music photo for $artistName...')),
+                            );
+                            await _refreshArtistPhotoFromStreaming(artistName, onUpdated: () {
+                              setAdState(() {});
+                              setState(() {});
+                            });
+                          },
+                        ),
+                        IconButton(
                           tooltip: 'Merge / Alias Artist',
                           icon: const Icon(Icons.merge_type_rounded, color: Colors.white),
                           onPressed: () => _showArtistAliasMergeDialog(prefillAlias: artistName),
@@ -7535,11 +7560,30 @@ Container(
                               ],
                             ),
                             const SizedBox(height: 14),
-                            FutureBuilder<String>(
-                              future: NamiMornyeStore.fetchArtistBio(artistName, localTracks: artistTracks.length, localAlbums: chronologicalAlbums.length),
-                              builder: (_, bioSnap) {
-                                final bio = bioSnap.data ?? '';
-                                if (bio.isEmpty) return const SizedBox.shrink();
+                            FutureBuilder<NamiArtistProfile>(
+                              future: NamiArtistMetadataService.fetchArtistProfile(
+                                artistName,
+                                localTracks: artistTracks.length,
+                                localAlbums: chronologicalAlbums.length,
+                              ),
+                              builder: (_, profSnap) {
+                                final prof = profSnap.data;
+                                if (prof == null) return const SizedBox.shrink();
+                                // Auto-apply Apple Music / Spotify portrait if no custom gallery photo is set
+                                if (prof.photoUrl != null &&
+                                    prof.photoUrl!.isNotEmpty &&
+                                    !(_artistImagePaths[artistName]?.contains('artist_custom') ?? false)) {
+                                  final curPath = _artistImagePaths[artistName];
+                                  if (curPath == null || !File(curPath).existsSync()) {
+                                    _fetchArtistImage(artistName);
+                                  }
+                                }
+                                final metaTags = <String>[
+                                  if (prof.primaryGenre != null && prof.primaryGenre!.isNotEmpty) prof.primaryGenre!,
+                                  if (prof.origin != null && prof.origin!.isNotEmpty) prof.origin!,
+                                  if (prof.activeSince != null && prof.activeSince!.isNotEmpty) 'Since ${prof.activeSince!}',
+                                  if (prof.spotifyListeners != null && prof.spotifyListeners!.isNotEmpty) prof.spotifyListeners!,
+                                ];
                                 return GestureDetector(
                                   onTap: () => setAdState(() => bioExpanded = !bioExpanded),
                                   child: Container(
@@ -7553,16 +7597,51 @@ Container(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
-                                            Text('ABOUT $artistName'.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.0, color: accent)),
+                                            Expanded(
+                                              child: Text(
+                                                'ABOUT $artistName'.toUpperCase(),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.0, color: accent),
+                                              ),
+                                            ),
+                                            if (prof.combinedSourceLabel.isNotEmpty)
+                                              Container(
+                                                margin: const EdgeInsets.only(right: 6),
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withOpacity(0.06),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  prof.combinedSourceLabel,
+                                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white60),
+                                                ),
+                                              ),
                                             Icon(bioExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 16, color: Colors.white54),
                                           ],
                                         ),
-                                        const SizedBox(height: 4),
+                                        if (metaTags.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: 6,
+                                            runSpacing: 4,
+                                            children: metaTags.map((tag) => Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                                  decoration: BoxDecoration(
+                                                    color: accent.withOpacity(0.14),
+                                                    borderRadius: BorderRadius.circular(7),
+                                                    border: Border.all(color: accent.withOpacity(0.32), width: 0.7),
+                                                  ),
+                                                  child: Text(tag, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                                                )).toList(),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 6),
                                         Text(
-                                          bio,
-                                          maxLines: bioExpanded ? 12 : 2,
+                                          prof.bio,
+                                          maxLines: bioExpanded ? 14 : 3,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(fontSize: 12, color: Colors.white70, height: 1.4),
                                         ),
@@ -7702,7 +7781,7 @@ Container(
                       const SliverToBoxAdapter(child: SizedBox(height: 130)),
                   ],
                 ),
-                Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+                Positioned(left: 12, right: 12, bottom: 14, child: _buildDetailFloatingDock(ctx, scopeTitle: artistName, scopeTracks: artistTracks)),
               ],
             ),
           ),
@@ -7826,7 +7905,7 @@ Container(
                   }),
                 ],
               ),
-              Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+              Positioned(left: 12, right: 12, bottom: 14, child: _buildDetailFloatingDock(context, scopeTitle: albumName, scopeTracks: albumTracks)),
             ],
           ),
         ),
@@ -11854,6 +11933,237 @@ List<String> _getSmartMornyeQuickSearches() {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Restore failed: $e')));
       }
+    }
+  }
+
+
+
+  void _showScopedTracksSearchSheet({
+    required String scopeTitle,
+    required List<AudioTrack> scopeTracks,
+  }) {
+    String q = '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0E0E15),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSState) {
+          final accent = Theme.of(ctx).colorScheme.primary;
+          final query = q.trim().toLowerCase();
+          final matches = query.isEmpty
+              ? scopeTracks
+              : scopeTracks.where((s) =>
+                  s.title.toLowerCase().contains(query) ||
+                  s.artist.toLowerCase().contains(query) ||
+                  s.album.toLowerCase().contains(query)).toList();
+
+          return SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.78,
+            child: Column(
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 10, bottom: 12),
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: TextField(
+                    autofocus: true,
+                    onChanged: (v) => setSState(() => q = v),
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search in $scopeTitle (${scopeTracks.length} songs)...',
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                      prefixIcon: Icon(Icons.search_rounded, color: accent, size: 20),
+                      isDense: true,
+                      filled: true,
+                      fillColor: const Color(0xFF161622),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: matches.isEmpty
+                      ? const Center(child: Text('No matching tracks found.', style: TextStyle(color: Colors.white54)))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+                          itemCount: matches.length,
+                          itemBuilder: (_, idx) {
+                            final song = matches[idx];
+                            return ListTile(
+                              leading: _buildCoverArt(song, 44, 9),
+                              title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                              subtitle: Text('${cleanArtistStr(song.artist)} • ${song.album}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                              trailing: _showCodecBadges ? _buildFormatPill(song, accent) : null,
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                _playSong(song);
+                              },
+                              onLongPress: () => _showHomeQuickActionSheet(track: song),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDetailFloatingDock(
+    BuildContext pageContext, {
+    required String scopeTitle,
+    required List<AudioTrack> scopeTracks,
+  }) {
+    final accent = Theme.of(pageContext).colorScheme.primary;
+    return SafeArea(
+      top: false,
+      child: Row(
+        children: [
+          // Left: Home circle button (SS2 reference)
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _selectedIndex = 0);
+              Navigator.of(pageContext).popUntil((route) => route.isFirst);
+            },
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFF14141C),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 12, offset: const Offset(0, 4))],
+              ),
+              child: Icon(Icons.home_rounded, color: accent, size: 24),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Center: Pill Mini-Player (SS2 reference)
+          Expanded(
+            child: StreamBuilder<bool>(
+              stream: _audioPlayer.stream.playing,
+              builder: (_, playSnap) {
+                final song = _currentSong;
+                final isPlaying = playSnap.data ?? _audioPlayer.state.playing;
+                return GestureDetector(
+                  onTap: () {
+                    if (song != null) _openNowPlayingModal();
+                  },
+                  onHorizontalDragEnd: (details) {
+                    final vx = details.primaryVelocity ?? 0;
+                    if (vx < -250) {
+                      _playNextSong();
+                    } else if (vx > 250) {
+                      _playPreviousSong();
+                    }
+                  },
+                  child: Container(
+                    height: 54,
+                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF14141C),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: Colors.white.withOpacity(0.10)),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 14, offset: const Offset(0, 4))],
+                    ),
+                    child: Row(
+                      children: [
+                        if (song != null)
+                          _buildCoverArt(song, 40, 10)
+                        else
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                            child: Icon(Icons.music_note_rounded, color: accent, size: 20),
+                          ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                song?.title ?? 'Nothing Playing',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                song != null ? cleanArtistStr(song.artist) : 'Tap a track to play',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                          icon: Icon(
+                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 27,
+                          ),
+                          onPressed: () {
+                            if (song == null && scopeTracks.isNotEmpty) {
+                              _playSong(scopeTracks.first);
+                            } else if (song != null) {
+                              isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Right: Scoped Search circle button (SS2 reference)
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              _showScopedTracksSearchSheet(scopeTitle: scopeTitle, scopeTracks: scopeTracks);
+            },
+            child: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFF14141C),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 12, offset: const Offset(0, 4))],
+              ),
+              child: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _refreshArtistPhotoFromStreaming(String artistName, {VoidCallback? onUpdated}) async {
+    NamiArtistMetadataService.invalidate(artistName);
+    final url = await NamiArtistMetadataService.fetchBestArtistPhotoUrl(artistName, forceRefresh: true);
+    if (url != null && url.isNotEmpty) {
+      await _saveArtistImageFromUrlOrFile(artistName, url, onUpdated: onUpdated);
     }
   }
 
