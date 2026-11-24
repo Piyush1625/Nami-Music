@@ -644,7 +644,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final themeColor = Theme.of(context).colorScheme.primary;
-    final v2.3.0 (v22) = NamiV16Prefs.instance;
+    final v16 = NamiV16Prefs.instance;
     const tabNames = ['Home', 'Tracks', 'Artists', 'Playlists'];
 
     void openPermissionsPage() => _openSettingsCategoryPage(
@@ -692,8 +692,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
           context,
           'Audio & Playback',
           onResetSection: () {
-            v2.3.0 (v22).resetSection('audio');
-            v2.3.0 (v22).resetSection('tracks');
+            v16.resetSection('audio');
+            v16.resetSection('tracks');
             _usbDac = true;
             _gapless = true;
             _pauseDisconnect = true;
@@ -725,11 +725,11 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                         ButtonSegment(value: 'bit_perfect', icon: Icon(Icons.verified_rounded, size: 16), label: Text('Bit-Perfect', style: TextStyle(fontSize: 12))),
                         ButtonSegment(value: 'tuned', icon: Icon(Icons.headphones_rounded, size: 16), label: Text('Tuned / Commute', style: TextStyle(fontSize: 12))),
                       ],
-                      selected: {v2.3.0 (v22).audioModePreset == 'tuned' ? 'tuned' : 'bit_perfect'},
+                      selected: {v16.audioModePreset == 'tuned' ? 'tuned' : 'bit_perfect'},
                       onSelectionChanged: (sel) {
                         final mode = sel.first;
                         setSub(() {
-                          v2.3.0 (v22).audioModePreset = mode;
+                          v16.audioModePreset = mode;
                           if (mode == 'bit_perfect') {
                             _usbDac = true;
                             _rgMode = 'Off';
@@ -742,7 +742,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                             widget.onReplayGainModeChanged('Track');
                           }
                         });
-                        v2.3.0 (v22).save();
+                        v16.save();
                         widget.onAudioModePresetSelected?.call(mode);
                         setState(() {});
                       },
@@ -835,7 +835,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   children: [
                     const Text('Swipe Right on Track', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                     DropdownButton<String>(
-                      value: v2.3.0 (v22).swipeRightAction,
+                      value: v16.swipeRightAction,
                       dropdownColor: const Color(0xFF161622),
                       underline: const SizedBox.shrink(),
                       items: const [
@@ -846,8 +846,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       ],
                       onChanged: (val) {
                         if (val != null) {
-                          setSub(() => v2.3.0 (v22).swipeRightAction = val);
-                          v2.3.0 (v22).save();
+                          setSub(() => v16.swipeRightAction = val);
+                          v16.save();
                         }
                       },
                     ),
@@ -862,7 +862,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   children: [
                     const Text('Swipe Left on Track', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                     DropdownButton<String>(
-                      value: v2.3.0 (v22).swipeLeftAction,
+                      value: v16.swipeLeftAction,
                       dropdownColor: const Color(0xFF161622),
                       underline: const SizedBox.shrink(),
                       items: const [
@@ -873,8 +873,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       ],
                       onChanged: (val) {
                         if (val != null) {
-                          setSub(() => v2.3.0 (v22).swipeLeftAction = val);
-                          v2.3.0 (v22).save();
+                          setSub(() => v16.swipeLeftAction = val);
+                          v16.save();
                         }
                       },
                     ),
@@ -1075,8 +1075,8 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
           onResetSection: () {
             _ignoreShort = true;
             _splitArtists = true;
-            v2.3.0 (v22).autoSyncPlaylistsM3u8 = false;
-            v2.3.0 (v22).save();
+            v16.autoSyncPlaylistsM3u8 = false;
+            v16.save();
             widget.onIgnoreShortClipsChanged(true);
             widget.onSplitArtistsChanged(true);
           },
@@ -1117,11 +1117,11 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Auto-Sync Playlists to .m3u8', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 subtitle: const Text('Export playlist edits to /Music/NamiPlaylists/', style: TextStyle(fontSize: 11, color: Colors.white54)),
-                value: v2.3.0 (v22).autoSyncPlaylistsM3u8,
+                value: v16.autoSyncPlaylistsM3u8,
                 activeColor: themeColor,
                 onChanged: (v) {
-                  setSub(() => v2.3.0 (v22).autoSyncPlaylistsM3u8 = v);
-                  v2.3.0 (v22).save();
+                  setSub(() => v16.autoSyncPlaylistsM3u8 = v);
+                  v16.save();
                 },
               ),
               const Divider(color: Colors.white10, height: 1),
@@ -1170,7 +1170,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
           context,
           'Lyrics, Extensions & Sync',
           onResetSection: () {
-            v2.3.0 (v22).resetSection('mornye');
+            v16.resetSection('mornye');
             _syllableLyrics = true;
             _preferEmbedded = true;
             widget.onSyllableLyricsChanged(true);
