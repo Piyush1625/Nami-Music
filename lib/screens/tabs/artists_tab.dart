@@ -134,7 +134,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${artistTracks.length} Tracks • ${chronologicalAlbums.length} Albums • $formattedTotal',
+                              '${artistTracks.length} ${artistTracks.length == 1 ? 'Track' : 'Tracks'} • ${chronologicalAlbums.length} Albums • $formattedTotal',
                               style: const TextStyle(color: Colors.white60, fontSize: 12.5, fontWeight: FontWeight.w600),
                             ),
                             const SizedBox(height: 12),
@@ -294,7 +294,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                           ),
                                           const SizedBox(height: 5),
                                           Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                                          Text('${entry.value.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
+                                          Text('${entry.value.length} ${entry.value.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
                                         ],
                                       ),
                                     ),
@@ -370,7 +370,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                             _buildRoundArtistAvatar(simTracks.isNotEmpty ? simTracks.first : null, 32, artistNameOverride: simName),
                                             const SizedBox(height: 6),
                                             Text(simName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                            Text('${simTracks.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
+                                            Text('${simTracks.length} ${simTracks.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
                                           ],
                                         ),
                                       ),

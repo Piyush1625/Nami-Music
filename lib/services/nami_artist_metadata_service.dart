@@ -1,6 +1,20 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+class NamiMediaCandidate {
+  final String title;
+  final String subtitle;
+  final String imageUrl;
+  final String source;
+
+  const NamiMediaCandidate({
+    required this.title,
+    required this.subtitle,
+    required this.imageUrl,
+    required this.source,
+  });
+}
+
 class NamiArtistProfile {
   final String artistName;
   final String? photoUrl;
@@ -30,20 +44,18 @@ class NamiArtistProfile {
 
   String get combinedSourceLabel {
     final sources = <String>[];
-    if (appleMusicUrl != null || photoSource == 'Apple Music' || bioSource == 'Apple Music') {
-      sources.add('Apple Music');
+    if (photoSource.isNotEmpty) sources.add(photoSource);
+    if (bioSource.isNotEmpty && bioSource != 'Library' && !sources.contains(bioSource)) {
+      sources.add(bioSource);
     }
-    if (spotifyUrl != null || photoSource == 'Spotify' || spotifyListeners != null) {
-      sources.add('Spotify');
-    }
-    if (sources.isEmpty && bioSource.isNotEmpty) sources.add(bioSource);
-    return sources.join(' • ');
+    if (sources.isEmpty && appleMusicUrl != null) sources.add('Apple Music');
+    return sources.take(2).join(' • ');
   }
 }
 
 class NamiArtistMetadataService {
   static const Map<String, String> _jsonHeaders = {
-    'User-Agent': 'NamiMusicPlayer/2.3 (https://github.com/Piyush1625/Nami-Music)',
+    'User-Agent': 'NamiMusicPlayer/2.4 (https://github.com/Piyush1625/Nami-Music)',
     'Accept': 'application/json',
   };
 
@@ -51,7 +63,7 @@ class NamiArtistMetadataService {
     'User-Agent':
         'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Language': 'en-IN,en-US;q=0.9,en;q=0.8',
   };
 
   static final Map<String, NamiArtistProfile> _cache = {};
@@ -74,21 +86,42 @@ class NamiArtistMetadataService {
       return _cache[key]!;
     }
 
+    // Run India-first lookups in parallel: JioSaavn (IN) + Apple Music (IN) + Spotify/MusicBrainz
     final results = await Future.wait<Map<String, String?>>([
-      _fetchFromAppleMusic(cleanName, sampleTracks: sampleTracks, sampleAlbums: sampleAlbums),
+      _fetchFromAppleMusic(cleanName, sampleTracks: sampleTracks, sampleAlbums: sampleAlbums, country: 'IN'),
+      _fetchFromJioSaavnArtist(cleanName),
       _fetchFromSpotifyViaMusicBrainz(cleanName, sampleTracks: sampleTracks),
     ]);
 
     final apple = results[0];
-    final spotify = results[1];
+    final saavn = results[1];
+    final spotify = results[2];
 
-    // Prefer Apple Music photo when we disambiguated via a local track, else Spotify -> Apple -> Deezer
-    String? photoUrl = (apple['matchedByTrack'] == '1' ? apple['photoUrl'] : null) ??
-        spotify['photoUrl'] ??
-        apple['photoUrl'];
-    String photoSource = (photoUrl != null && photoUrl == apple['photoUrl'])
-        ? 'Apple Music'
-        : (photoUrl != null && photoUrl == spotify['photoUrl'] ? 'Spotify' : '');
+    // India-first photo priority:
+    // 1. Apple Music (IN) when verified by a local track
+    // 2. JioSaavn (IN) exact artist match
+    // 3. Spotify official portrait
+    // 4. Apple Music (IN) direct artist search
+    // 5. Deezer fallback
+    String? photoUrl;
+    String photoSource = '';
+
+    if (apple['matchedByTrack'] == '1' && (apple['photoUrl'] ?? '').isNotEmpty) {
+      photoUrl = apple['photoUrl'];
+      photoSource = 'Apple Music IN';
+    } else if ((saavn['photoUrl'] ?? '').isNotEmpty && saavn['exact'] == '1') {
+      photoUrl = saavn['photoUrl'];
+      photoSource = 'JioSaavn IN';
+    } else if ((spotify['photoUrl'] ?? '').isNotEmpty) {
+      photoUrl = spotify['photoUrl'];
+      photoSource = 'Spotify';
+    } else if ((apple['photoUrl'] ?? '').isNotEmpty) {
+      photoUrl = apple['photoUrl'];
+      photoSource = 'Apple Music IN';
+    } else if ((saavn['photoUrl'] ?? '').isNotEmpty) {
+      photoUrl = saavn['photoUrl'];
+      photoSource = 'JioSaavn IN';
+    }
 
     if (photoUrl == null || photoUrl.isEmpty) {
       final dz = await _fetchDeezerPhotoFallback(cleanName);
@@ -98,6 +131,7 @@ class NamiArtistMetadataService {
       }
     }
 
+    // Bio priority: Apple Music editorial -> India-aware Music Wikipedia -> Spotify -> Library fallback
     String? bio = apple['bio'];
     String bioSource = (bio != null && bio.isNotEmpty) ? 'Apple Music' : '';
 
@@ -110,11 +144,13 @@ class NamiArtistMetadataService {
     }
 
     if (bio == null || bio.isEmpty) {
-      if (spotify['bio'] != null && spotify['bio']!.isNotEmpty) {
+      if ((spotify['bio'] ?? '').isNotEmpty) {
         bio = spotify['bio'];
         bioSource = 'Spotify';
       } else {
-        bio = '$cleanName has $localTracks track(s) across $localAlbums album(s) in your Nami library.';
+        final tWord = localTracks == 1 ? 'track' : 'tracks';
+        final aWord = localAlbums == 1 ? 'album' : 'albums';
+        bio = '$cleanName has $localTracks $tWord across $localAlbums $aWord in your Nami library.';
         bioSource = 'Library';
       }
     }
@@ -150,23 +186,286 @@ class NamiArtistMetadataService {
     return profile.photoUrl;
   }
 
+  /// Fetches multiple artist portrait candidates across JioSaavn (IN), Apple Music (IN), Spotify & Deezer
+  /// so the user can pick the exact right artist photo.
+  static Future<List<NamiMediaCandidate>> fetchArtistPhotoCandidates(
+    String query, {
+    List<String> sampleTracks = const [],
+  }) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return [];
+
+    final buckets = await Future.wait<List<NamiMediaCandidate>>([
+      _searchJioSaavnArtistCandidates(clean),
+      _searchAppleMusicArtistCandidates(clean, sampleTracks: sampleTracks),
+      _searchDeezerArtistCandidates(clean),
+      _searchSpotifyArtistCandidate(clean, sampleTracks: sampleTracks),
+    ]);
+
+    final seen = <String>{};
+    final merged = <NamiMediaCandidate>[];
+    for (final list in buckets) {
+      for (final item in list) {
+        if (item.imageUrl.startsWith('http') && seen.add(item.imageUrl)) {
+          merged.add(item);
+        }
+      }
+    }
+    return merged;
+  }
+
+  /// Fetches multiple high-res song/album cover candidates across Apple Music (IN), JioSaavn (IN) & Deezer.
+  static Future<List<NamiMediaCandidate>> fetchTrackCoverCandidates(String query) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return [];
+
+    final buckets = await Future.wait<List<NamiMediaCandidate>>([
+      _searchAppleMusicTrackCovers(clean, country: 'IN'),
+      _searchJioSaavnTrackCovers(clean),
+      _searchDeezerTrackCovers(clean),
+    ]);
+
+    final seen = <String>{};
+    final merged = <NamiMediaCandidate>[];
+    for (final list in buckets) {
+      for (final item in list) {
+        if (item.imageUrl.startsWith('http') && seen.add(item.imageUrl)) {
+          merged.add(item);
+        }
+      }
+    }
+    return merged;
+  }
+
+  static String _upgradeSaavnImage(String url) {
+    return url
+        .replaceAll('50x50', '500x500')
+        .replaceAll('150x150', '500x500')
+        .replaceAll('http://', 'https://');
+  }
+
+  static Future<Map<String, String?>> _fetchFromJioSaavnArtist(String artistName) async {
+    final out = <String, String?>{};
+    try {
+      final list = await _searchJioSaavnArtistCandidates(artistName);
+      if (list.isEmpty) return out;
+      final lower = artistName.toLowerCase();
+      NamiMediaCandidate best = list.first;
+      for (final item in list) {
+        if (item.title.trim().toLowerCase() == lower) {
+          best = item;
+          out['exact'] = '1';
+          break;
+        }
+      }
+      out['photoUrl'] = best.imageUrl;
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchJioSaavnArtistCandidates(String query) async {
+    final out = <NamiMediaCandidate>[];
+    try {
+      final uri = Uri.parse(
+        'https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${Uri.encodeComponent(query)}',
+      );
+      final res = await http.get(uri, headers: _jsonHeaders).timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return out;
+      final dec = jsonDecode(res.body);
+      final artists = (dec['artists']?['data'] as List?)?.whereType<Map>().toList() ?? [];
+      for (final a in artists.take(6)) {
+        final name = _decodeHtmlEntities((a['title'] ?? a['name'] ?? '').toString()).trim();
+        final rawImg = (a['image'] ?? '').toString().trim();
+        if (rawImg.startsWith('http') && !rawImg.contains('default_')) {
+          out.add(NamiMediaCandidate(
+            title: name.isEmpty ? query : name,
+            subtitle: (a['description'] ?? 'Indian Artist').toString(),
+            imageUrl: _upgradeSaavnImage(rawImg),
+            source: 'JioSaavn IN',
+          ));
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchJioSaavnTrackCovers(String query) async {
+    final out = <NamiMediaCandidate>[];
+    try {
+      final uri = Uri.parse(
+        'https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${Uri.encodeComponent(query)}',
+      );
+      final res = await http.get(uri, headers: _jsonHeaders).timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return out;
+      final dec = jsonDecode(res.body);
+      final songs = (dec['songs']?['data'] as List?)?.whereType<Map>().toList() ?? [];
+      final albums = (dec['albums']?['data'] as List?)?.whereType<Map>().toList() ?? [];
+      for (final item in [...songs.take(5), ...albums.take(4)]) {
+        final title = _decodeHtmlEntities((item['title'] ?? '').toString()).trim();
+        final sub = _decodeHtmlEntities((item['description'] ?? item['more_info']?['singers'] ?? '').toString()).trim();
+        final rawImg = (item['image'] ?? '').toString().trim();
+        if (rawImg.startsWith('http') && !rawImg.contains('default_')) {
+          out.add(NamiMediaCandidate(
+            title: title.isEmpty ? query : title,
+            subtitle: sub,
+            imageUrl: _upgradeSaavnImage(rawImg),
+            source: 'JioSaavn IN',
+          ));
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchAppleMusicArtistCandidates(
+    String query, {
+    List<String> sampleTracks = const [],
+  }) async {
+    final out = <NamiMediaCandidate>[];
+    try {
+      final primary = await _fetchFromAppleMusic(query, sampleTracks: sampleTracks, country: 'IN');
+      if ((primary['photoUrl'] ?? '').startsWith('http')) {
+        out.add(NamiMediaCandidate(
+          title: query,
+          subtitle: primary['genre'] ?? 'Apple Music India',
+          imageUrl: primary['photoUrl']!,
+          source: 'Apple Music IN',
+        ));
+      }
+      // Also pull top matching album/song artworks for this artist on Apple Music IN
+      final uri = Uri.parse(
+        'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&country=IN&entity=album&limit=4',
+      );
+      final res = await http.get(uri, headers: _jsonHeaders).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final list = (jsonDecode(res.body)['results'] as List?)?.whereType<Map>().toList() ?? [];
+        for (final item in list) {
+          final art = (item['artworkUrl100'] ?? '').toString().replaceAll('100x100bb', '800x800bb');
+          if (art.startsWith('http')) {
+            out.add(NamiMediaCandidate(
+              title: (item['artistName'] ?? query).toString(),
+              subtitle: (item['collectionName'] ?? 'Album Art').toString(),
+              imageUrl: art,
+              source: 'Apple Music IN',
+            ));
+          }
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchAppleMusicTrackCovers(
+    String query, {
+    String country = 'IN',
+  }) async {
+    final out = <NamiMediaCandidate>[];
+    try {
+      final uri = Uri.parse(
+        'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&country=$country&entity=song&limit=8',
+      );
+      final res = await http.get(uri, headers: _jsonHeaders).timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return out;
+      final list = (jsonDecode(res.body)['results'] as List?)?.whereType<Map>().toList() ?? [];
+      for (final item in list) {
+        final raw = (item['artworkUrl100'] ?? '').toString().trim();
+        if (raw.startsWith('http')) {
+          out.add(NamiMediaCandidate(
+            title: (item['trackName'] ?? item['collectionName'] ?? query).toString(),
+            subtitle: '${item['artistName'] ?? ''} • ${item['collectionName'] ?? ''}',
+            imageUrl: raw.replaceAll('100x100bb', '800x800bb'),
+            source: 'Apple Music IN',
+          ));
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchDeezerArtistCandidates(String query) async {
+    final out = <NamiMediaCandidate>[];
+    try {
+      final res = await http
+          .get(Uri.parse('https://api.deezer.com/search/artist?q=${Uri.encodeComponent(query)}&limit=5'), headers: _jsonHeaders)
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final list = (jsonDecode(res.body)['data'] as List?)?.whereType<Map>().toList() ?? [];
+        for (final item in list) {
+          final pic = (item['picture_xl'] ?? item['picture_big'] ?? '').toString().trim();
+          if (pic.startsWith('http')) {
+            out.add(NamiMediaCandidate(
+              title: (item['name'] ?? query).toString(),
+              subtitle: '${item['nb_fan'] ?? 0} fans',
+              imageUrl: pic,
+              source: 'Deezer',
+            ));
+          }
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchDeezerTrackCovers(String query) async {
+    final out = <NamiMediaCandidate>[];
+    try {
+      final res = await http
+          .get(Uri.parse('https://api.deezer.com/search?q=${Uri.encodeComponent(query)}&limit=6'), headers: _jsonHeaders)
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        final list = (jsonDecode(res.body)['data'] as List?)?.whereType<Map>().toList() ?? [];
+        for (final item in list) {
+          final alb = item['album'];
+          final pic = (alb is Map ? (alb['cover_xl'] ?? alb['cover_big'] ?? '') : '').toString().trim();
+          if (pic.startsWith('http')) {
+            out.add(NamiMediaCandidate(
+              title: (item['title'] ?? query).toString(),
+              subtitle: (item['artist']?['name'] ?? '').toString(),
+              imageUrl: pic,
+              source: 'Deezer',
+            ));
+          }
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  static Future<List<NamiMediaCandidate>> _searchSpotifyArtistCandidate(
+    String query, {
+    List<String> sampleTracks = const [],
+  }) async {
+    final sp = await _fetchFromSpotifyViaMusicBrainz(query, sampleTracks: sampleTracks);
+    if ((sp['photoUrl'] ?? '').startsWith('http')) {
+      return [
+        NamiMediaCandidate(
+          title: query,
+          subtitle: sp['listeners'] ?? 'Spotify Official',
+          imageUrl: sp['photoUrl']!,
+          source: 'Spotify',
+        ),
+      ];
+    }
+    return [];
+  }
+
   static Future<Map<String, String?>> _fetchFromAppleMusic(
     String artistName, {
     List<String> sampleTracks = const [],
     List<String> sampleAlbums = const [],
+    String country = 'IN',
   }) async {
     final out = <String, String?>{};
     try {
       String? link;
       String? genre;
 
-      // 1. Disambiguate using a local track/album first (e.g. "Divine 100 Million" -> Indian rapper DIVINE)
       final contextHint = sampleTracks.isNotEmpty
           ? sampleTracks.first
           : (sampleAlbums.isNotEmpty ? sampleAlbums.first : '');
       if (contextHint.isNotEmpty) {
         final trackUri = Uri.parse(
-          'https://itunes.apple.com/search?term=${Uri.encodeComponent('$artistName $contextHint')}&entity=song&limit=6',
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent('$artistName $contextHint')}&country=$country&entity=song&limit=6',
         );
         final tRes = await http.get(trackUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
         if (tRes.statusCode == 200) {
@@ -186,10 +485,9 @@ class NamiArtistMetadataService {
         }
       }
 
-      // 2. Fallback to direct musicArtist search
       if (link == null || link.isEmpty) {
         final searchUri = Uri.parse(
-          'https://itunes.apple.com/search?term=${Uri.encodeComponent(artistName)}&entity=musicArtist&limit=6',
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent(artistName)}&country=$country&entity=musicArtist&limit=6',
         );
         final res = await http.get(searchUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
         if (res.statusCode == 200) {
@@ -268,7 +566,6 @@ class NamiArtistMetadataService {
       String? mbid;
       Map? best;
 
-      // Try recording lookup first when we have a sample track so homonymous artists (e.g. "Divine") resolve accurately
       if (sampleTracks.isNotEmpty) {
         final recUri = Uri.parse(
           'https://musicbrainz.org/ws/2/recording/?query=recording:${Uri.encodeComponent(sampleTracks.first)}%20AND%20artist:${Uri.encodeComponent(artistName)}&fmt=json&limit=3',
@@ -297,7 +594,7 @@ class NamiArtistMetadataService {
 
       if (mbid == null || mbid.isEmpty) {
         final mbUri = Uri.parse(
-          'https://musicbrainz.org/ws/2/artist/?query=artist:${Uri.encodeComponent(artistName)}&fmt=json&limit=5',
+          'https://musicbrainz.org/ws/2/artist/?query=artist:${Uri.encodeComponent(artistName)}&fmt=json&limit=6',
         );
         final res = await http.get(mbUri, headers: _jsonHeaders).timeout(const Duration(seconds: 7));
         if (res.statusCode != 200) return out;
@@ -307,12 +604,24 @@ class NamiArtistMetadataService {
 
         final lowerTarget = artistName.toLowerCase();
         best = artists.first;
+        // Prefer Indian / active artists first when names collide
         for (final a in artists) {
           final n = (a['name'] ?? '').toString().trim().toLowerCase();
+          final country = (a['country'] ?? '').toString().toUpperCase();
           final ended = a['life-span']?['ended'] == true;
-          if (n == lowerTarget && !ended) {
+          if (n == lowerTarget && country == 'IN' && !ended) {
             best = a;
             break;
+          }
+        }
+        if ((best?['country'] ?? '').toString().toUpperCase() != 'IN') {
+          for (final a in artists) {
+            final n = (a['name'] ?? '').toString().trim().toLowerCase();
+            final ended = a['life-span']?['ended'] == true;
+            if (n == lowerTarget && !ended) {
+              best = a;
+              break;
+            }
           }
         }
         mbid = (best?['id'] ?? '').toString().trim();
@@ -398,16 +707,19 @@ class NamiArtistMetadataService {
 
   static bool _looksLikeMusicBio(String text) {
     final l = text.toLowerCase();
-    const kws = ['rapper', 'singer', 'musician', 'band', 'songwriter', 'composer', 'producer', 'hip hop', 'album', 'music', 'discography', 'dj'];
+    const kws = ['rapper', 'singer', 'musician', 'band', 'songwriter', 'composer', 'producer', 'hip hop', 'album', 'music', 'discography', 'playback', 'dj'];
     return kws.any((k) => l.contains(k));
   }
 
   static Future<String?> _fetchWikipediaMusicBio(String artistName, {String? genreHint}) async {
     final candidates = <String>[
+      '$artistName (Indian rapper)',
+      '$artistName (Indian singer)',
+      '$artistName (Indian musician)',
       if (genreHint != null && genreHint.toLowerCase().contains('hip')) '$artistName (rapper)',
       '$artistName (rapper)',
-      '$artistName (musician)',
       '$artistName (singer)',
+      '$artistName (musician)',
       artistName,
     ];
     for (final title in candidates) {

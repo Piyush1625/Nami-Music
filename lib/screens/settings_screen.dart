@@ -657,29 +657,20 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 title: const Text('Full Storage Access (All Files)', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                 subtitle: const Text('Required for FLAC/MP3 tag writing, deleting files & .lrc/.sflx access', style: TextStyle(fontSize: 11, color: Colors.white54)),
                 trailing: TextButton(
-                  onPressed: () async {
-                    if (widget.onRequestStoragePermission != null) {
-                      await widget.onRequestStoragePermission!();
-                    } else {
-                      await Permission.manageExternalStorage.request();
-                    }
-                    setSub(() {});
-                    setState(() {});
-                  },
+                  onPressed: () => _namiHandleAllFilesGrant(),
                   child: const Text('Grant'),
                 ),
-              ),
+              ,
+            onTap: () => _namiHandleAllFilesGrant(),
+          ),
           ListTile(
             leading: const Icon(Icons.merge_type_rounded, color: Colors.white70),
             title: const Text('Merge / Alias Artists', style: TextStyle(fontWeight: FontWeight.w700)),
             subtitle: const Text('Combine duplicate artist spellings across your library', style: TextStyle(fontSize: 12, color: Colors.white54)),
             trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
             onTap: () {
-              final shell = context.findAncestorStateOfType<_NamiHomeShellState>();
-              if (shell != null) {
-                Navigator.pop(context);
-                shell._openSettingsMergeArtistPicker();
-              }
+              Navigator.pop(context);
+              _NamiHomeShellState.activeInstance?._openSettingsMergeArtistPicker();
             },
           ),
               const Divider(color: Colors.white10, height: 1),
@@ -688,15 +679,12 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 title: const Text('USB DAC Exclusive Permission', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                 subtitle: Text('Active output: ${widget.connectedDacName}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
                 trailing: TextButton(
-                  onPressed: () async {
-                    if (widget.onRequestUsbDacPermission != null) {
-                      await widget.onRequestUsbDacPermission!();
-                    }
-                    setSub(() {});
-                  },
+                  onPressed: () => _namiHandleUsbDacRequest(),
                   child: const Text('Request'),
                 ),
-              ),
+              ,
+            onTap: () => _namiHandleUsbDacRequest(),
+          ),
             ]),
           ],
         );
@@ -1383,5 +1371,52 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
         ],
       ),
     );
+  }
+
+  static const MethodChannel _namiPermChannel = MethodChannel('com.piyush.nami/audio_device');
+
+  Future<void> _namiHandleAllFilesGrant() async {
+    try {
+      final res = await _namiPermChannel.invokeMethod<dynamic>('requestAllFilesPermission');
+      if (!mounted) return;
+      final msg = res == 'granted'
+          ? 'Full Storage Access (All Files) is already granted!'
+          : 'Enable "Allow access to manage all files" for Nami, then return.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Open Android Settings > Apps > Nami > Permissions to grant All Files Access.')),
+      );
+    }
+  }
+
+  Future<void> _namiHandleUsbDacRequest() async {
+    try {
+      final res = await _namiPermChannel.invokeMethod<dynamic>('requestUsbDacPermission');
+      if (!mounted) return;
+      String status = '';
+      String dev = '';
+      if (res is Map) {
+        status = (res['status'] ?? '').toString();
+        dev = (res['device'] ?? '').toString();
+      }
+      String msg;
+      if (status == 'granted') {
+        msg = 'Exclusive USB DAC permission already granted${dev.isNotEmpty ? ' ($dev)' : ''}.';
+      } else if (status == 'requested') {
+        msg = 'USB DAC permission prompt opened${dev.isNotEmpty ? ' for $dev' : ''}.';
+      } else if (status == 'no_usb_dac') {
+        msg = 'No USB DAC detected. Plug in your USB-C DAC and tap Request again.';
+      } else {
+        msg = 'Could not query USB audio devices on this phone.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Plug in a USB-C DAC and tap Request again.')),
+      );
+    }
   }
 }

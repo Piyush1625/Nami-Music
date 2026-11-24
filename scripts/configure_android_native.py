@@ -22,6 +22,9 @@ import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.provider.Settings
+import android.os.Environment
+import android.net.Uri
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -34,6 +37,37 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_DEVICE_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                                        "hasAllFilesPermission" -> {
+                        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            Environment.isExternalStorageManager()
+                        } else {
+                            true
+                        }
+                        result.success(granted)
+                    }
+                    "requestAllFilesPermission" -> {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                if (Environment.isExternalStorageManager()) {
+                                    result.success("granted")
+                                } else {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                                        intent.data = Uri.parse("package:$packageName")
+                                        startActivity(intent)
+                                    } catch (_: Exception) {
+                                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                        startActivity(intent)
+                                    }
+                                    result.success("opened")
+                                }
+                            } else {
+                                result.success("granted")
+                            }
+                        } catch (e: Exception) {
+                            result.success("error")
+                        }
+                    }
                     "requestUsbDacPermission" -> {
                         try {
                             val usbMgr = getSystemService(Context.USB_SERVICE) as UsbManager

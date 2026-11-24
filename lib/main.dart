@@ -218,6 +218,7 @@ class NamiHomeShell extends StatefulWidget {
 }
 
 class _NamiHomeShellState extends State<NamiHomeShell> {
+  static _NamiHomeShellState? activeInstance;
   final Set<String> _artistImageFetching = <String>{};
   int _selectedIndex = 0;
 
@@ -448,6 +449,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
+    activeInstance = this;
     
     
 
@@ -597,6 +599,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   @override
   void dispose() {
+    if (activeInstance == this) activeInstance = null;
     _telemetryTimer?.cancel();
     _sleepTimer?.cancel();
     _fadeTimer?.cancel();
@@ -2659,7 +2662,7 @@ const SizedBox(height: 10),
               ..._customPlaylists.map((pl) => ListTile(
                     leading: const Icon(Icons.queue_music_rounded),
                     title: Text(pl.name),
-                    subtitle: Text('${pl.tracks.length} Tracks'),
+                    subtitle: Text('${pl.tracks.length} ${pl.tracks.length == 1 ? 'Track' : 'Tracks'}'),
                     onTap: () {
                       if (!pl.tracks.contains(song)) {
                         setState(() => pl.tracks.add(song));
@@ -2680,6 +2683,7 @@ const SizedBox(height: 10),
     showNamiTrackActionCard(
       context: context,
       track: song,
+      onFetchCoverOnline: () => _openTrackCoverOnlinePicker(song),
       coverArt: _buildCoverArt(song, 50, 12),
       formatBadgeText: '${song.path.split('.').last.toUpperCase()} ${song.bitDepth > 0 ? '${song.bitDepth}B' : ''}'.trim(),
       isFavorite: false,
@@ -5673,7 +5677,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(color: Colors.black.withOpacity(0.76), borderRadius: BorderRadius.circular(8)),
-                                      child: Text('${albTracks.length} tracks', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      child: Text('${albTracks.length} ${albTracks.length == 1 ? 'track' : 'tracks'}', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
                                     ),
                                   ),
                                 ],
@@ -5784,7 +5788,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                               _buildRoundArtistAvatar(firstArtTrack, 34, artistNameOverride: aName),
                               const SizedBox(height: 6),
                               Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                              Text('${aTracks.length} Tracks', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
+                              Text('${aTracks.length} ${aTracks.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 9.5, color: Colors.white54)),
                             ],
                           ),
                         ),
@@ -6246,7 +6250,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
           child: Row(children: [
             IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
             IconButton(icon: const Icon(Icons.play_arrow_rounded, size: 22), onPressed: () { if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first); }),
-            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text(_filteredSongs.length == _songs.length ? '${_songs.length} Tracks' : '${_filteredSongs.length} / ${_songs.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
+            Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text(_filteredSongs.length == _songs.length ? '${_songs.length} ${_songs.length == 1 ? 'Track' : 'Tracks'}' : '${_filteredSongs.length} / ${_songs.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
             const Spacer(),
             TextButton.icon(
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: Colors.white70),
@@ -6470,7 +6474,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                           const SizedBox(height: 6),
                           Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                           const SizedBox(height: 1),
-                          Text('${aTracks.length} Tracks', style: const TextStyle(fontSize: 10, color: Colors.white60)),
+                          Text('${aTracks.length} ${aTracks.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 10, color: Colors.white60)),
                         ]),
                       ),
                     );
@@ -6495,7 +6499,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                         leading: _buildRoundArtistAvatar(firstArtTrack, 24, artistNameOverride: aName),
                         title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
-                        subtitle: Text('$albumCount albums • ${aTracks.length} tracks', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                        subtitle: Text('$albumCount albums • ${aTracks.length} ${aTracks.length == 1 ? 'track' : 'tracks'}', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
                         trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
                         onTap: () => _showArtistDetailScreen(aName, aTracks),
                       ),
@@ -6620,7 +6624,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                           Text(albName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                                           const SizedBox(height: 2),
                                           Text(
-                                            '${cleanArtistStr(tracks.first.artist)} • ${tracks.length} tracks',
+                                            '${cleanArtistStr(tracks.first.artist)} • ${tracks.length} ${tracks.length == 1 ? 'track' : 'tracks'}',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(fontSize: 11, color: Colors.white60),
@@ -6651,7 +6655,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                     child: ListTile(
                                       leading: _buildCoverArt(artTrack, 50, 10),
                                       title: Text(albName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                      subtitle: Text('${cleanArtistStr(tracks.first.artist)} • ${tracks.length} tracks • ${tracks.first.year}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
+                                      subtitle: Text('${cleanArtistStr(tracks.first.artist)} • ${tracks.length} ${tracks.length == 1 ? 'track' : 'tracks'} • ${tracks.first.year}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
                                       trailing: Icon(Icons.play_circle_fill_rounded, color: accent, size: 28),
                                       onTap: () => _showAlbumDetailScreen(albName, tracks),
                                     ),
@@ -6661,7 +6665,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                       ),
                     ],
                   ),
-                  Positioned(left: 10, right: 10, bottom: 10, child: _buildReactiveMiniPlayer()),
+                  Positioned(left: 12, right: 12, bottom: 14, child: _buildDetailFloatingDock(context, scopeTitle: 'All Albums', scopeTracks: _songs)),
                 ],
               ),
             );
@@ -6705,12 +6709,12 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Add ${batch.length} Tracks to Playlist', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              Text('Add ${batch.length} ${batch.length == 1 ? 'Track' : 'Tracks'} to Playlist', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               ..._customPlaylists.map((pl) => ListTile(
                     leading: const Icon(Icons.queue_music_rounded),
                     title: Text(pl.name),
-                    subtitle: Text('${pl.tracks.length} Tracks'),
+                    subtitle: Text('${pl.tracks.length} ${pl.tracks.length == 1 ? 'Track' : 'Tracks'}'),
                     onTap: () {
                       setState(() {
                         for (final s in batch) {
@@ -6720,7 +6724,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                       _saveStateCache();
                       _exitSelectionMode();
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${batch.length} tracks to ${pl.name}')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${batch.length} ${batch.length == 1 ? 'track' : 'tracks'} to ${pl.name}')));
                     },
                   )),
             ],
@@ -6750,7 +6754,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             onPressed: () {
               setState(() => _playNextQueue.addAll(batch));
               _exitSelectionMode();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queued ${batch.length} tracks')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queued ${batch.length} ${batch.length == 1 ? 'track' : 'tracks'}')));
             },
           ),
           TextButton.icon(
@@ -6774,7 +6778,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
               });
               _saveStateCache();
               _exitSelectionMode();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Favorited ${batch.length} tracks')));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Favorited ${batch.length} ${batch.length == 1 ? 'track' : 'tracks'}')));
             },
           ),
           IconButton(
@@ -7300,7 +7304,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '${albumTracks.length} Tracks • $totalDurText • ${firstTrack.year}',
+                                '${albumTracks.length} ${albumTracks.length == 1 ? 'Track' : 'Tracks'} • $totalDurText • ${firstTrack.year}',
                                 style: const TextStyle(fontSize: 11.5, color: Colors.white54),
                               ),
                               const SizedBox(height: 10),
@@ -7389,7 +7393,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
               decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
               child: Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${tracks.length} Tracks', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                  Text('${tracks.length} ${tracks.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
                   const SizedBox(height: 2),
                   Text('Total duration • $durText', style: const TextStyle(fontSize: 12, color: Colors.white60)),
                 ])),
@@ -7698,7 +7702,7 @@ void _showCreatePlaylistDialog() {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('${playlist.tracks.length} Tracks • $durText', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                                  Text('${playlist.tracks.length} ${playlist.tracks.length == 1 ? 'Track' : 'Tracks'} • $durText', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                                   const SizedBox(height: 2),
                                   const Text('Drag handle to reorder • Search below', style: TextStyle(fontSize: 11, color: Colors.white54)),
                                 ],
@@ -7900,7 +7904,7 @@ void _showCreatePlaylistDialog() {
                     child: Icon(Icons.auto_awesome_rounded, color: accent, size: 22),
                   ),
                   title: Text(rule.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  subtitle: Text('${matched.length} Tracks • ${rule.describeRules()}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                  subtitle: Text('${matched.length} ${matched.length == 1 ? 'Track' : 'Tracks'} • ${rule.describeRules()}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white60)),
                   trailing: PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 20),
                     color: const Color(0xFF14141E),
@@ -7957,7 +7961,7 @@ void _showCreatePlaylistDialog() {
         const SizedBox(height: 10),
         _buildPlaylistCardTile(
           title: 'Liked Songs',
-          subtitle: '${favSongs.length} Tracks',
+          subtitle: '${favSongs.length} ${favSongs.length == 1 ? 'Track' : 'Tracks'}',
           icon: Icons.favorite_rounded,
           coverTrack: favSongs.isNotEmpty ? favSongs.first : null,
           onTap: () => _showFilteredListScreen('Liked Songs', favSongs),
@@ -7989,7 +7993,7 @@ void _showCreatePlaylistDialog() {
                 ],
               ),
               subtitle: Text(
-                desc.isNotEmpty ? '${p.tracks.length} Tracks • $desc' : '${p.tracks.length} Tracks',
+                desc.isNotEmpty ? '${p.tracks.length} ${p.tracks.length == 1 ? 'Track' : 'Tracks'} • $desc' : '${p.tracks.length} ${p.tracks.length == 1 ? 'Track' : 'Tracks'}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11.5, color: Colors.white54),
@@ -9242,7 +9246,7 @@ List<String> _getSmartMornyeQuickSearches() {
                             Icon(Icons.pie_chart_rounded, color: accent, size: 20),
                             const SizedBox(width: 8),
                             const Expanded(child: Text('Interactive Breakdown', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold))),
-                            Text('${_songs.length} Tracks', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+                            Text('${_songs.length} ${_songs.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 11, color: Colors.white60)),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -9436,7 +9440,7 @@ List<String> _getSmartMornyeQuickSearches() {
                     childAspectRatio: 1.65,
                     children: [
                       heavyCard(Icons.headphones_rounded, 'Total Listen Time', '${listenHours}h ${listenMins}m', '${_historyTracks.length} session plays', const Color(0xFFFFB300)),
-                      heavyCard(Icons.explore_rounded, 'Library Explored', '$discoveryRatio%', '${playedTrackCounts.length} of ${_songs.length} tracks heard', const Color(0xFF00ACC1)),
+                      heavyCard(Icons.explore_rounded, 'Library Explored', '$discoveryRatio%', '${playedTrackCounts.length} of ${_songs.length} ${_songs.length == 1 ? 'track' : 'tracks'} heard', const Color(0xFF00ACC1)),
                       heavyCard(Icons.timer_outlined, 'Avg Session Length', '${avgSessionSec ~/ 60}m ${(avgSessionSec % 60).toString().padLeft(2, '0')}s', 'Per track playback', const Color(0xFF43A047)),
                       heavyCard(Icons.graphic_eq_rounded, 'Hi-Res vs CD Plays', '$hiResPlays Hi-Res', '$cdPlays CD • $lossyPlays Lossy plays', accent),
                       heavyCard(Icons.sd_storage_rounded, 'Library Footprint', '${totalGb.toStringAsFixed(2)} GB', '$avgBitrateKbps kbps average', const Color(0xFF8E24AA)),
@@ -9762,7 +9766,7 @@ int _crossfadeSeconds = 0;
                         child: Icon(Icons.category_rounded, color: accent, size: 20),
                       ),
                       title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                      subtitle: Text('${tracks.length} tracks • $artists artists', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                      subtitle: Text('${tracks.length} ${tracks.length == 1 ? 'track' : 'tracks'} • $artists artists', style: const TextStyle(fontSize: 12, color: Colors.white60)),
                       trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white54),
                       onTap: () => _showFilteredListScreen(entry.key, tracks),
                     );
@@ -10084,7 +10088,7 @@ void _showListenBrainzSettingsDialog() {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Batch Edit ${batch.length} Tracks', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  Text('Batch Edit ${batch.length} ${batch.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 4),
                   const Text('Leave fields blank to keep existing values. Writes directly to FLAC/MP3 files.', style: TextStyle(fontSize: 11.5, color: Colors.white54)),
                   const SizedBox(height: 12),
@@ -10153,7 +10157,7 @@ void _showListenBrainzSettingsDialog() {
                           _saveStateCache();
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Updated ${batch.length} tracks ($writtenFiles written to disk)!')),
+                              SnackBar(content: Text('Updated ${batch.length} ${batch.length == 1 ? 'track' : 'tracks'} ($writtenFiles written to disk)!')),
                             );
                           }
                         },
@@ -10183,7 +10187,7 @@ void _showListenBrainzSettingsDialog() {
       showNamiFloatingActionSheet(
         context: context,
         title: albumName,
-        subtitle: '${list.length} Tracks',
+        subtitle: '${list.length} ${list.length == 1 ? 'Track' : 'Tracks'}',
         leading: list.isNotEmpty ? _buildCoverArt(list.first, 44, 10) : null,
         actions: [
           NamiFloatingActionItem(
@@ -10221,7 +10225,7 @@ void _showListenBrainzSettingsDialog() {
       showNamiFloatingActionSheet(
         context: context,
         title: artistName,
-        subtitle: '${list.length} Tracks',
+        subtitle: '${list.length} ${list.length == 1 ? 'Track' : 'Tracks'}',
         leading: CircleAvatar(
           radius: 22,
           backgroundColor: Colors.white10,
@@ -10269,6 +10273,7 @@ void _showListenBrainzSettingsDialog() {
       showNamiTrackActionCard(
         context: context,
         track: track,
+      onFetchCoverOnline: () => _openTrackCoverOnlinePicker(track),
         coverArt: _buildCoverArt(track, 50, 12),
         formatBadgeText: '${track.path.split('.').last.toUpperCase()} ${track.bitDepth > 0 ? '${track.bitDepth}B' : ''}'.trim(),
         isFavorite: false,
@@ -10345,7 +10350,7 @@ void _showListenBrainzSettingsDialog() {
                 ListTile(
                   leading: const Icon(Icons.album_rounded),
                   title: Text(albumName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${albumTracks.length} Tracks'),
+                  subtitle: Text('${albumTracks.length} ${albumTracks.length == 1 ? 'Track' : 'Tracks'}'),
                 ),
                 const Divider(color: Colors.white10),
                 ListTile(
@@ -10370,7 +10375,7 @@ void _showListenBrainzSettingsDialog() {
                 ListTile(
                   leading: const Icon(Icons.person_rounded),
                   title: Text(artistName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('${artistTracks.length} Tracks'),
+                  subtitle: Text('${artistTracks.length} ${artistTracks.length == 1 ? 'Track' : 'Tracks'}'),
                 ),
                 const Divider(color: Colors.white10),
                 ListTile(
@@ -10388,7 +10393,7 @@ void _showListenBrainzSettingsDialog() {
                   onTap: () {
                     setState(() => _playNextQueue.addAll(artistTracks));
                     Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queued ${artistTracks.length} tracks by $artistName')));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Queued ${artistTracks.length} ${artistTracks.length == 1 ? 'track' : 'tracks'} by $artistName')));
                   },
                 ),
               ],
@@ -10754,7 +10759,7 @@ Widget _buildPlaylistCollageArt(CustomPlaylist playlist, double size, double rad
                                     children: [
                                       Text(headerItem.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                                       const SizedBox(height: 3),
-                                      Text('${headerItem.artist} • ${items.length} tracks', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                                      Text('${headerItem.artist} • ${items.length} ${items.length == 1 ? 'track' : 'tracks'}', style: const TextStyle(fontSize: 12, color: Colors.white60)),
                                     ],
                                   ),
                                 ),
@@ -11311,6 +11316,62 @@ Future<void> _exportUnifiedNamiBackup() async {
     }
     _saveStateCache();
     return newAlbum;
+  }
+
+  void _openTrackCoverOnlinePicker(AudioTrack track) {
+    final initialQ = '${track.title} ${cleanArtistStr(track.artist)}'.trim();
+    showNamiMediaImagePickerSheet(
+      context: context,
+      sheetTitle: 'Choose Cover: ${track.title}',
+      initialQuery: initialQ,
+      fetcher: (q) => NamiArtistMetadataService.fetchTrackCoverCandidates(q),
+      onPicked: (cand) async {
+        try {
+          final res = await http.get(Uri.parse(cand.imageUrl), headers: _httpHeaders).timeout(const Duration(seconds: 12));
+          if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+            final dir = await _ensureThumbDir();
+            final safe = track.path.hashCode.abs().toString();
+            final f = File('${dir.path}/custom_cover_$safe.jpg');
+            await f.writeAsBytes(res.bodyBytes, flush: true);
+            await FileImage(f).evict();
+            track.thumbPath = f.path;
+            if (mounted) {
+              setState(() {
+                _artworkTick.value++;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Updated cover art from ${cand.source}!')),
+              );
+            }
+            _saveStateCache();
+          }
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to download selected cover art.')),
+            );
+          }
+        }
+      },
+    );
+  }
+
+  void _openArtistPhotoOnlinePicker(String artistName, {List<AudioTrack>? tracks, VoidCallback? onUpdated}) {
+    final sampleTitles = (tracks ?? const <AudioTrack>[]).take(3).map((t) => t.title).toList();
+    showNamiMediaImagePickerSheet(
+      context: context,
+      sheetTitle: 'Choose Photo: $artistName',
+      initialQuery: artistName,
+      fetcher: (q) => NamiArtistMetadataService.fetchArtistPhotoCandidates(q, sampleTracks: sampleTitles),
+      onPicked: (cand) async {
+        await _saveArtistImageFromUrlOrFile(artistName, cand.imageUrl, onUpdated: onUpdated);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Updated $artistName photo from ${cand.source}!')),
+          );
+        }
+      },
+    );
   }
 }
 

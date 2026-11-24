@@ -142,6 +142,7 @@ void showNamiTrackActionCard({
   required ValueChanged<String> onGoToArtist,
   VoidCallback? onLyricsEditor,
   VoidCallback? onEditTags,
+  VoidCallback? onFetchCoverOnline,
   VoidCallback? onFileInfo,
   VoidCallback? onDeleteForever,
 }) {
@@ -348,6 +349,19 @@ void showNamiTrackActionCard({
                           ],
                         ),
                       ),
+
+                      if (onFetchCoverOnline != null)
+                        ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
+                          leading: const Icon(Icons.image_search_rounded, color: Colors.white70, size: 21),
+                          title: const Text('Choose Song Cover Online', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                          subtitle: const Text('Pick from Apple Music IN, JioSaavn & Deezer', style: TextStyle(fontSize: 11.5, color: Colors.white54)),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            onFetchCoverOnline();
+                          },
+                        ),
 
                       if (onEditTags != null)
                         ListTile(
@@ -807,6 +821,234 @@ Future<String?> showNamiRenameDialog({
           child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w800)),
         ),
       ],
+    ),
+  );
+}
+
+void showNamiMediaImagePickerSheet({
+  required BuildContext context,
+  required String sheetTitle,
+  required String initialQuery,
+  required Future<List<NamiMediaCandidate>> Function(String query) fetcher,
+  required ValueChanged<NamiMediaCandidate> onPicked,
+}) {
+  final queryCtrl = TextEditingController(text: initialQuery);
+  Future<List<NamiMediaCandidate>> currentFuture = fetcher(initialQuery);
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheetState) {
+        final accent = Theme.of(ctx).colorScheme.primary;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 48, 10, 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: Container(
+                  height: MediaQuery.of(ctx).size.height * 0.80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xF20B0B12),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withOpacity(0.11)),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(top: 10, bottom: 10),
+                        decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.photo_library_rounded, color: accent, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                sheetTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: Colors.white),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: queryCtrl,
+                                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                                decoration: InputDecoration(
+                                  hintText: 'Refine search (e.g. "Divine rapper India")...',
+                                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12.5),
+                                  isDense: true,
+                                  filled: true,
+                                  fillColor: const Color(0xFF161622),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                onSubmitted: (v) {
+                                  if (v.trim().isEmpty) return;
+                                  setSheetState(() {
+                                    currentFuture = fetcher(v.trim());
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: accent,
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onPressed: () {
+                                final q = queryCtrl.text.trim();
+                                if (q.isEmpty) return;
+                                FocusScope.of(ctx).unfocus();
+                                setSheetState(() {
+                                  currentFuture = fetcher(q);
+                                });
+                              },
+                              child: const Icon(Icons.search_rounded, size: 19),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: FutureBuilder<List<NamiMediaCandidate>>(
+                          future: currentFuture,
+                          builder: (_, snap) {
+                            if (snap.connectionState == ConnectionState.waiting) {
+                              return Center(child: CircularProgressIndicator(color: accent));
+                            }
+                            final items = snap.data ?? [];
+                            if (items.isEmpty) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'No matching images found.\nTry refining the search query above.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.white54, fontSize: 13),
+                                  ),
+                                ),
+                              );
+                            }
+                            return GridView.builder(
+                              padding: const EdgeInsets.fromLTRB(14, 2, 14, 20),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                childAspectRatio: 0.78,
+                              ),
+                              itemCount: items.length,
+                              itemBuilder: (_, idx) {
+                                final cand = items[idx];
+                                return GestureDetector(
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    Navigator.pop(ctx);
+                                    onPicked(cand);
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF141420),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.white.withOpacity(0.09)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        Expanded(
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              ClipRRect(
+                                                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                                                child: Image.network(
+                                                  cand.imageUrl,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) => const Center(
+                                                    child: Icon(Icons.broken_image_rounded, color: Colors.white24),
+                                                  ),
+                                                ),
+                                              ),
+                                              Positioned(
+                                                top: 6,
+                                                left: 6,
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black.withOpacity(0.72),
+                                                    borderRadius: BorderRadius.circular(7),
+                                                  ),
+                                                  child: Text(
+                                                    cand.source,
+                                                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: accent),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                cand.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+                                              ),
+                                              if (cand.subtitle.isNotEmpty)
+                                                Text(
+                                                  cand.subtitle,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(fontSize: 10.5, color: Colors.white54),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     ),
   );
 }
