@@ -41,6 +41,7 @@ part 'screens/tabs/artists_tab.dart';
 part 'screens/tabs/playlists_tab.dart';
 part 'screens/tabs/mornye_tab.dart';
 part 'widgets/nami_v22_polish.dart';
+part 'widgets/nami_v24_ui.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -194,7 +195,7 @@ bool pitchBlack = true;
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: const Color(0xFF07070B),
-          indicatorColor: accentColor.withOpacity(0.22),
+          indicatorColor: accentColor.withValues(alpha: 0.22),
           labelTextStyle: WidgetStateProperty.resolveWith((states) {
             final selected = states.contains(WidgetState.selected);
             return TextStyle(
@@ -1327,9 +1328,9 @@ Future<void> _playSong(AudioTrack song) async {
                         padding:
                             const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.14),
+                            color: statusColor.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: statusColor.withOpacity(0.45))),
+                            border: Border.all(color: statusColor.withValues(alpha: 0.45))),
                         child: Row(
                           children: [
                             Icon(
@@ -1402,7 +1403,7 @@ Future<void> _playSong(AudioTrack song) async {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white24, width: 1.2),
               ),
@@ -1435,7 +1436,7 @@ Future<void> _playSong(AudioTrack song) async {
           Padding(
             padding: const EdgeInsets.only(left: 14, top: 2, bottom: 2),
             child: Icon(Icons.south_rounded,
-                size: 12, color: Colors.white.withOpacity(0.25)),
+                size: 12, color: Colors.white.withValues(alpha: 0.25)),
           ),
       ],
     );
@@ -1472,7 +1473,7 @@ Future<void> _playSong(AudioTrack song) async {
                   ),
                   Switch(
                     value: _eqEnabled,
-                    activeColor: Theme.of(context).colorScheme.primary,
+                    activeThumbColor: Theme.of(context).colorScheme.primary,
                     onChanged: (v) async {
                       setEqState(() => _eqEnabled = v);
                       setState(() {});
@@ -1484,7 +1485,7 @@ Future<void> _playSong(AudioTrack song) async {
               const SizedBox(height: 10),
 Container(
   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-  decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: _eqEnabled ? Theme.of(context).colorScheme.primary.withOpacity(0.45) : Colors.white10)),
+  decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(12), border: Border.all(color: _eqEnabled ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.45) : Colors.white10)),
   child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
     Text(_eqEnabled ? 'Active Preset: $_selectedEqPreset' : 'Bit-Perfect Bypass (EQ Off)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
     Text('Preamp ${_preampGainDb >= 0 ? "+" : ""}${_preampGainDb.toStringAsFixed(1)} dB', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
@@ -2398,7 +2399,7 @@ const SizedBox(height: 10),
                       backgroundColor: Theme.of(context)
                           .colorScheme
                           .primary
-                          .withOpacity(0.12),
+                          .withValues(alpha: 0.12),
                     ),
                     icon: const Icon(Icons.lyrics_outlined, size: 16),
                     label: const Text('Lyrics Manager',
@@ -2425,7 +2426,7 @@ const SizedBox(height: 10),
                     Expanded(
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+                          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2445,7 +2446,7 @@ const SizedBox(height: 10),
                     Expanded(
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white.withOpacity(0.10),
+                          backgroundColor: Colors.white.withValues(alpha: 0.10),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2900,7 +2901,7 @@ const SizedBox(height: 10),
                     margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF101016).withOpacity(0.96),
+                      color: const Color(0xFF101016).withValues(alpha: 0.96),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: Colors.white10),
                     ),
@@ -2927,7 +2928,7 @@ const SizedBox(height: 10),
                               child: Container(
                                 width: 42,
                                 height: 42,
-                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
+                                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), shape: BoxShape.circle),
                                 child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 22),
                               ),
                             );
@@ -2981,7 +2982,7 @@ const SizedBox(height: 10),
                                     ),
                                   Container(
                                     padding: const EdgeInsets.all(7),
-                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
+                                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), shape: BoxShape.circle),
                                     child: const Icon(Icons.queue_music_rounded, size: 16, color: Colors.white),
                                   ),
                                   const SizedBox(width: 6),
@@ -3068,7 +3069,7 @@ const SizedBox(height: 10),
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       padding: const EdgeInsets.only(right: 20),
       alignment: Alignment.centerRight,
-      decoration: BoxDecoration(color: Colors.redAccent.withOpacity(0.22), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(12)),
       child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
     ),
     onDismissed: (_) { setQueueState(() => _playNextQueue.removeAt(idx)); setState(() {}); },
@@ -3126,7 +3127,7 @@ Container(
                               ),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: accent.withOpacity(0.18),
+                                  backgroundColor: accent.withValues(alpha: 0.18),
                                   foregroundColor: Colors.white,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -3173,9 +3174,9 @@ Container(
     return Container(
   margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2.5),
   decoration: BoxDecoration(
-    color: isCurrent ? Color.alphaBlend(accent.withOpacity(0.14), const Color(0xFF14141E)) : Colors.transparent,
+    color: isCurrent ? Color.alphaBlend(accent.withValues(alpha: 0.14), const Color(0xFF14141E)) : Colors.transparent,
     borderRadius: BorderRadius.circular(12),
-    border: isCurrent ? Border.all(color: accent.withOpacity(0.45)) : null,
+    border: isCurrent ? Border.all(color: accent.withValues(alpha: 0.45)) : null,
   ),
   child: InkWell(
     borderRadius: BorderRadius.circular(12),
@@ -3596,7 +3597,7 @@ Container(
                             decoration: BoxDecoration(
                               color: const Color(0xFF0E0E15),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: ext.isInstalled ? accent.withOpacity(0.35) : Colors.white10),
+                              border: Border.all(color: ext.isInstalled ? accent.withValues(alpha: 0.35) : Colors.white10),
                             ),
                             child: ListTile(
                               leading: Stack(
@@ -3618,7 +3619,7 @@ Container(
                                 children: [
                                   Switch(
                                     value: ext.isInstalled,
-                                    activeColor: accent,
+                                    activeThumbColor: accent,
                                     onChanged: (v) {
                                       setRepoState(() {
                                         ext.isInstalled = v;
@@ -5217,7 +5218,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                               ? CircleAvatar(radius: 30, backgroundImage: FileImage(File(tempPhoto!)))
                               : CircleAvatar(
                                   radius: 30,
-                                  backgroundColor: accent.withOpacity(0.18),
+                                  backgroundColor: accent.withValues(alpha: 0.18),
                                   child: Icon(Icons.headphones_rounded, color: accent, size: 28),
                                 ),
                           Container(
@@ -5430,9 +5431,9 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Color.alphaBlend(accent.withOpacity(0.10), const Color(0xFF101018)),
+              color: Color.alphaBlend(accent.withValues(alpha: 0.10), const Color(0xFF101018)),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: accent.withOpacity(0.28)),
+              border: Border.all(color: accent.withValues(alpha: 0.28)),
             ),
             child: Row(
               children: [
@@ -5540,7 +5541,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                       decoration: BoxDecoration(
                                         color: accent,
                                         shape: BoxShape.circle,
-                                        boxShadow: [BoxShadow(color: accent.withOpacity(0.45), blurRadius: 12)],
+                                        boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.45), blurRadius: 12)],
                                       ),
                                       child: Icon(activeHere ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 26),
                                     ),
@@ -5677,7 +5678,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                     bottom: 6,
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.76), borderRadius: BorderRadius.circular(8)),
+                                      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.76), borderRadius: BorderRadius.circular(8)),
                                       child: Text('${albTracks.length} ${albTracks.length == 1 ? 'track' : 'tracks'}', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
                                     ),
                                   ),
@@ -5728,7 +5729,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                     ),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: accent.withOpacity(0.18),
+                        backgroundColor: accent.withValues(alpha: 0.18),
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -5812,14 +5813,14 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Color.alphaBlend(accent.withOpacity(0.18), const Color(0xFF13131E)),
+                Color.alphaBlend(accent.withValues(alpha: 0.18), const Color(0xFF13131E)),
                 const Color(0xFF0E0E16),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: accent.withOpacity(0.28)),
+            border: Border.all(color: accent.withValues(alpha: 0.28)),
           ),
           child: Row(
             children: [
@@ -5829,7 +5830,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                   children: [
                     (_userPhotoPath != null && File(_userPhotoPath!).existsSync())
                         ? CircleAvatar(radius: 26, backgroundImage: FileImage(File(_userPhotoPath!)))
-                        : CircleAvatar(radius: 26, backgroundColor: accent.withOpacity(0.20), child: Icon(Icons.headphones_rounded, color: accent, size: 25)),
+                        : CircleAvatar(radius: 26, backgroundColor: accent.withValues(alpha: 0.20), child: Icon(Icons.headphones_rounded, color: accent, size: 25)),
                     Positioned(
                       right: 0,
                       bottom: 0,
@@ -5854,9 +5855,9 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: accent.withOpacity(0.16),
+                          color: accent.withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: accent.withOpacity(0.45), width: 0.7),
+                          border: Border.all(color: accent.withValues(alpha: 0.45), width: 0.7),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -5889,7 +5890,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
               IconButton(
                 tooltip: 'Listening Statistics',
                 visualDensity: VisualDensity.compact,
-                style: IconButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.06)),
+                style: IconButton.styleFrom(backgroundColor: Colors.white.withValues(alpha: 0.06)),
                 icon: Icon(Icons.bar_chart_rounded, color: accent, size: 20),
                 onPressed: _openStatisticsScreen,
               ),
@@ -6120,7 +6121,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             Container(
               width: 34,
               height: 34,
-              decoration: BoxDecoration(color: color.withOpacity(0.16), borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(10)),
               child: Icon(icon, color: color, size: 18),
             ),
             const SizedBox(width: 10),
@@ -6149,7 +6150,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
           onTap: onSeeAll,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.07), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(12)),
             child: const Text('See all', style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w600)),
           ),
         ),
@@ -6183,7 +6184,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                           bottom: 6,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: Colors.black.withOpacity(0.75), borderRadius: BorderRadius.circular(8)),
+                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(8)),
                             child: Text('${track.playCount}x', style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white)),
                           ),
                         ),
@@ -6218,7 +6219,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                 // Skeleton Album Art
                 Container(
                   width: 52, height: 52, 
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(10))
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(10))
                 ),
                 const SizedBox(width: 8.0),
                 // Skeleton Text Lines
@@ -6227,15 +6228,15 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(width: 200, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(4))),
+                      Container(width: 200, height: 14, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(4))),
                       const SizedBox(height: 10),
-                      Container(width: 120, height: 10, decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(4))),
+                      Container(width: 120, height: 10, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(4))),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8.0),
                 // Skeleton trailing icon
-                Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white.withOpacity(0.02), shape: BoxShape.circle)),
+                Container(width: 24, height: 24, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.02), shape: BoxShape.circle)),
               ],
             ),
           );
@@ -6743,8 +6744,8 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
       decoration: BoxDecoration(
         color: const Color(0xFF161622),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: accent.withOpacity(0.5)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.75), blurRadius: 16)],
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.75), blurRadius: 16)],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -6813,10 +6814,10 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
       margin: const EdgeInsets.fromLTRB(10, 1.5, 4, 1.5),
       decoration: BoxDecoration(
         color: isSelected
-            ? accent.withOpacity(0.22)
-            : (isCurrent ? accent.withOpacity(0.12) : const Color(0xFF0C0C12)),
+            ? accent.withValues(alpha: 0.22)
+            : (isCurrent ? accent.withValues(alpha: 0.12) : const Color(0xFF0C0C12)),
         borderRadius: BorderRadius.circular(12),
-        border: isSelected ? Border.all(color: accent.withOpacity(0.6)) : null,
+        border: isSelected ? Border.all(color: accent.withValues(alpha: 0.6)) : null,
       ),
       child: Dismissible(
         key: Key('${song.path}_${song.hashCode}'),
@@ -6824,7 +6825,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         background: Container(
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.only(left: 20),
-          decoration: BoxDecoration(color: Colors.pinkAccent.withOpacity(0.85), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: Colors.pinkAccent.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
         ),
         secondaryBackground: Container(
@@ -6887,10 +6888,10 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                       width: _compactTrackTiles ? 44 : 54,
                       height: _compactTrackTiles ? 44 : 54,
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
+                        color: Colors.black.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: Theme.of(context).colorScheme.primary.withOpacity(0.65),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.65),
                           width: 1.2,
                         ),
                       ),
@@ -7008,10 +7009,10 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             height: 72,
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: _forceMiniColor ? Color.alphaBlend(accent.withOpacity(0.22), const Color(0xFF12121A)) : const Color(0xFF12121A),
+              color: _forceMiniColor ? Color.alphaBlend(accent.withValues(alpha: 0.22), const Color(0xFF12121A)) : const Color(0xFF12121A),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _forceMiniColor ? accent.withOpacity(0.45) : Colors.white12),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.65), blurRadius: 18, spreadRadius: 4)],
+              border: Border.all(color: _forceMiniColor ? accent.withValues(alpha: 0.45) : Colors.white12),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.65), blurRadius: 18, spreadRadius: 4)],
             ),
             child: Column(children: [
               Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Row(
@@ -7024,12 +7025,12 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                     height: 48,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [accent.withOpacity(0.24), Colors.white.withOpacity(0.06)],
+                        colors: [accent.withValues(alpha: 0.24), Colors.white.withValues(alpha: 0.06)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: accent.withOpacity(0.35)),
+                      border: Border.all(color: accent.withValues(alpha: 0.35)),
                     ),
                     child: Icon(Icons.graphic_eq_rounded, size: 24, color: accent),
                   ),
@@ -7095,9 +7096,9 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                             height: 38,
                             margin: const EdgeInsets.symmetric(horizontal: 2),
                             decoration: BoxDecoration(
-                              color: accent.withOpacity(0.20),
+                              color: accent.withValues(alpha: 0.20),
                               shape: BoxShape.circle,
-                              border: Border.all(color: accent.withOpacity(0.55), width: 1.1),
+                              border: Border.all(color: accent.withValues(alpha: 0.55), width: 1.1),
                             ),
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
@@ -7360,7 +7361,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
                           left: 16,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                            decoration: BoxDecoration(color: Colors.black.withOpacity(0.78), borderRadius: BorderRadius.circular(5)),
+                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.78), borderRadius: BorderRadius.circular(5)),
                             child: Text('#$badge', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
                           ),
                         ),
@@ -7894,14 +7895,14 @@ void _showCreatePlaylistDialog() {
                 decoration: BoxDecoration(
                   color: const Color(0xFF0E0E15),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: accent.withOpacity(0.28)),
+                  border: Border.all(color: accent.withValues(alpha: 0.28)),
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
                   leading: Container(
                     width: 48,
                     height: 48,
-                    decoration: BoxDecoration(color: accent.withOpacity(0.18), borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(color: accent.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
                     child: Icon(Icons.auto_awesome_rounded, color: accent, size: 22),
                   ),
                   title: Text(rule.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -7978,7 +7979,7 @@ void _showCreatePlaylistDialog() {
             decoration: BoxDecoration(
               color: const Color(0xFF0E0E15),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: isPinned ? accent.withOpacity(0.45) : Colors.white10),
+              border: Border.all(color: isPinned ? accent.withValues(alpha: 0.45) : Colors.white10),
             ),
             child: ListTile(
               contentPadding: const EdgeInsets.fromLTRB(10, 4, 6, 4),
@@ -8105,7 +8106,7 @@ void _showCreatePlaylistDialog() {
             : Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(color: accent.withOpacity(0.16), borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(color: accent.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(10)),
                 child: Icon(icon, color: accent, size: 24),
               ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -8151,7 +8152,7 @@ void _showCreatePlaylistDialog() {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.16),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(11),
                   ),
                   child: Icon(Icons.travel_explore_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
@@ -8244,7 +8245,7 @@ void _showCreatePlaylistDialog() {
                     visualDensity: VisualDensity.compact,
                     label: Text(tFilter, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.white70)),
                     selected: sel,
-                    selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.85),
+                    selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
                     backgroundColor: const Color(0xFF0E0E15),
                     onSelected: (_) => setState(() => _mornyeFilterType = tFilter),
                   ),
@@ -8435,7 +8436,7 @@ void _showCreatePlaylistDialog() {
                           gradient: LinearGradient(
                             colors: [
                               Theme.of(context).colorScheme.primary,
-                              Theme.of(context).colorScheme.primary.withOpacity(0.55),
+                              Theme.of(context).colorScheme.primary.withValues(alpha: 0.55),
                             ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
@@ -8493,7 +8494,7 @@ void _showCreatePlaylistDialog() {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(
-            top: BorderSide(color: Colors.white.withOpacity(0.08), width: 0.8),
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.08), width: 0.8),
           ),
         ),
         child: NavigationBarTheme(
@@ -8507,7 +8508,7 @@ void _showCreatePlaylistDialog() {
             backgroundColor: const Color(0xFF07070B),
             surfaceTintColor: Colors.transparent,
             elevation: 0,
-            indicatorColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+            indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
             indicatorShape: const StadiumBorder(),
             labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
             selectedIndex: _selectedIndex,
@@ -9421,7 +9422,7 @@ List<String> _getSmartMornyeQuickSearches() {
                               final alpha = cnt == 0 ? 0.08 : (0.25 + 0.75 * (cnt / maxH)).clamp(0.25, 1.0);
                               return Container(
                                 decoration: BoxDecoration(
-                                  color: cnt == 0 ? Colors.white.withOpacity(0.07) : accent.withOpacity(alpha),
+                                  color: cnt == 0 ? Colors.white.withValues(alpha: 0.07) : accent.withValues(alpha: alpha),
                                   borderRadius: BorderRadius.circular(3),
                                 ),
                               );
@@ -9763,7 +9764,7 @@ int _crossfadeSeconds = 0;
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       tileColor: const Color(0xFF13131C),
                       leading: CircleAvatar(
-                        backgroundColor: accent.withOpacity(0.18),
+                        backgroundColor: accent.withValues(alpha: 0.18),
                         child: Icon(Icons.category_rounded, color: accent, size: 20),
                       ),
                       title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
@@ -9840,7 +9841,7 @@ void _showListenBrainzSettingsDialog() {
                   style: const TextStyle(fontSize: 11, color: Colors.white54),
                 ),
                 value: lbEnabled,
-                activeColor: Theme.of(ctx).colorScheme.primary,
+                activeThumbColor: Theme.of(ctx).colorScheme.primary,
                 onChanged: (v) => setLbState(() => lbEnabled = v),
               ),
               const SizedBox(height: 8),
@@ -10636,7 +10637,7 @@ Widget _buildPlaylistCollageArt(CustomPlaylist playlist, double size, double rad
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: accent.withOpacity(0.16), borderRadius: BorderRadius.circular(radius)),
+      decoration: BoxDecoration(color: accent.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(radius)),
       child: Icon(Icons.queue_music_rounded, color: accent, size: size * 0.5),
     );
   }
@@ -11071,8 +11072,8 @@ Future<void> _exportUnifiedNamiBackup() async {
                       decoration: BoxDecoration(
                         color: const Color(0xCC12121A),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withOpacity(0.11)),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.50), blurRadius: 14, offset: const Offset(0, 4))],
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.50), blurRadius: 14, offset: const Offset(0, 4))],
                       ),
                       child: Icon(Icons.home_rounded, color: accent, size: 24),
                     ),
@@ -11111,8 +11112,8 @@ Future<void> _exportUnifiedNamiBackup() async {
                             decoration: BoxDecoration(
                               color: const Color(0xCC12121A),
                               borderRadius: BorderRadius.circular(30),
-                              border: Border.all(color: Colors.white.withOpacity(0.11)),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.50), blurRadius: 16, offset: const Offset(0, 4))],
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.50), blurRadius: 16, offset: const Offset(0, 4))],
                             ),
                             child: Stack(
                               children: [
@@ -11197,8 +11198,8 @@ Future<void> _exportUnifiedNamiBackup() async {
                                         child: LinearProgressIndicator(
                                           value: frac,
                                           minHeight: 2.0,
-                                          backgroundColor: Colors.white.withOpacity(0.06),
-                                          valueColor: AlwaysStoppedAnimation<Color>(accent.withOpacity(0.92)),
+                                          backgroundColor: Colors.white.withValues(alpha: 0.06),
+                                          valueColor: AlwaysStoppedAnimation<Color>(accent.withValues(alpha: 0.92)),
                                         ),
                                       );
                                     },
@@ -11229,8 +11230,8 @@ Future<void> _exportUnifiedNamiBackup() async {
                       decoration: BoxDecoration(
                         color: const Color(0xCC12121A),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withOpacity(0.11)),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.50), blurRadius: 14, offset: const Offset(0, 4))],
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.50), blurRadius: 14, offset: const Offset(0, 4))],
                       ),
                       child: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
                     ),
@@ -11467,10 +11468,10 @@ Widget _buildFormatPill(AudioTrack song, Color accent, {VoidCallback? onTap}) {
   final badge = Container(
     padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
     decoration: BoxDecoration(
-      color: isLossless ? accent.withOpacity(0.14) : Colors.white.withOpacity(0.06),
+      color: isLossless ? accent.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.06),
       borderRadius: BorderRadius.circular(5),
       border: Border.all(
-        color: isLossless ? accent.withOpacity(0.42) : Colors.white12,
+        color: isLossless ? accent.withValues(alpha: 0.42) : Colors.white12,
         width: 0.7,
       ),
     ),
@@ -11648,7 +11649,7 @@ class _NamiActivityBarChartPainter extends CustomPainter {
         topRight: const Radius.circular(5),
       );
       final paint = Paint()
-        ..color = values[i] > 0 ? accentColor.withOpacity(0.35 + 0.65 * ratio) : Colors.white12
+        ..color = values[i] > 0 ? accentColor.withValues(alpha: 0.35 + 0.65 * ratio) : Colors.white12
         ..style = PaintingStyle.fill;
       canvas.drawRRect(rect, paint);
 

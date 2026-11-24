@@ -235,7 +235,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                                 margin: const EdgeInsets.only(right: 6),
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: Colors.white.withOpacity(0.06),
+                                                  color: Colors.white.withValues(alpha: 0.06),
                                                   borderRadius: BorderRadius.circular(6),
                                                 ),
                                                 child: Text(
@@ -254,9 +254,9 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                             children: metaTags.map((tag) => Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                                   decoration: BoxDecoration(
-                                                    color: accent.withOpacity(0.14),
+                                                    color: accent.withValues(alpha: 0.14),
                                                     borderRadius: BorderRadius.circular(7),
-                                                    border: Border.all(color: accent.withOpacity(0.32), width: 0.7),
+                                                    border: Border.all(color: accent.withValues(alpha: 0.32), width: 0.7),
                                                   ),
                                                   child: Text(tag, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
                                                 )).toList(),
@@ -305,7 +305,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                                   top: 6,
                                                   child: Container(
                                                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.75), borderRadius: BorderRadius.circular(6)),
+                                                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(6)),
                                                     child: Text(yr.substring(0, 4), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
                                                   ),
                                                 ),
@@ -421,9 +421,9 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
         width: 34,
         height: 34,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.45),
+          color: Colors.black.withValues(alpha: 0.45),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.14)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
         ),
         child: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 19),
       ),

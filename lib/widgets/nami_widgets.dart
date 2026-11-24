@@ -113,7 +113,7 @@ class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
                             border: Border.all(color: Colors.white, width: 2.5),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.6),
+                                color: Colors.black.withValues(alpha: 0.6),
                                 blurRadius: 6,
                               ),
                             ],
@@ -170,7 +170,7 @@ class _HuePaletteCanvasState extends State<HuePaletteCanvas> {
                           border: Border.all(color: Colors.white, width: 2.5),
                           boxShadow: [
                             BoxShadow(
-                                color: Colors.black.withOpacity(0.5),
+                                color: Colors.black.withValues(alpha: 0.5),
                                 blurRadius: 4),
                           ],
                         ),
@@ -336,7 +336,7 @@ class _NamiFastScrollerState extends State<NamiFastScroller> {
                           decoration: BoxDecoration(
                             color: _isDragging
                                 ? accent
-                                : Colors.white.withOpacity(0.42),
+                                : Colors.white.withValues(alpha: 0.42),
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
@@ -357,7 +357,7 @@ class _NamiFastScrollerState extends State<NamiFastScroller> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                          color: Colors.black.withOpacity(0.6), blurRadius: 10)
+                          color: Colors.black.withValues(alpha: 0.6), blurRadius: 10)
                     ],
                   ),
                   child: Text(
@@ -466,16 +466,16 @@ class YoutubeSkeletonLoader extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Row(
           children: [
-            Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(8))),
+            Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(8))),
             const SizedBox(width: 8.0),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(4))),
+                  Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4))),
                   const SizedBox(height: 10),
-                  Container(width: 140, height: 12, decoration: BoxDecoration(color: Colors.white.withOpacity(0.06), borderRadius: BorderRadius.circular(4))),
+                  Container(width: 140, height: 12, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(4))),
                 ],
               ),
             ),

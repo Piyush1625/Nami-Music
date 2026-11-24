@@ -249,7 +249,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                       center: const Alignment(0.0, -0.45),
                       radius: 0.95,
                       colors: [
-                        Theme.of(context).colorScheme.primary.withOpacity(0.14),
+                        Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
                         Colors.transparent,
                       ],
                       stops: const [0.0, 0.72],
@@ -277,8 +277,8 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        const Color(0xFF07070B).withOpacity(0.68),
-                        const Color(0xFF07070B).withOpacity(0.84),
+                        const Color(0xFF07070B).withValues(alpha: 0.68),
+                        const Color(0xFF07070B).withValues(alpha: 0.84),
                         const Color(0xFF07070B),
                       ],
                     ),
@@ -294,7 +294,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                       ? RadialGradient(
                           center: const Alignment(0.0, -0.22),
                           radius: 1.05,
-                          colors: [glowColor.withOpacity(0.28), glowColor.withOpacity(0.08), Colors.transparent],
+                          colors: [glowColor.withValues(alpha: 0.28), glowColor.withValues(alpha: 0.08), Colors.transparent],
                           stops: const [0.0, 0.52, 1.0],
                         )
                       : null,
@@ -377,7 +377,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       borderRadius: BorderRadius.circular(20),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: isP ? accent.withOpacity(0.22) : Colors.black.withOpacity(0.75),
+                                          color: isP ? accent.withValues(alpha: 0.22) : Colors.black.withValues(alpha: 0.75),
                                           blurRadius: isP ? 28 : 20,
                                           spreadRadius: isP ? 2 : 1,
                                         ),
@@ -448,7 +448,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       style: TextButton.styleFrom(
                                         visualDensity: VisualDensity.compact,
                                         foregroundColor: Colors.white70,
-                                        backgroundColor: Colors.white.withOpacity(0.07),
+                                        backgroundColor: Colors.white.withValues(alpha: 0.07),
                                       ),
                                       icon: const Icon(Icons.edit_note_rounded, size: 16),
                                       label: const Text('Edit LRC', style: TextStyle(fontSize: 11)),
@@ -641,15 +641,15 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                     height: 64,
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
-                                        colors: [accent.withOpacity(0.34), accent.withOpacity(0.12)],
+                                        colors: [accent.withValues(alpha: 0.34), accent.withValues(alpha: 0.12)],
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
                                       ),
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: accent.withOpacity(0.65), width: 1.4),
+                                      border: Border.all(color: accent.withValues(alpha: 0.65), width: 1.4),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: accent.withOpacity(0.28),
+                                          color: accent.withValues(alpha: 0.28),
                                           blurRadius: 18,
                                           spreadRadius: 1,
                                         ),
@@ -707,7 +707,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 Container(
                                   width: 28,
                                   height: 28,
-                                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), shape: BoxShape.circle),
+                                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), shape: BoxShape.circle),
                                   child: const Icon(Icons.headphones_outlined, size: 14, color: Colors.white70),
                                 ),
                                 const SizedBox(width: 8),
@@ -763,7 +763,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               Container(
                                 margin: const EdgeInsets.only(right: 8),
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(color: accent.withOpacity(0.24), borderRadius: BorderRadius.circular(8)),
+                                decoration: BoxDecoration(color: accent.withValues(alpha: 0.24), borderRadius: BorderRadius.circular(8)),
                                 child: Text(_seekFlashLabel!, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: accent)),
                               ),
                             Tooltip(

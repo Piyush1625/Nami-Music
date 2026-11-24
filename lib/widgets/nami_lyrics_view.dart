@@ -218,9 +218,7 @@ class _NamiSmoothLyricsViewState extends State<NamiSmoothLyricsView>
         final tk = nativeTokens[i];
         final tStart = tk.timestamp.inMilliseconds.toDouble();
         double tEnd;
-        if (false) {
-          tEnd = 0.0;
-        } else if (i + 1 < nativeTokens.length) {
+        if (i + 1 < nativeTokens.length) {
           tEnd = nativeTokens[i + 1].timestamp.inMilliseconds.toDouble();
         } else {
           tEnd = endMs;
@@ -253,7 +251,7 @@ class _NamiSmoothLyricsViewState extends State<NamiSmoothLyricsView>
     if (!isActive) {
       return Text(
         rawText,
-        style: baseStyle.copyWith(color: Colors.white.withOpacity(0.88)),
+        style: baseStyle.copyWith(color: Colors.white.withValues(alpha: 0.88)),
       );
     }
 
@@ -283,8 +281,8 @@ class _NamiSmoothLyricsViewState extends State<NamiSmoothLyricsView>
                 colors: [
                   Colors.white,
                   Colors.white,
-                  Colors.white.withOpacity(0.32),
-                  Colors.white.withOpacity(0.32),
+                  Colors.white.withValues(alpha: 0.32),
+                  Colors.white.withValues(alpha: 0.32),
                 ],
                 stops: [0.0, lead, trail, 1.0],
               ).createShader(bounds);

@@ -44,10 +44,10 @@ void showNamiArtistPickerOrNavigate({
           decoration: BoxDecoration(
             color: const Color(0xFF0D0D14),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.10)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.65),
+                color: Colors.black.withValues(alpha: 0.65),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
@@ -95,7 +95,7 @@ void showNamiArtistPickerOrNavigate({
                   contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
                   leading: CircleAvatar(
                     radius: 20,
-                    backgroundColor: accent.withOpacity(0.16),
+                    backgroundColor: accent.withValues(alpha: 0.16),
                     backgroundImage: hasImg ? FileImage(File(imgPath)) : null,
                     child: hasImg
                         ? null
@@ -167,10 +167,10 @@ void showNamiTrackActionCard({
                   decoration: BoxDecoration(
                     color: const Color(0xF00B0B12),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withOpacity(0.11)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.70),
+                        color: Colors.black.withValues(alpha: 0.70),
                         blurRadius: 28,
                         offset: const Offset(0, 10),
                       ),
@@ -218,9 +218,9 @@ void showNamiTrackActionCard({
                                           margin: const EdgeInsets.only(right: 6),
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                                           decoration: BoxDecoration(
-                                            color: accent.withOpacity(0.16),
+                                            color: accent.withValues(alpha: 0.16),
                                             borderRadius: BorderRadius.circular(5),
-                                            border: Border.all(color: accent.withOpacity(0.35), width: 0.7),
+                                            border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.7),
                                           ),
                                           child: Text(
                                             formatBadgeText,
@@ -279,7 +279,7 @@ void showNamiTrackActionCard({
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                         decoration: BoxDecoration(
-                          color: artistsExpanded ? Colors.white.withOpacity(0.045) : Colors.transparent,
+                          color: artistsExpanded ? Colors.white.withValues(alpha: 0.045) : Colors.transparent,
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Column(
@@ -329,9 +329,9 @@ void showNamiTrackActionCard({
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
                                         decoration: BoxDecoration(
-                                          color: accent.withOpacity(0.14),
+                                          color: accent.withValues(alpha: 0.14),
                                           borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: accent.withOpacity(0.35), width: 0.8),
+                                          border: Border.all(color: accent.withValues(alpha: 0.35), width: 0.8),
                                         ),
                                         child: Text(
                                           art,
@@ -541,9 +541,9 @@ class _NamiCardIconBtn extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.06),
+                color: Colors.white.withValues(alpha: 0.06),
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.09)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
               ),
               child: Icon(icon, color: color, size: 19),
             ),
@@ -607,10 +607,10 @@ void showNamiFloatingActionSheet({
                 decoration: BoxDecoration(
                   color: const Color(0xF00B0B12),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white.withOpacity(0.11)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.70),
+                      color: Colors.black.withValues(alpha: 0.70),
                       blurRadius: 28,
                       offset: const Offset(0, 10),
                     ),
@@ -777,7 +777,7 @@ Future<String?> showNamiRenameDialog({
       backgroundColor: const Color(0xFF101018),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(22),
-        side: BorderSide(color: Colors.white.withOpacity(0.11)),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.11)),
       ),
       title: Text(title, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w800, color: Colors.white)),
       content: TextField(
@@ -854,7 +854,7 @@ void showNamiMediaImagePickerSheet({
                   decoration: BoxDecoration(
                     color: const Color(0xF20B0B12),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withOpacity(0.11)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
                   ),
                   child: Column(
                     children: [
@@ -974,7 +974,7 @@ void showNamiMediaImagePickerSheet({
                                     decoration: BoxDecoration(
                                       color: const Color(0xFF141420),
                                       borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: Colors.white.withOpacity(0.09)),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -999,7 +999,7 @@ void showNamiMediaImagePickerSheet({
                                                 child: Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.black.withOpacity(0.72),
+                                                    color: Colors.black.withValues(alpha: 0.72),
                                                     borderRadius: BorderRadius.circular(7),
                                                   ),
                                                   child: Text(

@@ -324,15 +324,20 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
   }
 
   Widget _settingsBadge(IconData icon, Color color) {
+    /* v24_squircle_badge */
     return Container(
-      width: 34,
-      height: 34,
+      width: 38,
+      height: 38,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.28), width: 0.8),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color.withValues(alpha: 0.22), color.withValues(alpha: 0.08)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.30), width: 0.9),
       ),
-      child: Icon(icon, color: color, size: 18),
+      child: Icon(icon, color: color, size: 19),
     );
   }
 
@@ -387,7 +392,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                     height: 54,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [themeColor, themeColor.withOpacity(0.55)],
+                        colors: [themeColor, themeColor.withValues(alpha: 0.55)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -402,7 +407,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       children: [
                         const Text('Nami Music Player', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Colors.white)),
                         const SizedBox(height: 3),
-                        Text('Version 2.0.0 • Build v2.3.0 (v22)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor)),
+                        Text('Version 2.0.0 • Build v2.4.0 (v24)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor)),
                       ],
                     ),
                   ),
@@ -438,9 +443,9 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF14141E),
+                  color: const Color(0xFF0E0E17),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: themeColor.withOpacity(0.32)),
+                  border: Border.all(color: themeColor.withValues(alpha: 0.32)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,7 +516,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Text("WHAT'S NEW IN v2.3.0 (v22)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54)),
+              const Text("WHAT'S NEW IN v2.4.0 (v24)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54)),
               const SizedBox(height: 10),
               for (final item in const [
                 ('Home Overhaul', 'Customizable reorderable shelves, live tappable DAC output & AutoEQ switcher, Time-of-Day & Forgotten Favorites mixes, Weekly Recap strip, and long-press card actions.'),
@@ -525,7 +530,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF14141E),
+                    color: const Color(0xFF0E0E17),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.white10),
                   ),
@@ -609,7 +614,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF101018),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -763,7 +768,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('USB DAC Exclusive Mode', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _usbDac,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _usbDac = v);
                   setState(() => _usbDac = v);
@@ -774,7 +779,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Gapless Playback', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _gapless,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _gapless = v);
                   setState(() => _gapless = v);
@@ -785,7 +790,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Pause on Headphone / DAC Disconnect', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _pauseDisconnect,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _pauseDisconnect = v);
                   setState(() => _pauseDisconnect = v);
@@ -796,7 +801,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Resume Last Track on Launch', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _resumeSession,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _resumeSession = v);
                   setState(() => _resumeSession = v);
@@ -930,9 +935,9 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: _compactRows ? 8 : 12),
               decoration: BoxDecoration(
-                color: _pitchBlack ? const Color(0xFF060609) : const Color(0xFF14141E),
+                color: _pitchBlack ? const Color(0xFF060609) : const Color(0xFF0E0E17),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: themeColor.withOpacity(0.42)),
+                border: Border.all(color: themeColor.withValues(alpha: 0.42)),
               ),
               child: Row(
                 children: [
@@ -940,7 +945,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                     width: _compactRows ? 42 : 52,
                     height: _compactRows ? 42 : 52,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [themeColor, themeColor.withOpacity(0.35)]),
+                      gradient: LinearGradient(colors: [themeColor, themeColor.withValues(alpha: 0.35)]),
                       borderRadius: BorderRadius.circular(_compactRows ? 8 : 10),
                     ),
                     child: const Icon(Icons.music_note_rounded, color: Colors.white),
@@ -960,9 +965,9 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
                                 decoration: BoxDecoration(
-                                  color: themeColor.withOpacity(0.16),
+                                  color: themeColor.withValues(alpha: 0.16),
                                   borderRadius: BorderRadius.circular(5),
-                                  border: Border.all(color: themeColor.withOpacity(0.5), width: 0.7),
+                                  border: Border.all(color: themeColor.withValues(alpha: 0.5), width: 0.7),
                                 ),
                                 child: Text('FLAC 24B', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: themeColor)),
                               ),
@@ -981,7 +986,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Pitch-Black AMOLED Theme', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _pitchBlack,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _pitchBlack = v);
                   setState(() => _pitchBlack = v);
@@ -1002,7 +1007,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Adaptive Cover Accent', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _autoColor,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _autoColor = v);
                   setState(() => _autoColor = v);
@@ -1013,7 +1018,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Blurred Now Playing Backdrop', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _blurredBg,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _blurredBg = v);
                   setState(() => _blurredBg = v);
@@ -1024,7 +1029,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Uppercase 24B / 16B Codec Badges', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _codecBadges,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _codecBadges = v);
                   setState(() => _codecBadges = v);
@@ -1035,7 +1040,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Compact Track Rows', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _compactRows,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _compactRows = v);
                   setState(() => _compactRows = v);
@@ -1094,7 +1099,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 title: const Text('Ignore Short Audio Clips', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 subtitle: Text('Skip clips shorter than ${_minSec}s', style: const TextStyle(fontSize: 11, color: Colors.white54)),
                 value: _ignoreShort,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _ignoreShort = v);
                   setState(() => _ignoreShort = v);
@@ -1106,7 +1111,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 title: const Text('Split Multi-Artist Collaborations', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 subtitle: Text('Separators: ${_separators.join(" ")}', style: const TextStyle(fontSize: 11, color: Colors.white54)),
                 value: _splitArtists,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _splitArtists = v);
                   setState(() => _splitArtists = v);
@@ -1118,7 +1123,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 title: const Text('Auto-Sync Playlists to .m3u8', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 subtitle: const Text('Export playlist edits to /Music/NamiPlaylists/', style: TextStyle(fontSize: 11, color: Colors.white54)),
                 value: v16.autoSyncPlaylistsM3u8,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => v16.autoSyncPlaylistsM3u8 = v);
                   v16.save();
@@ -1201,7 +1206,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Syllable Karaoke Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _syllableLyrics,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _syllableLyrics = v);
                   setState(() => _syllableLyrics = v);
@@ -1212,7 +1217,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Prefer Embedded Lyrics', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _preferEmbedded,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _preferEmbedded = v);
                   setState(() => _preferEmbedded = v);
@@ -1223,7 +1228,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               SwitchListTile(
                 title: const Text('Auto-Fetch Online Metadata', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 value: _autoFetchOnline,
-                activeColor: themeColor,
+                activeThumbColor: themeColor,
                 onChanged: (v) {
                   setSub(() => _autoFetchOnline = v);
                   setState(() => _autoFetchOnline = v);
@@ -1358,9 +1363,9 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
               trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
-                  color: themeColor.withOpacity(0.16),
+                  color: themeColor.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: themeColor.withOpacity(0.4)),
+                  border: Border.all(color: themeColor.withValues(alpha: 0.4)),
                 ),
                 child: Text('v2.0.0', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: themeColor)),
               ),

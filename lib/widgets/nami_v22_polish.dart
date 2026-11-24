@@ -117,10 +117,10 @@ class NamiQuickFilterBar extends StatelessWidget {
               curve: Curves.easeOutCubic,
               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
               decoration: BoxDecoration(
-                color: active ? accent.withOpacity(0.18) : const Color(0xFF13131D),
+                color: active ? accent.withValues(alpha: 0.18) : const Color(0xFF13131D),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color: active ? accent.withOpacity(0.65) : Colors.white.withOpacity(0.08),
+                  color: active ? accent.withValues(alpha: 0.65) : Colors.white.withValues(alpha: 0.08),
                   width: 0.9,
                 ),
               ),
@@ -164,10 +164,10 @@ void showNamiSignalChainSheet({
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: highlight ? accent.withOpacity(0.16) : Colors.white.withOpacity(0.06),
+              color: highlight ? accent.withValues(alpha: 0.16) : Colors.white.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(11),
               border: Border.all(
-                color: highlight ? accent.withOpacity(0.45) : Colors.white.withOpacity(0.09),
+                color: highlight ? accent.withValues(alpha: 0.45) : Colors.white.withValues(alpha: 0.09),
               ),
             ),
             child: Icon(icon, size: 18, color: highlight ? accent : Colors.white70),
@@ -215,9 +215,9 @@ void showNamiSignalChainSheet({
               decoration: BoxDecoration(
                 color: const Color(0xF00B0B12),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withOpacity(0.11)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.70), blurRadius: 28, offset: const Offset(0, 10)),
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.70), blurRadius: 28, offset: const Offset(0, 10)),
                 ],
               ),
               child: Column(
@@ -237,7 +237,7 @@ void showNamiSignalChainSheet({
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: (isBitPerfect ? Colors.greenAccent : accent).withOpacity(0.16),
+                            color: (isBitPerfect ? Colors.greenAccent : accent).withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(

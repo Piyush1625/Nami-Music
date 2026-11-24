@@ -289,7 +289,7 @@ extension _NamiMornyeTabExt on _NamiHomeShellState {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Wi-Fi Only Downloads', style: TextStyle(fontSize: 13)),
                 value: wifi,
-                activeColor: Theme.of(ctx).colorScheme.primary,
+                activeThumbColor: Theme.of(ctx).colorScheme.primary,
                 onChanged: (v) => setRState(() => wifi = v),
               ),
             ],

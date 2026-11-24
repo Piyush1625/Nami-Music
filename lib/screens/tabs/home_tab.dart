@@ -72,7 +72,7 @@ extension _NamiHomeTabExt on _NamiHomeShellState {
                           title: Text(NamiV16Prefs.shelfLabels[key] ?? key, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                           trailing: Switch(
                             value: visible,
-                            activeColor: accent,
+                            activeThumbColor: accent,
                             onChanged: (v) {
                               setSState(() {
                                 if (v) {
