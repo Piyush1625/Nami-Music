@@ -120,7 +120,7 @@ class NamiArtistMetadataService {
       artistName: cleanName,
       photoUrl: photoUrl,
       photoSource: photoSource,
-      bio: bio,
+      bio: bio ?? '',
       bioSource: bioSource,
       primaryGenre: apple['genre'] ?? spotify['genre'],
       origin: apple['origin'] ?? spotify['origin'],
