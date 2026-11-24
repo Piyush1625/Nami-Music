@@ -232,7 +232,33 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
         return Scaffold(
           backgroundColor: const Color(0xFF07070B),
-          body: Stack(
+          body: GestureDetector(/* v22_amoled_ambient_wash */
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) > 480) {
+            HapticFeedback.selectionClick();
+            Navigator.of(context).maybePop();
+          }
+        },
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(0.0, -0.45),
+                      radius: 0.95,
+                      colors: [
+                        Theme.of(context).colorScheme.primary.withOpacity(0.14),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.72],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Stack(
             children: [
               if (widget.blurredBackdrop && song?.albumArt != null && song!.albumArt!.isNotEmpty)
                 Positioned.fill(
@@ -357,7 +383,15 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         ),
                                       ],
                                     ),
-                                    child: GestureDetector(/* v19_art_double_tap */
+                                    child: StreamBuilder<bool>(/* v22_art_breathe */
+                                  stream: widget.audioPlayer.stream.playing,
+                                  builder: (_, playSnap) {
+                                    final playingNow = playSnap.data ?? widget.audioPlayer.state.playing;
+                                    return AnimatedScale(
+                                      scale: playingNow ? 1.0 : 0.93,
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeOutCubic,
+                                      child: GestureDetector(/* v19_art_double_tap */
                                   onDoubleTap: () {
                                     HapticFeedback.mediumImpact();
                                     setState(() {
@@ -373,6 +407,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         child: SizedBox.expand(child: artWidget),
                                       ),
                                     ),
+                                ),
+                                    );
+                                  },
                                 ),
                                   ),
                                 );
@@ -686,7 +723,18 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       ),
                                     ),
                                     const SizedBox(height: 2),
-                                    Row(
+                                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        showNamiSignalChainSheet(
+                          context: context,
+                          song: song,
+                          outputDevice: 'Audio Output',
+                          eqEnabled: false,
+                        );
+                      },
+                      child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Container(
@@ -701,6 +749,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         ),
                                       ],
                                     ),
+                    ),
                                   ],
                                 ),
                               ],
@@ -821,6 +870,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
           ),
             ],
           ),
+          ],
+        ),
+      ),
         );
       },
     );

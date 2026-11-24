@@ -40,6 +40,7 @@ part 'screens/tabs/tracks_tab.dart';
 part 'screens/tabs/artists_tab.dart';
 part 'screens/tabs/playlists_tab.dart';
 part 'screens/tabs/mornye_tab.dart';
+part 'widgets/nami_v22_polish.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -11031,130 +11032,212 @@ Future<void> _exportUnifiedNamiBackup() async {
     final accent = Theme.of(pageContext).colorScheme.primary;
     return SafeArea(
       top: false,
-      child: Row(
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          // Left: Home circle button (SS2 reference)
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _selectedIndex = 0);
-              Navigator.of(pageContext).popUntil((route) => route.isFirst);
-            },
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: const Color(0xFF14141C),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.10)),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 12, offset: const Offset(0, 4))],
+          Positioned(
+            left: -16,
+            right: -16,
+            top: -18,
+            bottom: -18,
+            child: IgnorePointer(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xCC000000), Color(0xF5000000)],
+                    stops: [0.0, 0.45, 1.0],
+                  ),
+                ),
               ),
-              child: Icon(Icons.home_rounded, color: accent, size: 24),
             ),
           ),
-          const SizedBox(width: 10),
-          // Center: Pill Mini-Player (SS2 reference)
-          Expanded(
-            child: StreamBuilder<bool>(
-              stream: _audioPlayer.stream.playing,
-              builder: (_, playSnap) {
-                final song = _currentSong;
-                final isPlaying = playSnap.data ?? _audioPlayer.state.playing;
-                return GestureDetector(
-                  onTap: () {
-                    if (song != null) _showNowPlayingScreen();
-                  },
-                  onHorizontalDragEnd: (details) {
-                    final vx = details.primaryVelocity ?? 0;
-                    if (vx < -250) {
-                      _playNextTrack();
-                    } else if (vx > 250) {
-                      _playPrevTrack();
-                    }
-                  },
-                  child: Container(
-                    height: 54,
-                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF14141C),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: Colors.white.withOpacity(0.10)),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 14, offset: const Offset(0, 4))],
-                    ),
-                    child: Row(
-                      children: [
-                        if (song != null)
-                          _buildCoverArt(song, 40, 10)
-                        else
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-                            child: Icon(Icons.music_note_rounded, color: accent, size: 20),
-                          ),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song?.title ?? 'Nothing Playing',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                song != null ? cleanArtistStr(song.artist) : 'Tap a track to play',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11.5, color: Colors.white60),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                          icon: Icon(
-                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            color: Colors.white,
-                            size: 27,
-                          ),
-                          onPressed: () {
-                            if (song == null && scopeTracks.isNotEmpty) {
-                              _playSong(scopeTracks.first);
-                            } else if (song != null) {
-                              isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
-                            }
-                          },
-                        ),
-                      ],
+          Row(
+            children: [
+              // Left: Frosted Home circle button
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selectedIndex = 0);
+                  Navigator.of(pageContext).popUntil((route) => route.isFirst);
+                },
+                child: ClipOval(
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: const Color(0xCC12121A),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withOpacity(0.11)),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.50), blurRadius: 14, offset: const Offset(0, 4))],
+                      ),
+                      child: Icon(Icons.home_rounded, color: accent, size: 24),
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Right: Scoped Search circle button (SS2 reference)
-          GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              _showScopedTracksSearchSheet(scopeTitle: scopeTitle, scopeTracks: scopeTracks);
-            },
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: const Color(0xFF14141C),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.10)),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55), blurRadius: 12, offset: const Offset(0, 4))],
+                ),
               ),
-              child: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
-            ),
+              const SizedBox(width: 10),
+              // Center: Frosted Pill Mini-Player with live 2px accent progress hairline
+              Expanded(
+                child: StreamBuilder<bool>(
+                  stream: _audioPlayer.stream.playing,
+                  builder: (_, playSnap) {
+                    final song = _currentSong;
+                    final isPlaying = playSnap.data ?? _audioPlayer.state.playing;
+                    return GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        if (song != null) _showNowPlayingScreen();
+                      },
+                      onHorizontalDragEnd: (details) {
+                        final vx = details.primaryVelocity ?? 0;
+                        if (vx < -250) {
+                          HapticFeedback.selectionClick();
+                          _playNextTrack();
+                        } else if (vx > 250) {
+                          HapticFeedback.selectionClick();
+                          _playPrevTrack();
+                        }
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                          child: Container(
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: const Color(0xCC12121A),
+                              borderRadius: BorderRadius.circular(30),
+                              border: Border.all(color: Colors.white.withOpacity(0.11)),
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.50), blurRadius: 16, offset: const Offset(0, 4))],
+                            ),
+                            child: Stack(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                                  child: Row(
+                                    children: [
+                                      if (song != null)
+                                        _buildCoverArt(song, 40, 10)
+                                      else
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                                          child: Icon(Icons.music_note_rounded, color: accent, size: 20),
+                                        ),
+                                      const SizedBox(width: 11),
+                                      Expanded(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                if (song != null && isPlaying) ...[
+                                                  NamiMiniEqBars(color: accent, isPlaying: true, size: 11),
+                                                  const SizedBox(width: 6),
+                                                ],
+                                                Expanded(
+                                                  child: Text(
+                                                    song?.title ?? 'Nothing Playing',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(fontSize: 13.8, fontWeight: FontWeight.w800, color: Colors.white),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              song != null ? cleanArtistStr(song.artist) : 'Tap a track to play',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                                        icon: Icon(
+                                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                          color: Colors.white,
+                                          size: 27,
+                                        ),
+                                        onPressed: () {
+                                          HapticFeedback.selectionClick();
+                                          if (song == null && scopeTracks.isNotEmpty) {
+                                            _playSong(scopeTracks.first);
+                                          } else if (song != null) {
+                                            isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Live 2px accent progress hairline along bottom edge of pill
+                                Positioned(
+                                  left: 18,
+                                  right: 18,
+                                  bottom: 0,
+                                  child: StreamBuilder<Duration>(
+                                    stream: _audioPlayer.stream.position,
+                                    builder: (_, posSnap) {
+                                      final posMs = (posSnap.data ?? _audioPlayer.state.position).inMilliseconds;
+                                      final durMs = _audioPlayer.state.duration.inMilliseconds;
+                                      final frac = durMs > 0 ? (posMs / durMs).clamp(0.0, 1.0) : 0.0;
+                                      return ClipRRect(
+                                        borderRadius: BorderRadius.circular(2),
+                                        child: LinearProgressIndicator(
+                                          value: frac,
+                                          minHeight: 2.0,
+                                          backgroundColor: Colors.white.withOpacity(0.06),
+                                          valueColor: AlwaysStoppedAnimation<Color>(accent.withOpacity(0.92)),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Right: Frosted Scoped Search circle button
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  _showScopedTracksSearchSheet(scopeTitle: scopeTitle, scopeTracks: scopeTracks);
+                },
+                child: ClipOval(
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: const Color(0xCC12121A),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withOpacity(0.11)),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.50), blurRadius: 14, offset: const Offset(0, 4))],
+                      ),
+                      child: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

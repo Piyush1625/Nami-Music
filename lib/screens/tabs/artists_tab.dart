@@ -121,7 +121,26 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                     ),
                                   ),
                                 ),
-                              ],
+                              
+                        /* v22_hero_top_scrim */
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 100,
+                          child: IgnorePointer(
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Color(0x99000000), Colors.transparent],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                             );
                           },
                         ),
