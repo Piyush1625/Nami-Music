@@ -230,10 +230,11 @@ class NamiInteractiveDragDismiss extends StatefulWidget {
 
 class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
     with SingleTickerProviderStateMixin {
-  /* v28_morph_drag_delegate */
+  /* v29_host_drag_down */
   late final AnimationController _springCtrl;
   double _dragY = 0.0;
   bool _dismissing = false;
+  bool _drivingHost = false;
   bool _drivingMorphRoute = false;
 
   @override
@@ -253,6 +254,13 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
 
   void _onDragStart(DragStartDetails d) {
     if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
+    if (NamiExpandablePlayerController.hasHost && NamiExpandablePlayerController.isExpanded) {
+      _drivingHost = true;
+      _drivingMorphRoute = false;
+      NamiExpandablePlayerController.beginDrag(isOpening: false);
+      return;
+    }
+    _drivingHost = false;
     final morphRoute = NamiMorphPlayerController.activeRoute;
     if (morphRoute != null && morphRoute.isActive) {
       _drivingMorphRoute = true;
@@ -264,11 +272,15 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
 
   void _onDragUpdate(DragUpdateDetails d) {
     if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
+    final h = MediaQuery.sizeOf(context).height;
+    final dragRange = (h * 0.78).clamp(320.0, 760.0);
+    if (_drivingHost) {
+      NamiExpandablePlayerController.updateDrag(-d.delta.dy / dragRange);
+      return;
+    }
     if (_drivingMorphRoute) {
       final morphRoute = NamiMorphPlayerController.activeRoute;
       if (morphRoute != null && morphRoute.isActive) {
-        final h = MediaQuery.sizeOf(context).height;
-        final dragRange = (h * 0.78).clamp(320.0, 760.0);
         morphRoute.updateInteractiveDrag(-d.delta.dy / dragRange);
         return;
       }
@@ -283,13 +295,18 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
 
   void _onDragEnd(DragEndDetails d) {
     if (_dismissing) return;
+    final h = MediaQuery.sizeOf(context).height;
+    final dragRange = (h * 0.78).clamp(320.0, 760.0);
+    final vel = -(d.primaryVelocity ?? 0.0) / dragRange;
+    if (_drivingHost) {
+      _drivingHost = false;
+      NamiExpandablePlayerController.endDrag(velocityPerSec: vel, isOpeningDrag: false);
+      return;
+    }
     if (_drivingMorphRoute) {
       _drivingMorphRoute = false;
       final morphRoute = NamiMorphPlayerController.activeRoute;
       if (morphRoute != null && morphRoute.isActive) {
-        final h = MediaQuery.sizeOf(context).height;
-        final dragRange = (h * 0.78).clamp(320.0, 760.0);
-        final vel = -(d.primaryVelocity ?? 0.0) / dragRange;
         morphRoute.endInteractiveDrag(velocityPerSec: vel, isOpeningDrag: false);
         return;
       }
@@ -318,12 +335,17 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       onVerticalDragCancel: () {
+        if (_drivingHost) {
+          _drivingHost = false;
+          NamiExpandablePlayerController.endDrag(velocityPerSec: 0.5, isOpeningDrag: false);
+          return;
+        }
         if (_drivingMorphRoute) {
           _drivingMorphRoute = false;
-          NamiMorphPlayerController.activeRoute?.endInteractiveDrag(
-            velocityPerSec: 0.5,
-            isOpeningDrag: false,
-          );
+          final morphRoute = NamiMorphPlayerController.activeRoute;
+          if (morphRoute != null && morphRoute.isActive) {
+            morphRoute.endInteractiveDrag(velocityPerSec: 0.5, isOpeningDrag: false);
+          }
           return;
         }
         if (!_dismissing && _dragY > 0) {

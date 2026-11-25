@@ -233,7 +233,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         return Scaffold(
           backgroundColor: const Color(0xFF07070B),
           body: NamiInteractiveDragDismiss(
-        onDismiss: () => Navigator.of(context).maybePop(),
+        onDismiss: () { if (NamiExpandablePlayerController.isExpanded) { NamiExpandablePlayerController.collapse(); } else { Navigator.of(context).maybePop(); } },
         child: Stack(
           children: [
             Positioned.fill(

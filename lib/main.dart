@@ -46,6 +46,7 @@ part 'widgets/nami_v25_motion.dart';
 part 'widgets/nami_v26_settings.dart';
 part 'widgets/nami_v27_audiophile.dart';
 part 'widgets/nami_v28_morph_player.dart';
+part 'widgets/nami_v29_shell.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -3337,9 +3338,7 @@ Container(
   }
 
   void _openSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
+    NamiShellNavigator.push(MaterialPageRoute(
         builder: (context) => MainSettingsScreen(
           usbDacExclusive: _usbDacExclusive,
           gaplessPlayback: _gaplessPlayback,
@@ -3481,8 +3480,7 @@ Container(
           onForceMiniColorChanged: (v) => setState(() => _forceMiniColor = v),
           onRescan: () => _fastScanDeviceMusic(forceReparse: true),
         ),
-      ),
-    );
+      ), fallbackContext: context);
   }
 
   Future<void> _importSflxManifest() async {
@@ -6606,9 +6604,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
     bool gridMode = true;
     String filterQuery = '';
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
+    NamiShellNavigator.push(MaterialPageRoute(
         builder: (context) => StatefulBuilder(
           builder: (context, setAlbState) {
             final Map<String, List<AudioTrack>> map = {};
@@ -6760,8 +6756,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             );
           },
         ),
-      ),
-    );
+      ), fallbackContext: context);
   }
 
   void _toggleTrackSelection(AudioTrack song) {
@@ -7294,9 +7289,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
     final totalDurText = _formatTotalDurationHoursMins(Duration(seconds: totalSecs));
     final accent = Theme.of(context).colorScheme.primary;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
+    NamiShellNavigator.push(MaterialPageRoute(
         builder: (context) => Scaffold(
           appBar: AppBar(
             backgroundColor: Colors.transparent,
@@ -7402,8 +7395,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
             ],
           ),
         ),
-      ),
-    );
+      ), fallbackContext: context);
   }
 
   void _showFilteredListScreen(String title, List<AudioTrack> tracks) {
@@ -8423,7 +8415,85 @@ void _showCreatePlaylistDialog() {
       ),
     ];
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (NamiExpandablePlayerController.isExpanded) {
+          NamiExpandablePlayerController.collapse();
+          return;
+        }
+        if (NamiShellNavigator.maybePop()) return;
+        if (_selectedIndex != 0) {
+          setState(() => _selectedIndex = 0);
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: NamiExpandablePlayerHost(
+        hasSong: _currentSong != null,
+        title: _currentSong?.title ?? '',
+        artist: _currentSong != null ? cleanArtistStr(_currentSong!.artist) : '',
+        trackKey: _currentSong?.path ?? '',
+        coverBuilder: (sz, rad) => _currentSong != null
+            ? _buildCoverArt(_currentSong!, sz, rad)
+            : const SizedBox.shrink(),
+        isPlayingStream: _audioPlayer.stream.playing,
+        initialPlaying: _audioPlayer.state.playing,
+        fullPageBuilder: _currentSong == null
+            ? null
+            : (_) {
+                final song = _currentSong!;
+                return NowPlayingModal(
+        onGoToArtist: (artist) => _openArtistByName(artist),
+          audioPlayer: _audioPlayer,
+          currentSongNotifier: _currentSongNotifier,
+          allSongs: _songs,
+          playNextQueue: _playNextQueue,
+          ambientGlow: _ambientGlow,
+          blurredBackdrop: _blurredBackdrop,
+          doubleTapSeekSec: _doubleTapSeekSec,
+          syllableLyricsEnabled: _syllableLyricsEnabled,
+          shuffleEnabled: _shuffleEnabled,
+          repeatMode: _repeatMode,
+          onToggleShuffle: () {
+            setState(() => _shuffleEnabled = !_shuffleEnabled);
+            _saveStateCache();
+          },
+          onCycleRepeat: () {
+            setState(() => _repeatMode = (_repeatMode + 1) % 3);
+            _audioPlayer.setPlaylistMode(_repeatMode == 2 ? PlaylistMode.single : PlaylistMode.none);
+            _saveStateCache();
+          },
+          onShowPath: () {
+            if (_currentSong != null) _showAudioPathDetails(_currentSong!);
+          },
+          onShowEqualizer: _showEqualizerSheet,
+          onShowSleepTimer: _showSleepTimerDialog,
+          onOpenLyricsManager: () {
+            if (_currentSong != null) _showNamiLyricsManagerSheet(_currentSong!);
+          },
+          onToggleFavorite: () {
+            if (_currentSong != null) {
+              setState(() => _currentSong!.isFavorite = !_currentSong!.isFavorite);
+              _saveStateCache();
+            }
+          },
+          onRefreshLyrics: () {
+            if (_currentSong != null) {
+              _currentSong!.isLyricsFetched = false;
+              _fetchLyricsOnline(_currentSong!);
+            }
+          },
+          onNext: _playNextTrack,
+          onPrevious: _playPrevTrack,
+          onOpenQueue: () => _showQueueBottomSheet(context),
+          onOpenMoreMenu: () {
+            if (_currentSong != null) _showTrackOptionsMenu(_currentSong!);
+          },
+        );
+              },
+        child: Scaffold(
       appBar: _isSelectionMode
           ? AppBar(
               backgroundColor: const Color(0xFF12121C),
@@ -8520,7 +8590,8 @@ void _showCreatePlaylistDialog() {
           Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
         ],
       ),
-      bottomNavigationBar: Container(
+      bottomNavigationBar: NamiExpandableBottomNavWrap(
+        child: Container(
         decoration: BoxDecoration(
           border: Border(
             top: BorderSide(color: Colors.white.withValues(alpha: 0.08), width: 0.8),
@@ -8543,7 +8614,7 @@ void _showCreatePlaylistDialog() {
             selectedIndex: _selectedIndex,
             onDestinationSelected: (idx) {
               HapticFeedback.selectionClick();
-              setState(() => _selectedIndex = idx);
+              NamiShellNavigator.popToRoot(); setState(() => _selectedIndex = idx);
             },
           destinations: const [
             NavigationDestination(
@@ -8574,6 +8645,9 @@ void _showCreatePlaylistDialog() {
           ],
         ),
         ),
+      ),
+      ),
+    ),
       ),
     );
   }
@@ -11068,6 +11142,38 @@ Future<void> _exportUnifiedNamiBackup() async {
     required String scopeTitle,
     required List<AudioTrack> scopeTracks,
   }) {
+    /* v29_shell_compact_dock */
+    if (NamiShellNavigator.hasSubPage.value) {
+      return SafeArea(
+        top: false,
+        child: Align(
+          alignment: Alignment.bottomRight,
+          child: NamiSpringTap(
+            pressedScale: 0.90,
+            onTap: () {
+              _showScopedTracksSearchSheet(scopeTitle: scopeTitle, scopeTracks: scopeTracks);
+            },
+            child: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: const Color(0xEB12121A),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.50),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.search_rounded, color: Colors.white, size: 23),
+            ),
+          ),
+        ),
+      );
+    }
     final accent = Theme.of(pageContext).colorScheme.primary;
     return SafeArea(
       top: false,
@@ -11657,7 +11763,17 @@ Future<void> _exportUnifiedNamiBackup() async {
     BuildContext? navContext,
   }) {
     final song = _currentSong;
-    if (song == null || NamiMorphPlayerController.isMorphActive) return;
+    if (song == null) return;
+    if (NamiExpandablePlayerController.hasHost) {
+      if (miniRect != null) NamiMorphPlayerController.registerMiniRect(miniRect);
+      if (startFromDrag) {
+        NamiExpandablePlayerController.beginDrag(isOpening: true);
+      } else {
+        NamiExpandablePlayerController.expand();
+      }
+      return;
+    }
+    if (NamiMorphPlayerController.isMorphActive) return;
     final targetCtx = navContext ?? context;
     Navigator.of(targetCtx).push(
       NamiMorphNowPlayingRoute<void>(

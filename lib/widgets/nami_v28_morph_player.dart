@@ -674,36 +674,56 @@ class _NamiSpringMiniPlayerWrapState extends State<NamiSpringMiniPlayerWrap>
     return NamiMorphPlayerController.lastMiniRect;
   }
 
+  /* v29_host_drag_up */
   void _onVerticalDragStart(DragStartDetails d) {
     final rect = _measureRect();
-    if (rect == null || NamiMorphPlayerController.isMorphActive) return;
+    if (rect == null) return;
+    if (NamiExpandablePlayerController.hasHost) {
+      if (NamiExpandablePlayerController.isExpanded) return;
+      _openingDrag = true;
+      NamiExpandablePlayerController.beginDrag(isOpening: true);
+      return;
+    }
+    if (NamiMorphPlayerController.isMorphActive) return;
     _openingDrag = true;
     widget.onStartDragOpen(rect);
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails d) {
     if (!_openingDrag) return;
-    final route = NamiMorphPlayerController.activeRoute;
-    if (route == null || !route.isActive) return;
     final h = MediaQuery.sizeOf(context).height;
     final dragRange = (h * 0.78).clamp(320.0, 760.0);
+    if (NamiExpandablePlayerController.hasHost) {
+      NamiExpandablePlayerController.updateDrag(-d.delta.dy / dragRange);
+      return;
+    }
+    final route = NamiMorphPlayerController.activeRoute;
+    if (route == null || !route.isActive) return;
     route.updateInteractiveDrag(-d.delta.dy / dragRange);
   }
 
   void _onVerticalDragEnd(DragEndDetails d) {
     if (!_openingDrag) return;
     _openingDrag = false;
-    final route = NamiMorphPlayerController.activeRoute;
-    if (route == null || !route.isActive) return;
     final h = MediaQuery.sizeOf(context).height;
     final dragRange = (h * 0.78).clamp(320.0, 760.0);
     final vel = -(d.primaryVelocity ?? 0.0) / dragRange;
+    if (NamiExpandablePlayerController.hasHost) {
+      NamiExpandablePlayerController.endDrag(velocityPerSec: vel, isOpeningDrag: true);
+      return;
+    }
+    final route = NamiMorphPlayerController.activeRoute;
+    if (route == null || !route.isActive) return;
     route.endInteractiveDrag(velocityPerSec: vel, isOpeningDrag: true);
   }
 
   void _onVerticalDragCancel() {
     if (!_openingDrag) return;
     _openingDrag = false;
+    if (NamiExpandablePlayerController.hasHost) {
+      NamiExpandablePlayerController.endDrag(velocityPerSec: -0.5, isOpeningDrag: true);
+      return;
+    }
     final route = NamiMorphPlayerController.activeRoute;
     if (route != null && route.isActive) {
       route.endInteractiveDrag(velocityPerSec: -0.5, isOpeningDrag: true);

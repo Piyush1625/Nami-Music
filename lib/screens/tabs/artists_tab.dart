@@ -63,9 +63,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
 
     bool bioExpanded = false;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
+    NamiShellNavigator.push(MaterialPageRoute(
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setAdState) => Scaffold(
             backgroundColor: const Color(0xFF000000),
@@ -410,8 +408,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
             ),
           ),
         ),
-      ),
-    );
+      ), fallbackContext: context);
   }
 
   Widget _buildArtistHeroThreeDotsButton(BuildContext ctx, String artistName, List<dynamic> artistSongs, {VoidCallback? onUpdated}) {
