@@ -579,7 +579,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v2.9.8 (v35) • AMOLED Home Widget & engine info',
+                subtitle: 'v3.0.0-beta (v36) • AMOLED Home Widget & engine info',
                 index: 6,
               ),
             ],
@@ -694,6 +694,15 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           NamiUxPrefs.youtubeRegion = 'IN';
           NamiUxPrefs.youtubeAudioQuality = 'High (Opus)';
           NamiUxPrefs.youtubeLocalOnly = true;
+          NamiUxPrefs.ytSponsorBlock = true;
+          NamiUxPrefs.ytReturnDislike = true;
+          NamiUxPrefs.ytAudioOnlyMode = true;
+          NamiUxPrefs.ytAutoStartRadio = true;
+          NamiUxPrefs.ytPersonalizedFeeds = true;
+          NamiUxPrefs.ytSearchCleanup = true;
+          NamiUxPrefs.ytDownloadMetadataTags = true;
+          NamiUxPrefs.ytDimMiniAfterSec = 15;
+          NamiUxPrefs.ytDimIntensityPct = 50;
           break;
       }
     });
@@ -1078,7 +1087,16 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
 
       case 4: // YouTube & Mornye (Ready for Steps 4 & 5 Option A)
         return [
-          _sectionLabel('YouTube Music Storefront (Step 4–5 Ready)'),
+          _sectionLabel('YouTube InnerTube Engine (v3.0.0-beta)'),
+          _actionItem(
+            icon: Icons.play_circle_filled_rounded,
+            title: 'Open YouTube Music Engine (Beta Preview)',
+            subtitle: 'Test India-first feed, live search, libmpv streaming & local history',
+            trailingText: 'Launch',
+            onTap: () => showNamiYoutubeEngineBetaSheet(context),
+          ),
+          const Divider(height: 1, color: Colors.white10),
+          _sectionLabel('Playback & Storefront'),
           _pillSelector(
             title: 'Browse Storefront Region',
             subtitle: 'Controls YouTube Music charts, mixes & Bollywood/DHH feeds',
@@ -1094,24 +1112,82 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             onSelect: (opt) => NamiUxPrefs.youtubeAudioQuality = opt,
           ),
           _switchItem(
+            title: 'SponsorBlock Auto-Skip',
+            subtitle: 'Automatically skips sponsors, intros & non-music segments',
+            value: NamiUxPrefs.ytSponsorBlock,
+            onChanged: (v) => NamiUxPrefs.ytSponsorBlock = v,
+          ),
+          _switchItem(
+            title: 'Return YouTube Dislike',
+            subtitle: 'Display community like & dislike statistics on tracks',
+            value: NamiUxPrefs.ytReturnDislike,
+            onChanged: (v) => NamiUxPrefs.ytReturnDislike = v,
+          ),
+          _switchItem(
+            title: 'Remember Audio-Only Mode',
+            subtitle: 'Default to crisp high-bitrate audio streams via libmpv',
+            value: NamiUxPrefs.ytAudioOnlyMode,
+            onChanged: (v) => NamiUxPrefs.ytAudioOnlyMode = v,
+          ),
+          _switchItem(
+            title: 'Auto Start Radio',
+            subtitle: 'Automatically queues related mix tracks when playing a single song',
+            value: NamiUxPrefs.ytAutoStartRadio,
+            onChanged: (v) => NamiUxPrefs.ytAutoStartRadio = v,
+          ),
+          const Divider(height: 1, color: Colors.white10),
+          _sectionLabel('Feeds, Miniplayer & Downloads'),
+          _switchItem(
             title: 'Local-First Account-Free Mode',
             subtitle: 'Keep YouTube history, mixes, channels & playlists 100% on-device',
             value: NamiUxPrefs.youtubeLocalOnly,
             onChanged: (v) => NamiUxPrefs.youtubeLocalOnly = v,
           ),
-          const Divider(height: 1, color: Colors.white10),
-          _sectionLabel('Shared 5th Tab (Option A)'),
-          const ListTile(
-            contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-            leading: Icon(Icons.extension_outlined, color: Colors.white70, size: 21),
-            title: Text(
-              'YouTube + Mornye Unified Pill Bar',
-              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: Colors.white),
-            ),
-            subtitle: Text(
-              'Mornye extensions & FLAC downloads stay first-class right alongside YouTube Music in the 5th tab.',
-              style: TextStyle(fontSize: 11.8, color: Colors.white54),
-            ),
+          _switchItem(
+            title: 'Personalized Related & Mix Playlists',
+            subtitle: 'Build Recommended & Top Recents mixes from your listens',
+            value: NamiUxPrefs.ytPersonalizedFeeds,
+            onChanged: (v) => NamiUxPrefs.ytPersonalizedFeeds = v,
+          ),
+          _switchItem(
+            title: 'Enable Search Cleanup',
+            subtitle: 'Normalizes search queries for cleaner YouTube Music results',
+            value: NamiUxPrefs.ytSearchCleanup,
+            onChanged: (v) => NamiUxPrefs.ytSearchCleanup = v,
+          ),
+          NamiWaveformSlider(
+            title: 'Dim Miniplayer After Inactivity',
+            subtitle: 'Subtly dims the player overlay during continuous playback',
+            value: NamiUxPrefs.ytDimMiniAfterSec.toDouble(),
+            min: 5,
+            max: 60,
+            divisions: 11,
+            valueFormatter: (v) => '${v.round()}s',
+            accentColor: accent,
+            onChanged: (v) {
+              setState(() => NamiUxPrefs.ytDimMiniAfterSec = v.round());
+              NamiUxPrefs.save();
+            },
+          ),
+          NamiWaveformSlider(
+            title: 'Dim Intensity',
+            subtitle: 'Controls miniplayer dim opacity level',
+            value: NamiUxPrefs.ytDimIntensityPct.toDouble(),
+            min: 0,
+            max: 90,
+            divisions: 18,
+            valueFormatter: (v) => '${v.round()}%',
+            accentColor: accent,
+            onChanged: (v) {
+              setState(() => NamiUxPrefs.ytDimIntensityPct = v.round());
+              NamiUxPrefs.save();
+            },
+          ),
+          _switchItem(
+            title: 'Downloads Metadata Tags',
+            subtitle: 'Extract Artist, Title & Album automatically from video info',
+            value: NamiUxPrefs.ytDownloadMetadataTags,
+            onChanged: (v) => NamiUxPrefs.ytDownloadMetadataTags = v,
           ),
         ];
 
@@ -1122,7 +1198,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 6),
             leading: Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 24),
             title: Text(
-              'Nami v2.9.8 (v35)',
+              'Nami v3.0.0-beta (v36)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
             ),
             subtitle: Text(

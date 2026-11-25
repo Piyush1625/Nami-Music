@@ -1,7 +1,7 @@
 name: nami
 description: Nami Music Player with Nami UI and Mornye Extension Engine.
 publish_to: 'none'
-version: 2.9.8+35
+version: 3.0.0-beta.1+36
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

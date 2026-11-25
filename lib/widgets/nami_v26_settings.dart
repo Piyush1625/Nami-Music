@@ -23,6 +23,15 @@ class NamiUxPrefs {
   static String youtubeRegion = 'IN';
   static String youtubeAudioQuality = 'High (Opus)';
   static bool youtubeLocalOnly = true;
+  static bool ytSponsorBlock = true;
+  static bool ytReturnDislike = true;
+  static bool ytAudioOnlyMode = true;
+  static bool ytAutoStartRadio = true;
+  static bool ytPersonalizedFeeds = true;
+  static bool ytSearchCleanup = true;
+  static bool ytDownloadMetadataTags = true;
+  static int ytDimMiniAfterSec = 15;
+  static int ytDimIntensityPct = 50;
 
   static final ValueNotifier<Duration?> sleepRemaining = ValueNotifier<Duration?>(null);
   static Timer? _sleepTicker;
@@ -62,6 +71,15 @@ class NamiUxPrefs {
       youtubeRegion = prefs.getString('nami_v29_yt_region') ?? 'IN';
       youtubeAudioQuality = prefs.getString('nami_v29_yt_quality') ?? 'High (Opus)';
       youtubeLocalOnly = prefs.getBool('nami_v29_yt_local') ?? true;
+      ytSponsorBlock = prefs.getBool('nami_v30_yt_sb') ?? true;
+      ytReturnDislike = prefs.getBool('nami_v30_yt_ryd') ?? true;
+      ytAudioOnlyMode = prefs.getBool('nami_v30_yt_audio_only') ?? true;
+      ytAutoStartRadio = prefs.getBool('nami_v30_yt_radio') ?? true;
+      ytPersonalizedFeeds = prefs.getBool('nami_v30_yt_pers') ?? true;
+      ytSearchCleanup = prefs.getBool('nami_v30_yt_clean') ?? true;
+      ytDownloadMetadataTags = prefs.getBool('nami_v30_yt_dl_tags') ?? true;
+      ytDimMiniAfterSec = prefs.getInt('nami_v30_yt_dim_sec') ?? 15;
+      ytDimIntensityPct = prefs.getInt('nami_v30_yt_dim_pct') ?? 50;
       NamiArtistMetadataService.indiaFirst = indiaFirstMetadata;
     } catch (_) {}
   }
@@ -89,6 +107,15 @@ class NamiUxPrefs {
       await prefs.setString('nami_v29_yt_region', youtubeRegion);
       await prefs.setString('nami_v29_yt_quality', youtubeAudioQuality);
       await prefs.setBool('nami_v29_yt_local', youtubeLocalOnly);
+      await prefs.setBool('nami_v30_yt_sb', ytSponsorBlock);
+      await prefs.setBool('nami_v30_yt_ryd', ytReturnDislike);
+      await prefs.setBool('nami_v30_yt_audio_only', ytAudioOnlyMode);
+      await prefs.setBool('nami_v30_yt_radio', ytAutoStartRadio);
+      await prefs.setBool('nami_v30_yt_pers', ytPersonalizedFeeds);
+      await prefs.setBool('nami_v30_yt_clean', ytSearchCleanup);
+      await prefs.setBool('nami_v30_yt_dl_tags', ytDownloadMetadataTags);
+      await prefs.setInt('nami_v30_yt_dim_sec', ytDimMiniAfterSec);
+      await prefs.setInt('nami_v30_yt_dim_pct', ytDimIntensityPct);
     } catch (_) {}
   }
 

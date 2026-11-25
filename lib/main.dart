@@ -29,6 +29,7 @@ import 'package:http/http.dart' as http;
 
 
 import 'package:flutter/gestures.dart';
+import 'services/nami_youtube_service.dart';
 part 'models/nami_models.dart';
 part 'widgets/nami_widgets.dart';
 part 'screens/settings_screen.dart';
@@ -50,6 +51,7 @@ part 'widgets/nami_v28_morph_player.dart';
 part 'widgets/nami_v29_shell.dart';
 part 'widgets/nami_v29_settings_studio.dart';
 part 'widgets/nami_v29_8_gestures.dart';
+part 'widgets/nami_v30_yt_bridge.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -662,6 +664,7 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void dispose() {
     /* v28_2_dispose_subs */
+    NamiYoutubePlaybackBridge.dispose();
     _v28PlaySub?.cancel();
     _v28PlSub?.cancel();
     if (activeInstance == this) activeInstance = null;
@@ -11763,6 +11766,8 @@ Future<void> _exportUnifiedNamiBackup() async {
     try {
     NamiUxPrefs.ensureLoaded().then((_) {
       NamiAudiophileEngine.applyMpvProperties(_audioPlayer);
+      NamiYoutubeStore.instance.ensureLoaded();
+      NamiYoutubePlaybackBridge.bindSponsorBlock(_audioPlayer);
     });
     NamiAudiophileEngine.bindWidgetControls(
       onPlayPause: () {
@@ -11912,6 +11917,16 @@ Future<void> _exportUnifiedNamiBackup() async {
         removed: removed,
       );
     }
+  }
+
+  Future<void> _playV30YoutubeAudioTrack(AudioTrack track) async {
+    try {
+      _playSong(track);
+    } catch (_) {
+      setState(() => _currentSong = track);
+      await _audioPlayer.open(Media(track.path));
+    }
+    _syncV27WidgetAndSession(force: true);
   }
 }
 
