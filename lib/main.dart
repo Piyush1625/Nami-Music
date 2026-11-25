@@ -650,6 +650,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 
   @override
   void dispose() {
+    /* v28_2_dispose_subs */
+    _v28PlaySub?.cancel();
+    _v28PlSub?.cancel();
     if (activeInstance == this) activeInstance = null;
     _telemetryTimer?.cancel();
     _sleepTimer?.cancel();
@@ -11593,25 +11596,31 @@ Future<void> _exportUnifiedNamiBackup() async {
     _saveStateCache();
   }
 
-  void _syncV27WidgetAndSession() {
-    /* v28_1_safe_guard */
+    String _v28LastWidgetSig = '';
+  StreamSubscription<bool>? _v28PlaySub;
+  StreamSubscription<dynamic>? _v28PlSub;
+
+  void _syncV27WidgetAndSession({bool force = false}) {
+    /* v28_2_dedup_sync */
     try {
-    final song = _currentSong;
-    final playing = _audioPlayer.state.playing;
-    NamiAudiophileEngine.updateHomeWidget(
-      title: song?.title ?? 'Nami Music',
-      artist: song != null ? cleanArtistStr(song.artist) : 'Tap to open player',
-      isPlaying: playing,
-      coverPath: song?.thumbPath,
-    );
-    if (song != null) {
-      NamiAudiophileEngine.saveSession(
-        currentSong: song,
-        position: _audioPlayer.state.position,
-        queue: _playNextQueue,
+      final song = _currentSong;
+      final playing = _audioPlayer.state.playing;
+      final sig = '${song?.path ?? ''}|$playing';
+      if (!force && sig == _v28LastWidgetSig) return;
+      _v28LastWidgetSig = sig;
+      NamiAudiophileEngine.updateHomeWidget(
+        title: song?.title ?? 'Nami Music',
+        artist: song != null ? cleanArtistStr(song.artist) : 'Tap to open player',
+        isPlaying: playing,
+        coverPath: song?.thumbPath,
       );
-    }
-      } catch (_) {}
+      if (song != null) {
+        NamiAudiophileEngine.saveSession(
+          currentSong: song,
+          position: _audioPlayer.state.position,
+        );
+      }
+    } catch (_) {}
   }
 
   void _initV27AudiophileBridge() {
@@ -11631,7 +11640,12 @@ Future<void> _exportUnifiedNamiBackup() async {
       onNext: () => _playNextTrack(),
       onPrev: () => _playPrevTrack(),
     );
-    _audioPlayer.stream.playing.listen((_) {
+    _v28PlaySub?.cancel();
+    _v28PlaySub = _audioPlayer.stream.playing.listen((_) {
+      if (mounted) _syncV27WidgetAndSession();
+    });
+    _v28PlSub?.cancel();
+    _v28PlSub = _audioPlayer.stream.playlist.listen((_) {
       if (mounted) _syncV27WidgetAndSession();
     });
       } catch (_) {}
@@ -11651,7 +11665,9 @@ Future<void> _exportUnifiedNamiBackup() async {
         startFromDrag: startFromDrag,
         title: song.title,
         artist: cleanArtistStr(song.artist),
-        coverBuilder: (sz, rad) => _buildCoverArt(song, sz, rad),
+        titleGetter: () => _currentSong?.title ?? song.title,
+        artistGetter: () => cleanArtistStr((_currentSong ?? song).artist),
+        coverBuilder: (sz, rad) => _buildCoverArt(_currentSong ?? song, sz, rad),
         isPlayingStream: _audioPlayer.stream.playing,
         initialPlaying: _audioPlayer.state.playing,
         onPlayPause: () {

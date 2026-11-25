@@ -22,6 +22,7 @@ class NamiWaveformScrubOverlay extends StatefulWidget {
 class _NamiWaveformScrubOverlayState extends State<NamiWaveformScrubOverlay> {
   bool _scrubbing = false;
   double _frac = 0.0;
+  double _downX = 0.0;
   int _lastDetentBucket = -1;
 
   String _fmt(Duration d) {
@@ -62,8 +63,12 @@ class _NamiWaveformScrubOverlayState extends State<NamiWaveformScrubOverlay> {
           children: [
             Listener(
               behavior: HitTestBehavior.translucent,
-              onPointerDown: (e) => _updateFromLocalX(e.localPosition.dx, w),
-              onPointerMove: (e) => _updateFromLocalX(e.localPosition.dx, w),
+              onPointerDown: (e) => _downX = e.localPosition.dx,
+              onPointerMove: (e) {
+                if (_scrubbing || (e.localPosition.dx - _downX).abs() > 6.0) {
+                  _updateFromLocalX(e.localPosition.dx, w);
+                }
+              },
               onPointerUp: (_) => setState(() {
                 _scrubbing = false;
                 _lastDetentBucket = -1;
@@ -221,7 +226,7 @@ class NamiSettingsHeroCard extends StatelessWidget {
                           ),
                           SizedBox(width: 7),
                           Text(
-                            'v2.8.1',
+                            'v2.8.2',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,

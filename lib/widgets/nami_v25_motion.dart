@@ -143,7 +143,7 @@ class _NamiSpringTapState extends State<NamiSpringTap> {
 
 /// State-preserving 120Hz tab transition wrapper: gives IndexedStack tab switches
 /// a crisp 190ms glide + fade without losing scroll positions on any tab.
-class NamiTabMotionWrapper extends StatelessWidget {
+class NamiTabMotionWrapper extends StatefulWidget {
   final int activeIndex;
   final Widget child;
 
@@ -154,22 +154,59 @@ class NamiTabMotionWrapper extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      key: ValueKey<int>(activeIndex),
-      tween: Tween<double>(begin: 0.0, end: 1.0),
+  State<NamiTabMotionWrapper> createState() => _NamiTabMotionWrapperState();
+}
+
+class _NamiTabMotionWrapperState extends State<NamiTabMotionWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
       duration: const Duration(milliseconds: 190),
+      value: 1.0,
+    );
+    _anim = CurvedAnimation(
+      parent: _ctrl,
       curve: const Cubic(0.22, 1.0, 0.36, 1.0),
-      builder: (_, t, c) {
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant NamiTabMotionWrapper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeIndex != oldWidget.activeIndex) {
+      final ms = (190 * NamiUxPrefs.motionScale).round().clamp(110, 280);
+      _ctrl.duration = Duration(milliseconds: ms);
+      _ctrl.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      child: widget.child,
+      builder: (_, c) {
+        final t = _anim.value.clamp(0.0, 1.0);
         return Opacity(
-          opacity: (0.72 + 0.28 * t).clamp(0.0, 1.0),
+          opacity: (0.76 + 0.24 * t).clamp(0.0, 1.0),
           child: Transform.translate(
-            offset: Offset(0, (1.0 - t) * 7.0),
+            offset: Offset(0, (1.0 - t) * 6.0),
             child: c,
           ),
         );
       },
-      child: child,
     );
   }
 }
@@ -217,7 +254,7 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
   void _onDragStart(DragStartDetails d) {
     if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
     final morphRoute = NamiMorphPlayerController.activeRoute;
-    if (morphRoute != null) {
+    if (morphRoute != null && morphRoute.isActive) {
       _drivingMorphRoute = true;
       morphRoute.beginInteractiveDismiss();
     } else {
@@ -229,7 +266,7 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
     if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
     if (_drivingMorphRoute) {
       final morphRoute = NamiMorphPlayerController.activeRoute;
-      if (morphRoute != null) {
+      if (morphRoute != null && morphRoute.isActive) {
         final h = MediaQuery.sizeOf(context).height;
         final dragRange = (h * 0.78).clamp(320.0, 760.0);
         morphRoute.updateInteractiveDrag(-d.delta.dy / dragRange);
@@ -249,7 +286,7 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
     if (_drivingMorphRoute) {
       _drivingMorphRoute = false;
       final morphRoute = NamiMorphPlayerController.activeRoute;
-      if (morphRoute != null) {
+      if (morphRoute != null && morphRoute.isActive) {
         final h = MediaQuery.sizeOf(context).height;
         final dragRange = (h * 0.78).clamp(320.0, 760.0);
         final vel = -(d.primaryVelocity ?? 0.0) / dragRange;
