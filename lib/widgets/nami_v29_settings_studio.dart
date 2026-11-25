@@ -519,7 +519,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
             ),
           ),
           ListView(
-            padding: const EdgeInsets.only(top: 6, bottom: 112),
+            padding: const EdgeInsets.only(top: 6, bottom: 156),
             children: [
               _categoryRow(
                 icon: Icons.usb_rounded,
@@ -579,16 +579,22 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v2.9.5 (v33) • AMOLED Home Widget & engine info',
+                subtitle: 'v2.9.6 (v34) • AMOLED Home Widget & engine info',
                 index: 6,
               ),
             ],
           ),
 
           // Namida-style floating bottom-right Search pill above persistent Mini-Player
-          Positioned(
-            right: 16,
-            bottom: 18,
+          ValueListenableBuilder<bool>(
+            valueListenable: NamiExpandablePlayerController.hasSong,
+            builder: (_, playingSong, child) => AnimatedPositioned(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              right: 16,
+              bottom: playingSong ? 86 : 18,
+              child: child!,
+            ),
             child: NamiSpringTap(
               pressedScale: 0.92,
               onTap: _openSearchSheet,
@@ -1109,7 +1115,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 6),
             leading: Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 24),
             title: Text(
-              'Nami v2.9.5 (v33)',
+              'Nami v2.9.6 (v34)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
             ),
             subtitle: Text(
@@ -1178,7 +1184,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 100),
+        padding: const EdgeInsets.only(bottom: 150),
         children: _buildItems(accent),
       ),
     );

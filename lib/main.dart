@@ -8502,7 +8502,12 @@ void _showCreatePlaylistDialog() {
         );
               },
         child: Scaffold(
-      appBar: _isSelectionMode
+      body: Stack(
+        children: [
+          NamiShellNavigator(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: _isSelectionMode
           ? AppBar(
               backgroundColor: const Color(0xFF12121C),
               leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: _exitSelectionMode),
@@ -8582,17 +8587,17 @@ void _showCreatePlaylistDialog() {
                 IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
               ],
             ),
-      body: Stack(
-        children: [
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: KeyedSubtree(
-              key: ValueKey<int>(_selectedIndex),
-              child: pages[_selectedIndex],
+            body: NamiSwipeableTabsView(
+              currentIndex: _selectedIndex,
+              onPageChanged: (idx) {
+                if (mounted && _selectedIndex != idx) {
+                  setState(() => _selectedIndex = idx);
+                }
+              },
+              children: pages,
             ),
           ),
+        ),
           if (_isSelectionMode)
             Positioned(left: 10, right: 10, bottom: 86, child: _buildBatchSelectionBar()),
           Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
@@ -8607,7 +8612,7 @@ void _showCreatePlaylistDialog() {
         ),
         child: NavigationBarTheme(
           data: NavigationBarThemeData(
-            labelTextStyle: MaterialStateProperty.all(
+            labelTextStyle: WidgetStateProperty.all(
               const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700),
             ),
           ),
@@ -11154,8 +11159,10 @@ Future<void> _exportUnifiedNamiBackup() async {
     if (NamiShellNavigator.hasSubPage.value) {
       return SafeArea(
         top: false,
-        child: Align(
-          alignment: Alignment.bottomRight,
+        child: Padding(
+          padding: EdgeInsets.only(right: 12, bottom: _currentSong != null ? 78 : 12),
+          child: Align(
+            alignment: Alignment.bottomRight,
           child: NamiSpringTap(
             pressedScale: 0.90,
             onTap: () {
@@ -11180,6 +11187,7 @@ Future<void> _exportUnifiedNamiBackup() async {
             ),
           ),
         ),
+              ),
       );
     }
     final accent = Theme.of(pageContext).colorScheme.primary;

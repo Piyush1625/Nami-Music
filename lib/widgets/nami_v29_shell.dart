@@ -166,7 +166,7 @@ class _NamiSwipeableTabsViewState extends State<NamiSwipeableTabsView> {
       },
       children: [
         for (int i = 0; i < widget.children.length; i++)
-          _NamiKeepAliveTabPage(child: widget.children[i]),
+          _NamiKeepAliveTabPage(key: ValueKey<int>(i), child: widget.children[i]),
       ],
     );
   }
@@ -314,6 +314,7 @@ class _NamiShellNavigatorState extends State<NamiShellNavigator> {
 /// Global controller for the permanent In-Tree Expandable Player Sheet (0.0 -> 1.0).
 class NamiExpandablePlayerController {
   static final ValueNotifier<double> progress = ValueNotifier<double>(0.0);
+  static final ValueNotifier<bool> hasSong = ValueNotifier<bool>(false);
   static _NamiExpandablePlayerHostState? _host;
 
   static bool get hasHost => _host != null && _host!.mounted;
@@ -406,6 +407,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
       reverseDuration: const Duration(milliseconds: 340),
     )..addListener(_syncProgress);
     NamiExpandablePlayerController._host = this;
+    _namiSafeSetNotifier<bool>(NamiExpandablePlayerController.hasSong, widget.hasSong);
   }
 
   void _syncProgress() {
@@ -421,6 +423,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
   @override
   void didUpdateWidget(covariant NamiExpandablePlayerHost oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _namiSafeSetNotifier<bool>(NamiExpandablePlayerController.hasSong, widget.hasSong);
     if (!widget.hasSong && _ctrl.value > 0.0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !widget.hasSong && _ctrl.value > 0.0) {
