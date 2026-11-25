@@ -281,14 +281,20 @@ class NamiYoutubePlaybackBridge {
         final exclude = <String>{};
         for (int attempt = 0; attempt < 3; attempt++) {
           if (mySeq != _playSeq) return false;
-          final stream = await svc.resolveAudioStream(
+          final bundle = await svc.resolveMediaBundle(
             yt.videoId,
             quality: NamiUxPrefs.youtubeAudioQuality,
             region: NamiUxPrefs.youtubeRegion,
             forceRefresh: attempt > 0,
             excludeClients: exclude,
           );
-          if (stream == null || stream.audioUrl.isEmpty) break;
+          if (bundle == null) break;
+          _namiSafeSetNotifier<List<NamiYtVideoFormat>>(
+            NamiYtVideoBridge.activeVideoFormats,
+            bundle.videoFormats,
+          );
+          final stream = bundle.audioStream;
+          if (stream.audioUrl.isEmpty) break;
           if (mySeq != _playSeq) return false;
 
           // Fast-path 2: Instant-Start Progressive Chunk-Cached Server (starts in ~150ms!)

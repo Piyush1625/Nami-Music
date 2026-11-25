@@ -327,7 +327,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   }) {
     return NamiSpringTap(
       pressedScale: 0.95,
-      onTap: () => NamiYoutubePlaybackBridge.playTrack(track, upcoming: contextList),
+      onTap: () => openNamiYoutubeWatchScreen(context, track, queue: contextList),
       onLongPress: () => showNamiYtWatchSheet(context, track),
       child: SizedBox(
         width: 158,
@@ -1955,14 +1955,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
 
 /// Nami-Style Watch Details & Radio Queue Sheet (matching 127234.png - 127236.png).
 Future<void> showNamiYtWatchSheet(BuildContext context, NamiYtTrack track) {
-  return showModalBottomSheet<void>(
-    context: context,
-    useRootNavigator: true,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    sheetAnimationStyle: namiSmoothSheetStyle,
-    builder: (_) => _NamiYtWatchModal(track: track),
-  );
+  return openNamiYoutubeWatchScreen(context, track);
 }
 
 class _NamiYtWatchModal extends StatefulWidget {

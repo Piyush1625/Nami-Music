@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.3.0 — 2026-11-26
+
+### Full YouTube Audio/Video Experience, Comments & Channel Detail
+- **Native Hardware Video / Audio Watch Screen (`NamiYoutubeWatchScreen` + `NamiYtVideoPlatformView.kt`):** Sticky 16:9 viewport with 1-tap **Audio Only ↔ Video (`144p`–`2160p`)** switching, quality picker showing bitrates & estimated file sizes, fullscreen landscape mode, live scrub bar, and seamless background audio via `libmpv`.
+- **Fast Parallel Stream Resolution (`resolveMediaBundle`):** Parallel InnerTube race + sticky winning-client cache cuts startup latency dramatically while extracting both audiophile audio and all video resolutions in one pass.
+- **Real 2026 YouTube Comments & Replies (`fetchVideoComments`):** Dual ViewModel mutations + legacy parser with **Top / Newest** sorting, pagination, like counts, and expandable inline reply threads right below the sticky video player.
+- **Full YouTube Action Bar & Queue Drawer:** Like, Dislike (RYD), Share, Refresh, Download (live % progress), Save / Add to Library & Playlists, plus a persistent bottom Queue bar (`1/N • Next: ...`) expanding into an interactive Shuffle/Clear/Jump queue drawer.
+- **Full YouTube Channel Detail Screen (`NamiYoutubeChannelScreen`):** Collapsible channel banner, avatar, subscriber count, Subscribe toggle, and 5 interactive tabs (**Home | Videos | Shorts | Releases | Playlists**) with sorting & 1-tap playback.
+
 ## v3.2.0 — 2026-11-26
 
 ### Pure-YouTube BotGuard & Instant Streaming Engine

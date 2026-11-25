@@ -54,6 +54,7 @@ part 'widgets/nami_v29_8_gestures.dart';
 part 'widgets/nami_v30_yt_bridge.dart';
 part 'widgets/nami_v30_discover_tab.dart';
 part 'widgets/nami_v31_suite.dart';
+part 'widgets/nami_v33_youtube_watch.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
