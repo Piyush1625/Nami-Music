@@ -11667,6 +11667,7 @@ Future<void> _exportUnifiedNamiBackup() async {
         artist: cleanArtistStr(song.artist),
         titleGetter: () => _currentSong?.title ?? song.title,
         artistGetter: () => cleanArtistStr((_currentSong ?? song).artist),
+        trackKeyGetter: () => (_currentSong ?? song).path,
         coverBuilder: (sz, rad) => _buildCoverArt(_currentSong ?? song, sz, rad),
         isPlayingStream: _audioPlayer.stream.playing,
         initialPlaying: _audioPlayer.state.playing,

@@ -378,7 +378,8 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         ),
                                       ],
                                     ),
-                                    child: NamiSpringCoverSwipe(
+                                    child: NamiFullArtRectReporter(
+                                  child: NamiSpringCoverSwipe(
                                   onNext: () => _NamiHomeShellState.activeInstance?._playNextTrack(),
                                   onPrev: () => _NamiHomeShellState.activeInstance?._playPrevTrack(),
                                   child: StreamBuilder<bool>(/* v22_art_breathe */
@@ -409,6 +410,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 ),
                                     );
                                   },
+                                ),
                                 ),
                                 ),
                                   ),
@@ -460,6 +462,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   height: _lyricLineExtent * 9,
                                   child: StreamBuilder<Duration>(
                                     stream: widget.audioPlayer.stream.position,
+                    initialData: widget.audioPlayer.state.position,
                                     builder: (context, snapshot) {
                                       final rawPos = snapshot.data ?? Duration.zero;
                                       final pos = rawPos + Duration(milliseconds: (_lyricsShiftSec * 1000).round());
@@ -551,6 +554,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                   
                   StreamBuilder<Duration>(
                     stream: widget.audioPlayer.stream.position,
+                    initialData: widget.audioPlayer.state.position,
                     builder: (context, posSnap) {
                       final pos = posSnap.data ?? Duration.zero;
                       return StreamBuilder<Duration?>(
@@ -615,6 +619,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
                             child: StreamBuilder<Duration>(
                               stream: widget.audioPlayer.stream.position,
+                    initialData: widget.audioPlayer.state.position,
                               builder: (ctx, snap) => Text(
                                 _formatDurationPadded(snap.data ?? Duration.zero),
                                 style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w600),

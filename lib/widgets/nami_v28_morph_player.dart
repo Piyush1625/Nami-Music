@@ -1,10 +1,11 @@
 part of '../main.dart';
 
-/// Critically-cushioned 120Hz spring curve normalized exactly on [0.0, 1.0].
-/// Safe for Flutter TransitionRoute forward/reverse animations & animateBack().
+/// Smooth critically-damped 120Hz spring curve normalized exactly on [0.0, 1.0].
+/// Omega ~6.2–6.4 produces Apple Music-style gliding acceleration and cushion settle
+/// with zero violent snap-down on collapse.
 class _NamiSpringCurve extends Curve {
   final double omega;
-  const _NamiSpringCurve([this.omega = 10.5]);
+  const _NamiSpringCurve([this.omega = 6.4]);
 
   @override
   double transformInternal(double t) {
@@ -16,18 +17,24 @@ class _NamiSpringCurve extends Curve {
   }
 }
 
-/// Tracks the currently active morphing Now Playing route & last-known mini-player rect
-/// so every screen across Nami morphs seamlessly from/to the exact mini-player bounds.
+/// Shared state for seamless morphing between ANY mini-player and Full Now Playing.
 class NamiMorphPlayerController {
   static final ValueNotifier<double> progress = ValueNotifier<double>(0.0);
   static NamiMorphNowPlayingRoute<dynamic>? activeRoute;
   static Rect? lastMiniRect;
+  static Rect? lastFullArtRect;
 
   static bool get isMorphActive => activeRoute != null && activeRoute!.isActive;
 
   static void registerMiniRect(Rect rect) {
     if (rect.width > 40 && rect.height > 20) {
       lastMiniRect = rect;
+    }
+  }
+
+  static void registerFullArtRect(Rect rect) {
+    if (rect.width > 160 && rect.height > 160 && rect.top >= 40) {
+      lastFullArtRect = rect;
     }
   }
 
@@ -39,10 +46,54 @@ class NamiMorphPlayerController {
   }
 }
 
-/// Bulletproof 120Hz Spring-Physics PageRoute that morphs the mini-player bar,
-/// album art, live track title/artist info, and transport controls into Full Now Playing
-/// and back. Uses native TransitionRoute forward/reverse & animateBack(0.0) so
-/// AnimationStatus.dismissed ALWAYS fires and routes can NEVER get stuck.
+/// Lightweight zero-overhead anchor wrapper placed around Now Playing's cover art
+/// to record its exact live screen Rect once settled so future morphs align to 0.0px error.
+class NamiFullArtRectReporter extends StatefulWidget {
+  final Widget child;
+  const NamiFullArtRectReporter({super.key, required this.child});
+
+  @override
+  State<NamiFullArtRectReporter> createState() => _NamiFullArtRectReporterState();
+}
+
+class _NamiFullArtRectReporterState extends State<NamiFullArtRectReporter> {
+  final GlobalKey _key = GlobalKey();
+
+  void _scheduleMeasure() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (NamiMorphPlayerController.progress.value < 0.98) return;
+      final ro = _key.currentContext?.findRenderObject();
+      if (ro is RenderBox && ro.hasSize) {
+        final topLeft = ro.localToGlobal(Offset.zero);
+        NamiMorphPlayerController.registerFullArtRect(topLeft & ro.size);
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleMeasure();
+  }
+
+  @override
+  void didUpdateWidget(covariant NamiFullArtRectReporter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleMeasure();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(key: _key, child: widget.child);
+  }
+}
+
+/// 120FPS GPU-composited Spring-Physics Morph Route (Mini-Player <-> Full Now Playing):
+/// - Disables competing Flutter Hero shuttles (`HeroMode(enabled: false)`) -> zero double-art!
+/// - Keeps NowPlayingModal at fixed full-screen dimensions inside RepaintBoundary -> zero relayout jank!
+/// - Caches one single full-res cover texture per track -> zero 120fps disk-decode thrashing!
+/// - Uses native TransitionRoute forward/reverse & animateBack(0.0) -> zero stuck/zombie routes!
 class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
   final Rect? miniRect;
   final bool startFromDrag;
@@ -50,6 +101,7 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
   final String artist;
   final String Function()? titleGetter;
   final String Function()? artistGetter;
+  final String Function()? trackKeyGetter;
   final Widget Function(double size, double radius) coverBuilder;
   final Stream<bool> isPlayingStream;
   final bool initialPlaying;
@@ -63,8 +115,11 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
   bool _useCurve = true;
   bool _popping = false;
 
-  static const Curve _expandCurve = _NamiSpringCurve(10.0);
-  static const Curve _collapseCurve = _NamiSpringCurve(11.0);
+  Widget? _cachedCoverWidget;
+  String _cachedCoverKey = '';
+
+  static const Curve _expandCurve = _NamiSpringCurve(6.4);
+  static const Curve _collapseCurve = _NamiSpringCurve(6.2);
 
   NamiMorphNowPlayingRoute({
     required this.miniRect,
@@ -73,6 +128,7 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
     required this.artist,
     this.titleGetter,
     this.artistGetter,
+    this.trackKeyGetter,
     required this.coverBuilder,
     required this.isPlayingStream,
     required this.initialPlaying,
@@ -100,13 +156,32 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
   @override
   Duration get transitionDuration {
     final scale = NamiUxPrefs.motionScale;
-    return Duration(milliseconds: (400 * scale).round().clamp(230, 560));
+    return Duration(milliseconds: (390 * scale).round().clamp(240, 540));
   }
 
   @override
   Duration get reverseTransitionDuration {
     final scale = NamiUxPrefs.motionScale;
-    return Duration(milliseconds: (340 * scale).round().clamp(200, 480));
+    return Duration(milliseconds: (350 * scale).round().clamp(220, 480));
+  }
+
+  Widget _getCachedCover(String key) {
+    if (_cachedCoverWidget == null || _cachedCoverKey != key) {
+      _cachedCoverKey = key;
+      _cachedCoverWidget = RepaintBoundary(
+        child: HeroMode(
+          enabled: false,
+          child: SizedBox.expand(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: coverBuilder(360.0, 0.0),
+            ),
+          ),
+        ),
+      );
+    }
+    return _cachedCoverWidget!;
   }
 
   void _syncProgress() {
@@ -157,8 +232,7 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
     final res = super.didPop(result);
     if (_fromInteractiveDrag && controller != null && curVal > 0.001) {
       final scale = NamiUxPrefs.motionScale;
-      final ms = (320 * curVal * scale).round().clamp(140, 380);
-      // animateBack ALWAYS runs in reverse direction and ALWAYS triggers AnimationStatus.dismissed
+      final ms = (330 * curVal * scale).round().clamp(160, 380);
       controller!.animateBack(
         0.0,
         duration: Duration(milliseconds: ms),
@@ -177,10 +251,10 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
     controller?.removeListener(_syncProgress);
     controller?.removeStatusListener(_handleStatus);
     NamiMorphPlayerController.clearIfMatches(this);
+    _cachedCoverWidget = null;
     super.dispose();
   }
 
-  /// Begin a 1:1 downward drag directly from the expanded Now Playing screen
   void beginInteractiveDismiss() {
     if (controller == null || _dragging || _popping || !isActive) return;
     _dragging = true;
@@ -190,7 +264,6 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
     navigator?.didStartUserGesture();
   }
 
-  /// Scrub morph progress 1:1 (`deltaProgress > 0` expands, `< 0` collapses)
   void updateInteractiveDrag(double deltaProgress) {
     if (controller == null || _popping || !isActive) return;
     if (!_dragging) {
@@ -202,7 +275,6 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
     controller!.value = (controller!.value + deltaProgress).clamp(0.002, 1.0);
   }
 
-  /// Release drag and settle cleanly with 120Hz spring curve & guaranteed route cleanup
   void endInteractiveDrag({
     required double velocityPerSec,
     required bool isOpeningDrag,
@@ -219,8 +291,8 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
         : !(cur < 0.78 || velocityPerSec < -0.65);
 
     if (shouldOpen) {
-      final rem = (1.0 - cur).clamp(0.08, 1.0);
-      final ms = (360 * rem * NamiUxPrefs.motionScale).round().clamp(140, 420);
+      final rem = (1.0 - cur).clamp(0.10, 1.0);
+      final ms = (360 * rem * NamiUxPrefs.motionScale).round().clamp(160, 420);
       ctrl.animateTo(
         1.0,
         duration: Duration(milliseconds: ms),
@@ -243,7 +315,14 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    return fullPageBuilder(context);
+    // Wrap in HeroMode(enabled: false) + RepaintBoundary so Flutter NEVER runs
+    // a competing Hero flight shuttle and GPU composites NowPlayingModal as 1 layer!
+    return HeroMode(
+      enabled: false,
+      child: RepaintBoundary(
+        child: fullPageBuilder(context),
+      ),
+    );
   }
 
   @override
@@ -261,6 +340,44 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
         NamiMorphPlayerController.lastMiniRect ??
         Rect.fromLTWH(10, size.height - pad.bottom - 140, size.width - 20, 64);
 
+    // Pre-compute pixel-accurate endpoints once per layout pass
+    final fallbackArtSize = (size.width - 30).clamp(220.0, size.height * 0.425);
+    final fullArtRect = NamiMorphPlayerController.lastFullArtRect ??
+        Rect.fromLTWH(
+          (size.width - fallbackArtSize) / 2,
+          size.height * 0.1745,
+          fallbackArtSize,
+          fallbackArtSize,
+        );
+
+    final miniArtSize = (startRect.height - 16).clamp(38.0, 48.0);
+    final miniArtRect = Rect.fromLTWH(
+      startRect.left + 9,
+      startRect.top + (startRect.height - miniArtSize) / 2,
+      miniArtSize,
+      miniArtSize,
+    );
+
+    final miniInfoWidth = (startRect.width - 178).clamp(80.0, size.width - 160);
+    final miniInfoRect = Rect.fromLTWH(
+      startRect.left + miniArtSize + 20,
+      startRect.top + (startRect.height - 38) / 2,
+      miniInfoWidth,
+      40,
+    );
+    final fullInfoRect = Rect.fromLTWH(
+      24,
+      fullArtRect.bottom + 14,
+      size.width - 96,
+      56,
+    );
+
+    final miniCtrlCenter = Offset(startRect.right - 64, startRect.center.dy);
+    final fullCtrlCenter = Offset(
+      size.width / 2,
+      (size.height * 0.864).clamp(fullArtRect.bottom + 150, size.height - pad.bottom - 78),
+    );
+
     return AnimatedBuilder(
       animation: animation,
       child: child,
@@ -270,19 +387,20 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
         if (!_useCurve || _dragging) {
           t = rawT;
         } else if (animation.status == AnimationStatus.reverse) {
-          t = _collapseCurve.flipped.transform(rawT);
+          t = 1.0 - _collapseCurve.transform(1.0 - rawT);
         } else {
           t = _expandCurve.transform(rawT);
         }
 
-        final accent = Theme.of(ctx).colorScheme.primary;
         final liveTitle = titleGetter != null ? titleGetter!() : title;
         final liveArtist = artistGetter != null ? artistGetter!() : artist;
+        final liveKey = trackKeyGetter != null ? trackKeyGetter!() : '$liveTitle|$liveArtist';
+        final cachedCover = _getCachedCover(liveKey);
 
         // 1. Background dim scrim over underlying library page
-        final scrimOpacity = (t * 0.90).clamp(0.0, 0.90);
+        final scrimOpacity = (t * 0.92).clamp(0.0, 0.92);
 
-        // 2. Continuously morphing outer sheet bounds & corner radius
+        // 2. Continuously morphing outer card clip & surface color
         final cardRect = Rect.lerp(startRect, fullRect, t)!;
         final cardRadius = ui.lerpDouble(18.0, 0.0, t)!;
         final cardColor = Color.lerp(
@@ -291,66 +409,32 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
           Curves.easeOut.transform(t),
         )!;
 
-        // 3. Shared element geometries (Start = mini-player bar -> End = Now Playing)
-        const miniArtSize = 46.0;
-        final miniArtRect = Rect.fromLTWH(
-          startRect.left + 9,
-          startRect.top + (startRect.height - miniArtSize) / 2,
-          miniArtSize,
-          miniArtSize,
-        );
-        final fullArtSize = (size.width - 48).clamp(210.0, size.height * 0.42);
-        final fullArtRect = Rect.fromLTWH(
-          (size.width - fullArtSize) / 2,
-          pad.top + 68,
-          fullArtSize,
-          fullArtSize,
-        );
+        // 3. Interpolated shared element rects (GPU-scaled single texture -> 120fps)
         final curArtRect = Rect.lerp(miniArtRect, fullArtRect, t)!;
-        final curArtRadius = ui.lerpDouble(10.0, 18.0, t)!;
-
-        // Title + Artist text block glides smoothly from beside mini-art to below big art
-        final miniInfoWidth = (startRect.width - 178).clamp(80.0, size.width - 160);
-        final miniInfoRect = Rect.fromLTWH(
-          startRect.left + 64,
-          startRect.top + (startRect.height - 38) / 2,
-          miniInfoWidth,
-          40,
-        );
-        final fullInfoRect = Rect.fromLTWH(
-          24,
-          fullArtRect.bottom + 24,
-          size.width - 96,
-          58,
-        );
+        final curArtRadius = ui.lerpDouble(10.0, 16.0, t)!;
         final curInfoRect = Rect.lerp(miniInfoRect, fullInfoRect, t)!;
-        final titleSize = ui.lerpDouble(13.8, 21.0, t)!;
-        final artistSize = ui.lerpDouble(11.5, 13.8, t)!;
+        final titleSize = ui.lerpDouble(13.8, 20.5, t)!;
+        final artistSize = ui.lerpDouble(11.5, 13.5, t)!;
 
-        // Transport controls [ |<  (||)  >| ] glide from right of mini-player to bottom-center
-        final miniCtrlCenter = Offset(startRect.right - 64, startRect.center.dy);
-        final fullCtrlCenter = Offset(
-          size.width / 2,
-          (fullArtRect.bottom + 188).clamp(fullArtRect.bottom + 124, size.height - pad.bottom - 94),
-        );
         final curCtrlCenter = Offset.lerp(miniCtrlCenter, fullCtrlCenter, t)!;
-        final playBtnSize = ui.lerpDouble(36.0, 62.0, t)!;
-        final skipIconSize = ui.lerpDouble(21.0, 32.0, t)!;
-        final ctrlGap = ui.lerpDouble(2.0, 26.0, t)!;
+        final playBtnSize = ui.lerpDouble(36.0, 58.0, t)!;
+        final skipIconSize = ui.lerpDouble(20.0, 30.0, t)!;
+        final ctrlGap = ui.lerpDouble(2.0, 24.0, t)!;
 
-        // Cross-fade between morph overlay and live interactive NowPlayingModal at very top
-        final fullChildOpacity = t >= 0.992
+        // Tight, aligned cross-fade: fullChild is ALWAYS mounted at fixed full-screen size
+        // (RenderOpacity skips paint at 0.0 while keeping layout cached -> zero mid-flight stutter!)
+        final fullChildOpacity = t >= 0.985
             ? 1.0
-            : ((t - 0.68) / 0.30).clamp(0.0, 1.0);
-        final sharedOverlayOpacity = t >= 0.992
+            : ((t - 0.66) / 0.28).clamp(0.0, 1.0);
+        final sharedOverlayOpacity = t >= 0.985
             ? 0.0
-            : (1.0 - ((t - 0.85) / 0.14).clamp(0.0, 1.0));
+            : (1.0 - ((t - 0.84) / 0.14).clamp(0.0, 1.0));
 
         return Material(
           type: MaterialType.transparency,
           child: Stack(
             children: [
-              // Underlying page dimming scrim
+              // Underlying library dim scrim
               Positioned.fill(
                 child: IgnorePointer(
                   ignoring: t < 0.05,
@@ -360,7 +444,7 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
                 ),
               ),
 
-              // Morphing Now Playing container surface
+              // Morphing container clip around fixed full-screen NowPlayingModal (ZERO relayout!)
               Positioned.fromRect(
                 rect: cardRect,
                 child: ClipRRect(
@@ -368,7 +452,7 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: cardColor,
-                      border: t < 0.92
+                      border: t < 0.94
                           ? Border.all(
                               color: Colors.white.withValues(alpha: 0.10 * (1.0 - t)),
                               width: 0.9,
@@ -376,45 +460,28 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
                           : null,
                     ),
                     child: Stack(
+                      clipBehavior: Clip.hardEdge,
                       children: [
-                        if (t > 0.15)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: Opacity(
-                                opacity: ((t - 0.15) / 0.85).clamp(0.0, 1.0),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: RadialGradient(
-                                      center: const Alignment(0.0, -0.45),
-                                      radius: 0.95,
-                                      colors: [
-                                        accent.withValues(alpha: 0.14),
-                                        Colors.transparent,
-                                      ],
-                                      stops: const [0.0, 0.72],
-                                    ),
-                                  ),
-                                ),
-                              ),
+                        Positioned(
+                          left: -cardRect.left,
+                          top: -cardRect.top,
+                          width: size.width,
+                          height: size.height,
+                          child: IgnorePointer(
+                            ignoring: t < 0.95,
+                            child: Opacity(
+                              opacity: fullChildOpacity,
+                              child: fullChild,
                             ),
                           ),
-                        if (fullChildOpacity > 0.005)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              ignoring: t < 0.96,
-                              child: Opacity(
-                                opacity: fullChildOpacity,
-                                child: fullChild,
-                              ),
-                            ),
-                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
               ),
 
-              // Seamless shared-element morph overlay (Art + Live Title/Artist + Controls)
+              // Single crisp GPU-scaled shared-element morph overlay (Art + Title/Artist + Controls)
               if (sharedOverlayOpacity > 0.005)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -424,21 +491,9 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
                         children: [
                           Positioned.fromRect(
                             rect: curArtRect,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(curArtRadius),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.45 * t),
-                                    blurRadius: 24 * t,
-                                    offset: Offset(0, 10 * t),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(curArtRadius),
-                                child: coverBuilder(curArtRect.width, curArtRadius),
-                              ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(curArtRadius),
+                              child: cachedCover,
                             ),
                           ),
                           Positioned.fromRect(
@@ -541,9 +596,9 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
 }
 
 /// Wraps ANY mini-player across Nami (main tabs + detail floating dock):
+/// - Disables HeroMode so Flutter never runs a competing Hero flight
 /// - Listener captures exact live Rect on pointer down
-/// - 1:1 Vertical Drag-UP & Tap morphing (Opacity/IgnorePointer stays INSIDE GestureDetector
-///   so active vertical drags are never cancelled mid-gesture!)
+/// - 1:1 Vertical Drag-UP & Tap morphing into Full Now Playing
 /// - 1:1 Horizontal Elastic Spring Track Shifting with smooth spring slide-in
 class NamiSpringMiniPlayerWrap extends StatefulWidget {
   final Widget child;
@@ -687,43 +742,46 @@ class _NamiSpringMiniPlayerWrapState extends State<NamiSpringMiniPlayerWrap>
     final dragNorm = (_dx.abs() / 90.0).clamp(0.0, 1.0);
     final scale = 1.0 - (dragNorm * 0.025);
 
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _measureRect(),
-      child: GestureDetector(
+    return HeroMode(
+      enabled: false,
+      child: Listener(
         behavior: HitTestBehavior.translucent,
-        onTap: () {
-          _measureRect();
-          NamiUxPrefs.hapticLight();
-          widget.onOpenTap();
-        },
-        onVerticalDragStart: _onVerticalDragStart,
-        onVerticalDragUpdate: _onVerticalDragUpdate,
-        onVerticalDragEnd: _onVerticalDragEnd,
-        onVerticalDragCancel: _onVerticalDragCancel,
-        onHorizontalDragUpdate: _onHorizontalDragUpdate,
-        onHorizontalDragEnd: _onHorizontalDragEnd,
-        onHorizontalDragCancel: () {
-          if (_dx != 0.0) {
-            _hSpring.animateWith(SpringSimulation(_hSpringDesc, _dx, 0.0, 0.0));
-          }
-        },
-        child: KeyedSubtree(
-          key: _boxKey,
-          child: ValueListenableBuilder<double>(
-            valueListenable: NamiMorphPlayerController.progress,
-            builder: (_, morphProgress, child) {
-              final hidden = morphProgress > 0.005;
-              return Opacity(
-                opacity: hidden ? 0.0 : 1.0,
-                child: child,
-              );
-            },
-            child: Transform.translate(
-              offset: Offset(_dx, 0),
-              child: Transform.scale(
-                scale: scale,
-                child: widget.child,
+        onPointerDown: (_) => _measureRect(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            _measureRect();
+            NamiUxPrefs.hapticLight();
+            widget.onOpenTap();
+          },
+          onVerticalDragStart: _onVerticalDragStart,
+          onVerticalDragUpdate: _onVerticalDragUpdate,
+          onVerticalDragEnd: _onVerticalDragEnd,
+          onVerticalDragCancel: _onVerticalDragCancel,
+          onHorizontalDragUpdate: _onHorizontalDragUpdate,
+          onHorizontalDragEnd: _onHorizontalDragEnd,
+          onHorizontalDragCancel: () {
+            if (_dx != 0.0) {
+              _hSpring.animateWith(SpringSimulation(_hSpringDesc, _dx, 0.0, 0.0));
+            }
+          },
+          child: KeyedSubtree(
+            key: _boxKey,
+            child: ValueListenableBuilder<double>(
+              valueListenable: NamiMorphPlayerController.progress,
+              builder: (_, morphProgress, child) {
+                final hidden = morphProgress > 0.005;
+                return Opacity(
+                  opacity: hidden ? 0.0 : 1.0,
+                  child: child,
+                );
+              },
+              child: Transform.translate(
+                offset: Offset(_dx, 0),
+                child: Transform.scale(
+                  scale: scale,
+                  child: widget.child,
+                ),
               ),
             ),
           ),
