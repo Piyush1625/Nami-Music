@@ -34,6 +34,7 @@ void showNamiArtistPickerOrNavigate({
 
   final accent = Theme.of(context).colorScheme.primary;
   showModalBottomSheet(
+    useRootNavigator: true,
     sheetAnimationStyle: namiSmoothSheetStyle,
     context: context,
     backgroundColor: Colors.transparent,
@@ -151,6 +152,7 @@ void showNamiTrackActionCard({
   bool artistsExpanded = artists.length > 1;
 
   showModalBottomSheet(
+    useRootNavigator: true,
     sheetAnimationStyle: namiSmoothSheetStyle,
     context: context,
     backgroundColor: Colors.transparent,
@@ -592,6 +594,7 @@ void showNamiFloatingActionSheet({
   VoidCallback? onFooterRightTap,
 }) {
   showModalBottomSheet(
+    useRootNavigator: true,
     sheetAnimationStyle: namiSmoothSheetStyle,
     context: context,
     backgroundColor: Colors.transparent,
@@ -839,6 +842,7 @@ void showNamiMediaImagePickerSheet({
   Future<List<NamiMediaCandidate>> currentFuture = fetcher(initialQuery);
 
   showModalBottomSheet(
+    useRootNavigator: true,
     sheetAnimationStyle: namiSmoothSheetStyle,
     context: context,
     isScrollControlled: true,

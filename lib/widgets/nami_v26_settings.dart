@@ -14,6 +14,14 @@ class NamiUxPrefs {
   static bool gaplessPlayback = true;
   static String replayGainMode = 'track'; // 'no' | 'track' | 'album'
   static bool persistSession = true;
+  static bool enableBlurEffect = false;
+  static bool enableGlowEffect = true;
+  static int fadeDurationMs = 250;
+  static int seekDurationSec = 5;
+  static int waveformBarsCount = 48;
+  static String youtubeRegion = 'IN';
+  static String youtubeAudioQuality = 'High (Opus)';
+  static bool youtubeLocalOnly = true;
 
   static final ValueNotifier<Duration?> sleepRemaining = ValueNotifier<Duration?>(null);
   static Timer? _sleepTicker;
@@ -44,6 +52,14 @@ class NamiUxPrefs {
       gaplessPlayback = prefs.getBool('nami_v27_gapless') ?? true;
       replayGainMode = prefs.getString('nami_v27_replaygain') ?? 'track';
       persistSession = prefs.getBool('nami_v27_persist_session') ?? true;
+      enableBlurEffect = prefs.getBool('nami_v29_blur') ?? false;
+      enableGlowEffect = prefs.getBool('nami_v29_glow') ?? true;
+      fadeDurationMs = prefs.getInt('nami_v29_fade_ms') ?? 250;
+      seekDurationSec = prefs.getInt('nami_v29_seek_sec') ?? 5;
+      waveformBarsCount = prefs.getInt('nami_v29_wf_bars') ?? 48;
+      youtubeRegion = prefs.getString('nami_v29_yt_region') ?? 'IN';
+      youtubeAudioQuality = prefs.getString('nami_v29_yt_quality') ?? 'High (Opus)';
+      youtubeLocalOnly = prefs.getBool('nami_v29_yt_local') ?? true;
       NamiArtistMetadataService.indiaFirst = indiaFirstMetadata;
     } catch (_) {}
   }
@@ -62,6 +78,14 @@ class NamiUxPrefs {
       await prefs.setBool('nami_v27_gapless', gaplessPlayback);
       await prefs.setString('nami_v27_replaygain', replayGainMode);
       await prefs.setBool('nami_v27_persist_session', persistSession);
+      await prefs.setBool('nami_v29_blur', enableBlurEffect);
+      await prefs.setBool('nami_v29_glow', enableGlowEffect);
+      await prefs.setInt('nami_v29_fade_ms', fadeDurationMs);
+      await prefs.setInt('nami_v29_seek_sec', seekDurationSec);
+      await prefs.setInt('nami_v29_wf_bars', waveformBarsCount);
+      await prefs.setString('nami_v29_yt_region', youtubeRegion);
+      await prefs.setString('nami_v29_yt_quality', youtubeAudioQuality);
+      await prefs.setBool('nami_v29_yt_local', youtubeLocalOnly);
     } catch (_) {}
   }
 

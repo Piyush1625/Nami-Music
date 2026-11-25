@@ -47,6 +47,7 @@ part 'widgets/nami_v26_settings.dart';
 part 'widgets/nami_v27_audiophile.dart';
 part 'widgets/nami_v28_morph_player.dart';
 part 'widgets/nami_v29_shell.dart';
+part 'widgets/nami_v29_settings_studio.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -153,33 +154,40 @@ Future<void> main() async {
     systemNavigationBarColor: Color(0xFF07070B),
   ));
   /* v28_1_error_widget */
+  /* v29_5_safe_error_widget */
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    return Material(
-      color: const Color(0xFF000000),
-      child: SafeArea(
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ColoredBox(
+        color: const Color(0xFF0A0A10),
         child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Nami UI Error Caught',
-                  style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.w800),
+          padding: const EdgeInsets.fromLTRB(18, 48, 18, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Nami UI Diagnostic',
+                style: TextStyle(
+                  color: Color(0xFFFF5252),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  decoration: TextDecoration.none,
                 ),
-                const SizedBox(height: 10),
-                SelectableText(
-                  details.exceptionAsString(),
-                  style: const TextStyle(color: Colors.white, fontSize: 12.5),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                details.exceptionAsString(),
+                maxLines: 10,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFFFFFFFF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.none,
                 ),
-                const SizedBox(height: 10),
-                SelectableText(
-                  details.stack?.toString().split('\n').take(8).join('\n') ?? '',
-                  style: const TextStyle(color: Colors.white54, fontSize: 10.5),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

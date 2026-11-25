@@ -407,7 +407,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       children: [
                         const Text('Nami Music Player', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Colors.white)),
                         const SizedBox(height: 3),
-                        Text('Version 2.0.0 • Build v2.9.0 (v32)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor)),
+                        Text('Version 2.0.0 • Build v2.9.5 (v33)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor)),
                       ],
                     ),
                   ),
@@ -516,7 +516,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Text("WHAT'S NEW IN v2.9.0 (v32)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54)),
+              const Text("WHAT'S NEW IN v2.9.5 (v33)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54)),
               const SizedBox(height: 10),
               for (final item in const [
                 ('Home Overhaul', 'Customizable reorderable shelves, live tappable DAC output & AutoEQ switcher, Time-of-Day & Forgotten Favorites mixes, Weekly Recap strip, and long-press card actions.'),
@@ -648,6 +648,40 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return NamiUnifiedSettingsHub(
+      outputDevice: widget.connectedDacName,
+      eqEnabled: false,
+      onGrantStorage: _namiHandleAllFilesGrant,
+      onRequestUsbDac: _namiHandleUsbDacRequest,
+      onMergeArtists: () {
+        NamiShellNavigator.popToRoot();
+        _NamiHomeShellState.activeInstance?._openSettingsMergeArtistPicker();
+      },
+      onPurgePlaceholders: () {
+        NamiShellNavigator.popToRoot();
+        _NamiHomeShellState.activeInstance?._purgeBadArtistPlaceholders();
+      },
+      onBatchFetchArtists: () {
+        NamiShellNavigator.popToRoot();
+        _NamiHomeShellState.activeInstance?._batchFetchMissingArtistPhotos();
+      },
+      onSleepExpire: () {
+        _NamiHomeShellState.activeInstance?._audioPlayer.pause();
+      },
+      onApplyAudioProps: () {
+        final shell = _NamiHomeShellState.activeInstance;
+        if (shell != null) {
+          NamiAudiophileEngine.applyMpvProperties(shell._audioPlayer);
+        }
+      },
+      onSyncWidgetNow: () {
+        _NamiHomeShellState.activeInstance?._syncV27WidgetAndSession(force: true);
+      },
+      classicSettingsBuilder: (ctx) => _buildClassicSettingsScreen(ctx),
+    );
+  }
+
+  Widget _buildClassicSettingsScreen(BuildContext context) {
     final themeColor = Theme.of(context).colorScheme.primary;
     final v16 = NamiV16Prefs.instance;
     const tabNames = ['Home', 'Tracks', 'Artists', 'Playlists'];
@@ -1280,31 +1314,6 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 36),
         children: [
-            NamiSettingsHeroCard(
-              outputDevice: widget.connectedDacName,
-              eqEnabled: false,
-              accentColor: Theme.of(context).colorScheme.primary,
-              onGrantStorage: _namiHandleAllFilesGrant,
-              onRequestUsbDac: _namiHandleUsbDacRequest,
-              onMergeArtists: () {
-                Navigator.of(context).pop();
-                _NamiHomeShellState.activeInstance?._openSettingsMergeArtistPicker();
-              },
-            ),
-            NamiSettingsStudioSection(
-              accentColor: Theme.of(context).colorScheme.primary,
-              onPurgePlaceholders: () {
-                Navigator.of(context).pop();
-                _NamiHomeShellState.activeInstance?._purgeBadArtistPlaceholders();
-              },
-              onBatchFetchArtists: () {
-                Navigator.of(context).pop();
-                _NamiHomeShellState.activeInstance?._batchFetchMissingArtistPhotos();
-              },
-              onSleepExpire: () {
-                _NamiHomeShellState.activeInstance?._audioPlayer.pause();
-              },
-            ),
           // Top Minimalist Settings Search Pill
           Padding(
             padding: const EdgeInsets.only(bottom: 14),

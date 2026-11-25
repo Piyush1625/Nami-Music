@@ -187,7 +187,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                 rawArtist: song.artist,
                 artistImagePaths: const <String, String>{},
                 onSelectArtist: (picked) {
-                  Navigator.of(context).pop();
+                  NamiExpandablePlayerController.safeClose(context);
                   widget.onGoToArtist!(picked);
                 },
               );
@@ -233,7 +233,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         return Scaffold(
           backgroundColor: const Color(0xFF07070B),
           body: NamiInteractiveDragDismiss(
-        onDismiss: () { if (NamiExpandablePlayerController.isExpanded) { NamiExpandablePlayerController.collapse(); } else { Navigator.of(context).maybePop(); } },
+        onDismiss: () { if (NamiExpandablePlayerController.isExpanded) { NamiExpandablePlayerController.collapse(); } else { NamiExpandablePlayerController.safeClose(context); } },
         child: Stack(
           children: [
             Positioned.fill(
@@ -313,7 +313,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 28),
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: () => NamiExpandablePlayerController.safeClose(context),
                       ),
                       Expanded(
                         child: Column(
@@ -354,7 +354,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             },
                             onVerticalDragEnd: (details) {
                               if ((details.primaryVelocity ?? 0) > 360) {
-                                Navigator.pop(context);
+                                NamiExpandablePlayerController.safeClose(context);
                               }
                             },
                             child: StreamBuilder<bool>(
@@ -528,7 +528,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               rawArtist: raw,
                               artistImagePaths: const <String, String>{},
                               onSelectArtist: (picked) {
-                                Navigator.of(context).pop();
+                                NamiExpandablePlayerController.safeClose(context);
                                 widget.onGoToArtist!(picked);
                               },
                             );

@@ -199,6 +199,7 @@ void showNamiSignalChainSheet({
   }
 
   showModalBottomSheet(
+    useRootNavigator: true,
     sheetAnimationStyle: namiSmoothSheetStyle,
     context: context,
     backgroundColor: Colors.transparent,

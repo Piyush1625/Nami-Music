@@ -1,5 +1,17 @@
 part of '../main.dart';
 
+void _namiSafeSetNotifier<T>(ValueNotifier<T> notifier, T next) {
+  if (notifier.value == next) return;
+  final phase = SchedulerBinding.instance.schedulerPhase;
+  if (phase == SchedulerPhase.idle || phase == SchedulerPhase.postFrameCallbacks) {
+    notifier.value = next;
+  } else {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (notifier.value != next) notifier.value = next;
+    });
+  }
+}
+
 /// Shared live horizontal scroll tracker for main tabs & nested Option A 5th-tab handoff.
 class NamiTabScrollController {
   static final ValueNotifier<double> page = ValueNotifier<double>(0.0);
@@ -13,7 +25,7 @@ class NamiTabScrollController {
   /// to hand off left-boundary overscroll smoothly back to the previous main tab.
   static void handoffToPreviousMainTab() {
     final s = _activeState;
-    if (s == null) return;
+    if (s == null || !s.mounted) return;
     final cur = s.widget.currentIndex;
     if (cur > 0) {
       s.widget.onPageChanged(cur - 1);
@@ -43,7 +55,6 @@ class _NamiKeepAliveTabPageState extends State<_NamiKeepAliveTabPage>
 }
 
 /// 120Hz Keep-Alive Swipeable Main Tabs (`PageView`) replacing tap-only `IndexedStack`.
-/// Preserves every tab's scroll offset and slides 1:1 with your finger across all tabs.
 class NamiSwipeableTabsView extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onPageChanged;
@@ -68,28 +79,27 @@ class _NamiSwipeableTabsViewState extends State<NamiSwipeableTabsView> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: widget.currentIndex);
-    NamiTabScrollController.page.value = widget.currentIndex.toDouble();
+    _namiSafeSetNotifier<double>(NamiTabScrollController.page, widget.currentIndex.toDouble());
     NamiTabScrollController._activeState = this;
     _pageController.addListener(_onScroll);
   }
 
   void _onScroll() {
-    if (!_pageController.hasClients) return;
+    if (!mounted || !_pageController.hasClients) return;
     final p = _pageController.page;
-    if (p != null && (NamiTabScrollController.page.value - p).abs() > 0.001) {
-      NamiTabScrollController.page.value = p;
+    if (p != null && (NamiTabScrollController.page.value - p).abs() > 0.002) {
+      _namiSafeSetNotifier<double>(NamiTabScrollController.page, p);
     }
   }
 
   void _animateToTarget(int target) {
-    if (!_pageController.hasClients) return;
+    if (!mounted || !_pageController.hasClients) return;
     final cur = (_pageController.page ?? widget.currentIndex.toDouble()).round();
     if (cur == target) return;
     _programmaticTarget = target;
     final scale = NamiUxPrefs.motionScale;
 
     if ((target - cur).abs() > 1) {
-      // Namida-style direct jump across distant tabs without flashing intermediate pages
       final staging = target > cur ? target - 1 : target + 1;
       _pageController.jumpToPage(staging);
       final ms = (240 * scale).round().clamp(150, 340);
@@ -120,7 +130,10 @@ class _NamiSwipeableTabsViewState extends State<NamiSwipeableTabsView> {
   void didUpdateWidget(covariant NamiSwipeableTabsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.currentIndex != oldWidget.currentIndex) {
-      _animateToTarget(widget.currentIndex);
+      final target = widget.currentIndex;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _animateToTarget(target);
+      });
     }
   }
 
@@ -159,14 +172,33 @@ class _NamiSwipeableTabsViewState extends State<NamiSwipeableTabsView> {
   }
 }
 
+/// Idiomatic InheritedWidget root scope for NamiShellNavigator:
+/// updates the nested Navigator's root page cleanly during normal build with ZERO
+/// `setState() or markNeedsBuild() called during build` exceptions!
+class _NamiShellRootScope extends InheritedWidget {
+  final Widget rootChild;
+
+  const _NamiShellRootScope({
+    required this.rootChild,
+    required super.child,
+  });
+
+  static Widget of(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_NamiShellRootScope>();
+    return scope?.rootChild ?? const SizedBox.shrink();
+  }
+
+  @override
+  bool updateShouldNotify(covariant _NamiShellRootScope oldWidget) {
+    return oldWidget.rootChild != rootChild;
+  }
+}
+
 class _NamiShellRouteObserver extends NavigatorObserver {
   int _depth = 0;
 
   void _sync() {
-    final next = _depth > 0;
-    if (NamiShellNavigator.hasSubPage.value != next) {
-      NamiShellNavigator.hasSubPage.value = next;
-    }
+    _namiSafeSetNotifier<bool>(NamiShellNavigator.hasSubPage, _depth > 0);
   }
 
   @override
@@ -195,19 +227,20 @@ class _NamiShellRouteObserver extends NavigatorObserver {
 }
 
 /// Nested Shell Navigator mounted inside the main viewport ABOVE the persistent
-/// Mini-Player and Bottom Navigation Bar so Settings, Artist Detail, Album Detail
-/// & Albums inherit the exact same persistent player chrome seamlessly.
+/// Mini-Player and Bottom Navigation Bar. Uses an instance GlobalKey and InheritedWidget
+/// scope so it can never throw build-phase or duplicate-GlobalKey exceptions.
 class NamiShellNavigator extends StatefulWidget {
   final Widget child;
   const NamiShellNavigator({super.key, required this.child});
 
-  static final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+  static _NamiShellNavigatorState? _activeState;
   static final ValueNotifier<bool> hasSubPage = ValueNotifier<bool>(false);
 
-  static bool get canPop => navKey.currentState?.canPop() ?? false;
+  static NavigatorState? get _nav => _activeState?._navKey.currentState;
+  static bool get canPop => _nav?.canPop() ?? false;
 
   static Future<T?> push<T>(Route<T> route, {BuildContext? fallbackContext}) {
-    final nav = navKey.currentState;
+    final nav = _nav;
     if (nav != null) {
       return nav.push<T>(route);
     }
@@ -218,7 +251,7 @@ class NamiShellNavigator extends StatefulWidget {
   }
 
   static bool maybePop() {
-    final nav = navKey.currentState;
+    final nav = _nav;
     if (nav != null && nav.canPop()) {
       nav.pop();
       return true;
@@ -227,10 +260,10 @@ class NamiShellNavigator extends StatefulWidget {
   }
 
   static void popToRoot() {
-    final nav = navKey.currentState;
+    final nav = _nav;
     if (nav != null && nav.canPop()) {
       nav.popUntil((route) => route.isFirst);
-      hasSubPage.value = false;
+      _namiSafeSetNotifier<bool>(hasSubPage, false);
     }
   }
 
@@ -239,39 +272,38 @@ class NamiShellNavigator extends StatefulWidget {
 }
 
 class _NamiShellNavigatorState extends State<NamiShellNavigator> {
+  final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
   final _NamiShellRouteObserver _observer = _NamiShellRouteObserver();
-  late final ValueNotifier<Widget> _rootChildNotifier;
 
   @override
   void initState() {
     super.initState();
-    _rootChildNotifier = ValueNotifier<Widget>(widget.child);
-  }
-
-  @override
-  void didUpdateWidget(covariant NamiShellNavigator oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _rootChildNotifier.value = widget.child;
+    NamiShellNavigator._activeState = this;
   }
 
   @override
   void dispose() {
-    _rootChildNotifier.dispose();
+    if (NamiShellNavigator._activeState == this) {
+      NamiShellNavigator._activeState = null;
+      _namiSafeSetNotifier<bool>(NamiShellNavigator.hasSubPage, false);
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return ClipRect(
-      child: Navigator(
-        key: NamiShellNavigator.navKey,
-        observers: [_observer],
-        onGenerateRoute: (_) => PageRouteBuilder<void>(
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-          pageBuilder: (_, __, ___) => ValueListenableBuilder<Widget>(
-            valueListenable: _rootChildNotifier,
-            builder: (_, child, __) => child,
+      child: _NamiShellRootScope(
+        rootChild: widget.child,
+        child: Navigator(
+          key: _navKey,
+          observers: [_observer],
+          onGenerateRoute: (_) => PageRouteBuilder<void>(
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+            pageBuilder: (routeCtx, __, ___) => Builder(
+              builder: (innerCtx) => _NamiShellRootScope.of(innerCtx),
+            ),
           ),
         ),
       ),
@@ -290,6 +322,20 @@ class NamiExpandablePlayerController {
   static void expand() => _host?._expand();
   static void collapse() => _host?._collapse();
 
+  /// Safe close helper for NowPlayingModal: collapses the in-tree host if expanded,
+  /// and ONLY pops a route if `canPop()` is true — guaranteeing MaterialApp's root
+  /// route (`NamiHomeShell`) can NEVER be popped into a black screen!
+  static void safeClose(BuildContext context) {
+    if (hasHost && progress.value > 0.01) {
+      collapse();
+      return;
+    }
+    final nav = Navigator.maybeOf(context);
+    if (nav != null && nav.canPop()) {
+      nav.pop();
+    }
+  }
+
   static void beginDrag({required bool isOpening}) =>
       _host?._beginDrag(isOpening: isOpening);
 
@@ -307,9 +353,8 @@ class NamiExpandablePlayerController {
 }
 
 /// Permanent In-Tree Expandable Player Host living in `_NamiHomeShellState`'s root Stack.
-/// - Zero PageRoute handoffs, zero Hero shuttle fights, zero relayout jitter!
-/// - Keeps `NowPlayingModal` mounted at fixed full-screen size with `TickerMode(enabled: t > 0.005)`
-///   so Synced Lyrics mode, scroll offset & waveform state survive every collapse/re-open!
+/// Uses `Positioned.fill` + `Offstage` when collapsed so it has zero paint/clip overhead
+/// at rest while preserving Synced Lyrics mode & scroll offset across every collapse/re-open!
 class NamiExpandablePlayerHost extends StatefulWidget {
   final Widget child;
   final bool hasSong;
@@ -368,8 +413,8 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     if ((NamiExpandablePlayerController.progress.value - v).abs() > 0.0005 ||
         v == 0.0 ||
         v == 1.0) {
-      NamiExpandablePlayerController.progress.value = v;
-      NamiMorphPlayerController.progress.value = v;
+      _namiSafeSetNotifier<double>(NamiExpandablePlayerController.progress, v);
+      _namiSafeSetNotifier<double>(NamiMorphPlayerController.progress, v);
     }
   }
 
@@ -377,7 +422,11 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
   void didUpdateWidget(covariant NamiExpandablePlayerHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.hasSong && _ctrl.value > 0.0) {
-      _ctrl.value = 0.0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !widget.hasSong && _ctrl.value > 0.0) {
+          _ctrl.value = 0.0;
+        }
+      });
     }
   }
 
@@ -385,8 +434,8 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
   void dispose() {
     if (NamiExpandablePlayerController._host == this) {
       NamiExpandablePlayerController._host = null;
-      NamiExpandablePlayerController.progress.value = 0.0;
-      NamiMorphPlayerController.progress.value = 0.0;
+      _namiSafeSetNotifier<double>(NamiExpandablePlayerController.progress, 0.0);
+      _namiSafeSetNotifier<double>(NamiMorphPlayerController.progress, 0.0);
     }
     _ctrl.removeListener(_syncProgress);
     _ctrl.dispose();
@@ -510,7 +559,6 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     final pad = mq.padding;
     final fullRect = Rect.fromLTWH(0, 0, size.width, size.height);
 
-    // Pre-build persistent NowPlayingModal ONCE per parent rebuild (not per animation frame!)
     final Widget? mountedFullPlayer = (widget.hasSong && widget.fullPageBuilder != null)
         ? HeroMode(
             enabled: false,
@@ -525,120 +573,128 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         // 1. Main app shell (Tabs + Nested Navigator + Mini-Player + Bottom Nav)
         widget.child,
 
-        // 2. Permanent In-Tree Expandable Now Playing Layer (zero Route handoff!)
+        // 2. Permanent In-Tree Expandable Now Playing Layer (Positioned.fill -> tight constraints!)
         if (mountedFullPlayer != null)
-          AnimatedBuilder(
-            animation: _ctrl,
-            child: mountedFullPlayer,
-            builder: (ctx, fullChild) {
-              final rawT = _ctrl.value.clamp(0.0, 1.0);
-              final double t;
-              if (!_useCurve || _dragging) {
-                t = rawT;
-              } else if (_isReversing) {
-                t = 1.0 - _collapseCurve.transform(1.0 - rawT);
-              } else {
-                t = _expandCurve.transform(rawT);
-              }
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _ctrl,
+              child: mountedFullPlayer,
+              builder: (ctx, fullChild) {
+                final rawT = _ctrl.value.clamp(0.0, 1.0);
+                final double t;
+                if (!_useCurve || _dragging) {
+                  t = rawT;
+                } else if (_isReversing) {
+                  t = 1.0 - _collapseCurve.transform(1.0 - rawT);
+                } else {
+                  t = _expandCurve.transform(rawT);
+                }
 
-              final active = t > 0.0015;
-              final startRect = NamiMorphPlayerController.lastMiniRect ??
-                  Rect.fromLTWH(10, size.height - pad.bottom - 140, size.width - 20, 64);
-
-              final fallbackArtSize = (size.width - 30).clamp(220.0, size.height * 0.425);
-              final fullArtRect = NamiMorphPlayerController.lastFullArtRect ??
-                  Rect.fromLTWH(
-                    (size.width - fallbackArtSize) / 2,
-                    size.height * 0.1745,
-                    fallbackArtSize,
-                    fallbackArtSize,
+                final active = t > 0.0015;
+                if (!active) {
+                  // Zero paint/clip/hit-test overhead at rest while keeping NowPlayingModal
+                  // state (Lyrics mode, scroll offset) 100% alive in memory!
+                  return IgnorePointer(
+                    child: Offstage(
+                      offstage: true,
+                      child: TickerMode(
+                        enabled: false,
+                        child: fullChild,
+                      ),
+                    ),
                   );
+                }
 
-              final miniArtSize = (startRect.height - 16).clamp(38.0, 48.0);
-              final miniArtRect = Rect.fromLTWH(
-                startRect.left + 9,
-                startRect.top + (startRect.height - miniArtSize) / 2,
-                miniArtSize,
-                miniArtSize,
-              );
+                final startRect = NamiMorphPlayerController.lastMiniRect ??
+                    Rect.fromLTWH(10, size.height - pad.bottom - 140, size.width - 20, 64);
 
-              final miniInfoWidth = (startRect.width - 178).clamp(80.0, size.width - 160);
-              final miniInfoRect = Rect.fromLTWH(
-                startRect.left + miniArtSize + 20,
-                startRect.top + (startRect.height - 38) / 2,
-                miniInfoWidth,
-                40,
-              );
-              final fullInfoRect = Rect.fromLTWH(
-                24,
-                fullArtRect.bottom + 14,
-                size.width - 96,
-                56,
-              );
+                final fallbackArtSize = (size.width - 30).clamp(220.0, size.height * 0.425);
+                final fullArtRect = NamiMorphPlayerController.lastFullArtRect ??
+                    Rect.fromLTWH(
+                      (size.width - fallbackArtSize) / 2,
+                      size.height * 0.1745,
+                      fallbackArtSize,
+                      fallbackArtSize,
+                    );
 
-              final miniCtrlCenter = Offset(startRect.right - 64, startRect.center.dy);
-              final fullCtrlCenter = Offset(
-                size.width / 2,
-                (size.height * 0.864).clamp(fullArtRect.bottom + 150, size.height - pad.bottom - 78),
-              );
+                final miniArtSize = (startRect.height - 16).clamp(38.0, 48.0);
+                final miniArtRect = Rect.fromLTWH(
+                  startRect.left + 9,
+                  startRect.top + (startRect.height - miniArtSize) / 2,
+                  miniArtSize,
+                  miniArtSize,
+                );
 
-              final scrimOpacity = (t * 0.94).clamp(0.0, 0.94);
-              final cardRect = Rect.lerp(startRect, fullRect, t)!;
-              final cardRadius = ui.lerpDouble(18.0, 0.0, t)!;
-              final cardColor = Color.lerp(
-                const Color(0xFF14141E),
-                const Color(0xFF000000),
-                Curves.easeOut.transform(t),
-              )!;
+                final miniInfoWidth = (startRect.width - 178).clamp(80.0, size.width - 160);
+                final miniInfoRect = Rect.fromLTWH(
+                  startRect.left + miniArtSize + 20,
+                  startRect.top + (startRect.height - 38) / 2,
+                  miniInfoWidth,
+                  40,
+                );
+                final fullInfoRect = Rect.fromLTWH(
+                  24,
+                  fullArtRect.bottom + 14,
+                  size.width - 96,
+                  56,
+                );
 
-              final curArtRect = Rect.lerp(miniArtRect, fullArtRect, t)!;
-              final curArtRadius = ui.lerpDouble(10.0, 16.0, t)!;
-              final curInfoRect = Rect.lerp(miniInfoRect, fullInfoRect, t)!;
-              final titleSize = ui.lerpDouble(13.8, 20.5, t)!;
-              final artistSize = ui.lerpDouble(11.5, 13.5, t)!;
+                final miniCtrlCenter = Offset(startRect.right - 64, startRect.center.dy);
+                final fullCtrlCenter = Offset(
+                  size.width / 2,
+                  (size.height * 0.864).clamp(fullArtRect.bottom + 150, size.height - pad.bottom - 78),
+                );
 
-              final curCtrlCenter = Offset.lerp(miniCtrlCenter, fullCtrlCenter, t)!;
-              final playBtnSize = ui.lerpDouble(36.0, 58.0, t)!;
-              final skipIconSize = ui.lerpDouble(20.0, 30.0, t)!;
-              final ctrlGap = ui.lerpDouble(2.0, 24.0, t)!;
+                final scrimOpacity = (t * 0.94).clamp(0.0, 0.94);
+                final cardRect = Rect.lerp(startRect, fullRect, t)!;
+                final cardRadius = ui.lerpDouble(18.0, 0.0, t)!;
+                final cardColor = Color.lerp(
+                  const Color(0xFF14141E),
+                  const Color(0xFF000000),
+                  Curves.easeOut.transform(t),
+                )!;
 
-              final fullChildOpacity = !active
-                  ? 0.0
-                  : (t >= 0.985 ? 1.0 : ((t - 0.66) / 0.28).clamp(0.0, 1.0));
-              final sharedOverlayOpacity = !active || t >= 0.985
-                  ? 0.0
-                  : (1.0 - ((t - 0.84) / 0.14).clamp(0.0, 1.0));
+                final curArtRect = Rect.lerp(miniArtRect, fullArtRect, t)!;
+                final curArtRadius = ui.lerpDouble(10.0, 16.0, t)!;
+                final curInfoRect = Rect.lerp(miniInfoRect, fullInfoRect, t)!;
+                final titleSize = ui.lerpDouble(13.8, 20.5, t)!;
+                final artistSize = ui.lerpDouble(11.5, 13.5, t)!;
 
-              return IgnorePointer(
-                ignoring: !active,
-                child: Material(
+                final curCtrlCenter = Offset.lerp(miniCtrlCenter, fullCtrlCenter, t)!;
+                final playBtnSize = ui.lerpDouble(36.0, 58.0, t)!;
+                final skipIconSize = ui.lerpDouble(20.0, 30.0, t)!;
+                final ctrlGap = ui.lerpDouble(2.0, 24.0, t)!;
+
+                final fullChildOpacity = t >= 0.985
+                    ? 1.0
+                    : ((t - 0.66) / 0.28).clamp(0.0, 1.0);
+                final sharedOverlayOpacity = t >= 0.985
+                    ? 0.0
+                    : (1.0 - ((t - 0.84) / 0.14).clamp(0.0, 1.0));
+
+                return Material(
                   type: MaterialType.transparency,
                   child: Stack(
                     children: [
-                      if (active)
-                        Positioned.fill(
-                          child: ColoredBox(
-                            color: Colors.black.withValues(alpha: scrimOpacity),
-                          ),
+                      Positioned.fill(
+                        child: ColoredBox(
+                          color: Colors.black.withValues(alpha: scrimOpacity),
                         ),
-
-                      // Permanent fixed-slot NowPlayingModal container (ZERO unmounts -> Lyrics persists!)
+                      ),
                       Positioned.fromRect(
                         rect: cardRect,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(cardRadius),
                           child: DecoratedBox(
-                            decoration: active
-                                ? BoxDecoration(
-                                    color: cardColor,
-                                    border: t < 0.94
-                                        ? Border.all(
-                                            color: Colors.white.withValues(alpha: 0.10 * (1.0 - t)),
-                                            width: 0.9,
-                                          )
-                                        : null,
-                                  )
-                                : const BoxDecoration(),
+                            decoration: BoxDecoration(
+                              color: cardColor,
+                              border: t < 0.94
+                                  ? Border.all(
+                                      color: Colors.white.withValues(alpha: 0.10 * (1.0 - t)),
+                                      width: 0.9,
+                                    )
+                                  : null,
+                            ),
                             child: Stack(
                               clipBehavior: Clip.hardEdge,
                               children: [
@@ -648,7 +704,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                   width: size.width,
                                   height: size.height,
                                   child: TickerMode(
-                                    enabled: active,
+                                    enabled: true,
                                     child: IgnorePointer(
                                       ignoring: t < 0.95,
                                       child: Opacity(
@@ -663,8 +719,6 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                           ),
                         ),
                       ),
-
-                      // Crisp GPU-scaled shared-element morph overlay (Art + Title/Artist + Controls)
                       if (sharedOverlayOpacity > 0.005)
                         Positioned.fill(
                           child: IgnorePointer(
@@ -772,9 +826,9 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                         ),
                     ],
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
       ],
     );
@@ -809,8 +863,7 @@ class NamiExpandableBottomNavWrap extends StatelessWidget {
   }
 }
 
-/// Smoothly scales & fades a tab-specific FAB (like Tracks' merged Shuffle/Locate FAB)
-/// in 1:1 sync with horizontal PageView swipes and hides it whenever a nested sub-page is open.
+/// Smoothly scales & fades a tab-specific FAB in 1:1 sync with horizontal PageView swipes.
 class NamiShellTabFabWrap extends StatelessWidget {
   final int targetTabIndex;
   final Widget child;

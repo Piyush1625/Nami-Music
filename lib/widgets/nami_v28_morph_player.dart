@@ -651,9 +651,12 @@ class _NamiSpringMiniPlayerWrapState extends State<NamiSpringMiniPlayerWrap>
     if (widget.trackKey != oldWidget.trackKey && widget.trackKey != null && _lastShiftDir != 0) {
       final startOffset = _lastShiftDir < 0 ? 74.0 : -74.0;
       _lastShiftDir = 0;
-      _hSpring.stop();
-      _dx = startOffset;
-      _hSpring.animateWith(SpringSimulation(_hSpringDesc, startOffset, 0.0, 0.0));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _hSpring.stop();
+        _dx = startOffset;
+        _hSpring.animateWith(SpringSimulation(_hSpringDesc, startOffset, 0.0, 0.0));
+      });
     }
   }
 
