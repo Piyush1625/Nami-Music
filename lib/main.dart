@@ -151,6 +151,39 @@ Future<void> main() async {
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Color(0xFF07070B),
   ));
+  /* v28_1_error_widget */
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Material(
+      color: const Color(0xFF000000),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Nami UI Error Caught',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  details.exceptionAsString(),
+                  style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  details.stack?.toString().split('\n').take(8).join('\n') ?? '',
+                  style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  };
   runApp(const NamiApp());
 }
 
@@ -463,7 +496,9 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
-    _initV27AudiophileBridge();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _initV27AudiophileBridge();
+    });
     NamiUxPrefs.ensureLoaded();
     activeInstance = this;
     
@@ -11559,6 +11594,8 @@ Future<void> _exportUnifiedNamiBackup() async {
   }
 
   void _syncV27WidgetAndSession() {
+    /* v28_1_safe_guard */
+    try {
     final song = _currentSong;
     final playing = _audioPlayer.state.playing;
     NamiAudiophileEngine.updateHomeWidget(
@@ -11574,9 +11611,12 @@ Future<void> _exportUnifiedNamiBackup() async {
         queue: _playNextQueue,
       );
     }
+      } catch (_) {}
   }
 
   void _initV27AudiophileBridge() {
+    /* v28_1_safe_guard */
+    try {
     NamiUxPrefs.ensureLoaded().then((_) {
       NamiAudiophileEngine.applyMpvProperties(_audioPlayer);
     });
@@ -11594,6 +11634,7 @@ Future<void> _exportUnifiedNamiBackup() async {
     _audioPlayer.stream.playing.listen((_) {
       if (mounted) _syncV27WidgetAndSession();
     });
+      } catch (_) {}
   }
 
   void _openMorphNowPlaying({
