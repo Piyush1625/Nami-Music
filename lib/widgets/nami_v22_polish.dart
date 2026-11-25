@@ -146,7 +146,7 @@ void showNamiSignalChainSheet({
   bool eqEnabled = false,
 }) {
   final accent = Theme.of(context).colorScheme.primary;
-  final ext = (song?.path.split('.').last ?? 'AUDIO').toUpperCase();
+  final ext = namiFormatBadgeForPath(song?.path);
   final bitDepth = song?.bitDepth ?? 0;
   final sampleRate = (song?.sampleRateHz ?? 0).toDouble();
   final srStr = sampleRate > 0 ? '${(sampleRate / 1000).toStringAsFixed(1)} kHz' : 'Native Rate';

@@ -586,9 +586,7 @@ Future<void> showNamiFloatingTrackInfoCard(
   required VoidCallback onPlayNow,
   required VoidCallback onPlayNext,
 }) {
-  final ext = track.path.contains('.')
-      ? track.path.split('.').last.toUpperCase()
-      : 'AUDIO';
+  final ext = namiFormatBadgeForPath(track.path);
   final durSec = track.duration.inSeconds;
   final durStr =
       '${(durSec ~/ 60).toString().padLeft(2, '0')}:${(durSec % 60).toString().padLeft(2, '0')}';

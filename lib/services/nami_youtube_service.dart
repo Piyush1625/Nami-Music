@@ -541,7 +541,39 @@ class NamiYoutubeService {
     return results;
   }
 
-  /// Resolves a direct playable audio stream URL for `libmpv` using multi-client InnerTube.
+  /// Probes a candidate stream URL with a tiny 1KB Range request to guarantee it won't 403 in libmpv.
+  Future<bool> _probeStreamUrl(String url, Map<String, String> headers) async {
+    if (!url.startsWith('http')) return false;
+    // HLS playlists (.m3u8) return 200 on a simple GET
+    if (url.contains('.m3u8') || url.contains('manifest/hls')) {
+      try {
+        final r = await http
+            .get(Uri.parse(url), headers: headers)
+            .timeout(const Duration(seconds: 5));
+        return r.statusCode >= 200 && r.statusCode < 400 && r.body.contains('#EXTM3U');
+      } catch (_) {
+        return false;
+      }
+    }
+    final client = http.Client();
+    try {
+      final req = http.Request('GET', Uri.parse(url));
+      req.headers.addAll(headers);
+      req.headers['Range'] = 'bytes=0-1023';
+      final streamed = await client.send(req).timeout(const Duration(seconds: 5));
+      final ok = streamed.statusCode == 200 || streamed.statusCode == 206;
+      // Drain/cancel stream cleanly without downloading the file
+      streamed.stream.listen((_) {}).cancel();
+      return ok;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Resolves a verified, playable audio stream URL for `libmpv` using a 6-tier fallback pipeline
+  /// with live HTTP Range probing so 403 Forbidden URLs are rejected automatically.
   Future<NamiYtStreamResult?> resolveAudioStream(
     String videoId, {
     String quality = 'High (Opus)',
@@ -557,6 +589,24 @@ class NamiYoutubeService {
     final (gl, hl) = _regionLocale(region);
 
     final clients = <Map<String, dynamic>>[
+      {
+        'name': 'IOS',
+        'ua': _iosUserAgent,
+        'clientHeader': '5',
+        'version': '20.10.4',
+        'context': {
+          'client': {
+            'clientName': 'IOS',
+            'clientVersion': '20.10.4',
+            'deviceMake': 'Apple',
+            'deviceModel': 'iPhone16,2',
+            'osName': 'iPhone',
+            'osVersion': '18.3.2.22D82',
+            'gl': gl,
+            'hl': hl,
+          },
+        },
+      },
       {
         'name': 'ANDROID_VR',
         'ua': _vrUserAgent,
@@ -577,20 +627,19 @@ class NamiYoutubeService {
         },
       },
       {
-        'name': 'IOS',
-        'ua': _iosUserAgent,
-        'clientHeader': '5',
-        'version': '20.10.4',
+        'name': 'TVHTML5_EMBED',
+        'ua': _webUserAgent,
+        'clientHeader': '85',
+        'version': '2.0',
         'context': {
           'client': {
-            'clientName': 'IOS',
-            'clientVersion': '20.10.4',
-            'deviceMake': 'Apple',
-            'deviceModel': 'iPhone16,2',
-            'osName': 'iPhone',
-            'osVersion': '18.3.2.22D82',
+            'clientName': 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+            'clientVersion': '2.0',
             'gl': gl,
             'hl': hl,
+          },
+          'thirdParty': {
+            'embedUrl': 'https://www.youtube.com/',
           },
         },
       },
@@ -613,12 +662,13 @@ class NamiYoutubeService {
 
     for (final c in clients) {
       try {
+        final ua = c['ua'] as String;
         final resp = await http
             .post(
               Uri.parse('$_ytApiBase/player?prettyPrint=false'),
               headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': c['ua'] as String,
+                'User-Agent': ua,
                 'X-YouTube-Client-Name': c['clientHeader'] as String,
                 'X-YouTube-Client-Version': c['version'] as String,
               },
@@ -629,12 +679,18 @@ class NamiYoutubeService {
                 'racyCheckOk': true,
               }),
             )
-            .timeout(const Duration(seconds: 9));
+            .timeout(const Duration(seconds: 8));
 
         if (resp.statusCode != 200) continue;
         final json = jsonDecode(resp.body) as Map<String, dynamic>;
         final sd = json['streamingData'];
         if (sd is! Map<String, dynamic>) continue;
+
+        final durSec = int.tryParse(
+              (json['videoDetails']?['lengthSeconds'] ?? '0').toString(),
+            ) ??
+            0;
+        final streamHeaders = <String, String>{'User-Agent': ua};
 
         final formats = <Map<String, dynamic>>[];
         final adaptive = sd['adaptiveFormats'];
@@ -649,7 +705,6 @@ class NamiYoutubeService {
             }
           }
         }
-        // Fallback to muxed formats if audio-only wasn't returned
         if (formats.isEmpty && sd['formats'] is List) {
           for (final f in sd['formats'] as List) {
             if (f is Map<String, dynamic> &&
@@ -659,33 +714,120 @@ class NamiYoutubeService {
           }
         }
 
-        if (formats.isEmpty) continue;
-        final picked = _pickStreamByQuality(formats, quality);
-        final durSec = int.tryParse(
-              (json['videoDetails']?['lengthSeconds'] ?? '0').toString(),
-            ) ??
-            0;
-        final res = NamiYtStreamResult(
-          videoId: videoId,
-          audioUrl: picked['url'].toString(),
-          mimeType: (picked['mimeType'] ?? 'audio/webm').toString(),
-          bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
-          duration: Duration(seconds: durSec),
-          headers: {'User-Agent': c['ua'] as String},
-          expiresAtMs: DateTime.now()
-              .add(const Duration(hours: 3, minutes: 30))
-              .millisecondsSinceEpoch,
-          clientUsed: c['name'] as String,
-        );
-        _streamCache[cacheKey] = res;
-        return res;
+        if (formats.isNotEmpty) {
+          final picked = _pickStreamByQuality(formats, quality);
+          final candUrl = picked['url'].toString();
+          if (await _probeStreamUrl(candUrl, streamHeaders)) {
+            final res = NamiYtStreamResult(
+              videoId: videoId,
+              audioUrl: candUrl,
+              mimeType: (picked['mimeType'] ?? 'audio/mp4').toString(),
+              bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
+              duration: Duration(seconds: durSec),
+              headers: streamHeaders,
+              expiresAtMs: DateTime.now()
+                  .add(const Duration(hours: 3, minutes: 30))
+                  .millisecondsSinceEpoch,
+              clientUsed: c['name'] as String,
+            );
+            _streamCache[cacheKey] = res;
+            return res;
+          }
+        }
+
+        // Try iOS HLS manifest if direct adaptive URL 403'd (libmpv plays HLS natively!)
+        final hlsUrl = (sd['hlsManifestUrl'] ?? '').toString();
+        if (hlsUrl.startsWith('http') &&
+            await _probeStreamUrl(hlsUrl, streamHeaders)) {
+          final res = NamiYtStreamResult(
+            videoId: videoId,
+            audioUrl: hlsUrl,
+            mimeType: 'application/x-mpegURL',
+            bitrate: 128000,
+            duration: Duration(seconds: durSec),
+            headers: streamHeaders,
+            expiresAtMs: DateTime.now()
+                .add(const Duration(hours: 2, minutes: 30))
+                .millisecondsSinceEpoch,
+            clientUsed: '${c['name']}_HLS',
+          );
+          _streamCache[cacheKey] = res;
+          return res;
+        }
       } catch (e) {
         debugPrint('[NamiYT] player client ${c['name']} failed: $e');
       }
     }
 
-    // 4. Final resilient fallback: Piped public instances
-    for (final base in _pipedInstances) {
+    // Tier 5: Invidious public API instances (proxied local=true audio streams never 403!)
+    const invidiousHosts = [
+      'https://inv.nadeko.net',
+      'https://invidious.nerdvpn.de',
+      'https://yt.artemislena.eu',
+      'https://invidious.jing.rocks',
+    ];
+    for (final host in invidiousHosts) {
+      try {
+        final resp = await http
+            .get(
+              Uri.parse('$host/api/v1/videos/$videoId'),
+              headers: const {'User-Agent': _webUserAgent},
+            )
+            .timeout(const Duration(seconds: 7));
+        if (resp.statusCode != 200) continue;
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final adaptive = data['adaptiveFormats'];
+        if (adaptive is! List) continue;
+        final formats = <Map<String, dynamic>>[];
+        for (final f in adaptive) {
+          if (f is Map<String, dynamic>) {
+            final type = (f['type'] ?? '').toString();
+            final rawUrl = (f['url'] ?? '').toString();
+            if (type.startsWith('audio/') && rawUrl.isNotEmpty) {
+              // Prefer proxied local=true stream through Invidious host to bypass IP/PoToken blocks
+              final itag = (f['itag'] ?? '').toString();
+              final proxied = itag.isNotEmpty
+                  ? '$host/latest_version?id=$videoId&itag=$itag&local=true'
+                  : (rawUrl.startsWith('http') ? rawUrl : '$host$rawUrl');
+              formats.add({
+                'url': proxied,
+                'mimeType': type,
+                'bitrate': int.tryParse((f['bitrate'] ?? '128000').toString()) ?? 128000,
+              });
+            }
+          }
+        }
+        if (formats.isEmpty) continue;
+        final picked = _pickStreamByQuality(formats, quality);
+        final candUrl = picked['url'].toString();
+        const hdrs = {'User-Agent': _webUserAgent};
+        if (await _probeStreamUrl(candUrl, hdrs)) {
+          final res = NamiYtStreamResult(
+            videoId: videoId,
+            audioUrl: candUrl,
+            mimeType: picked['mimeType'].toString(),
+            bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
+            duration: Duration(seconds: (data['lengthSeconds'] as num?)?.toInt() ?? 0),
+            headers: hdrs,
+            expiresAtMs: DateTime.now()
+                .add(const Duration(hours: 2))
+                .millisecondsSinceEpoch,
+            clientUsed: 'INVIDIOUS',
+          );
+          _streamCache[cacheKey] = res;
+          return res;
+        }
+      } catch (_) {}
+    }
+
+    // Tier 6: Piped public instances (proxied audioStreams)
+    const pipedHosts = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.private.coffee',
+      'https://pipedapi.adminforge.de',
+      'https://pipedapi.leptons.xyz',
+    ];
+    for (final base in pipedHosts) {
       try {
         final resp = await http
             .get(Uri.parse('$base/streams/$videoId'))
@@ -707,20 +849,24 @@ class NamiYoutubeService {
         }
         if (formats.isEmpty) continue;
         final picked = _pickStreamByQuality(formats, quality);
-        final res = NamiYtStreamResult(
-          videoId: videoId,
-          audioUrl: picked['url'].toString(),
-          mimeType: picked['mimeType'].toString(),
-          bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
-          duration: Duration(seconds: (data['duration'] as num?)?.toInt() ?? 0),
-          headers: const {'User-Agent': _webUserAgent},
-          expiresAtMs: DateTime.now()
-              .add(const Duration(hours: 2))
-              .millisecondsSinceEpoch,
-          clientUsed: 'PIPED',
-        );
-        _streamCache[cacheKey] = res;
-        return res;
+        final candUrl = picked['url'].toString();
+        const hdrs = {'User-Agent': _webUserAgent};
+        if (await _probeStreamUrl(candUrl, hdrs)) {
+          final res = NamiYtStreamResult(
+            videoId: videoId,
+            audioUrl: candUrl,
+            mimeType: picked['mimeType'].toString(),
+            bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
+            duration: Duration(seconds: (data['duration'] as num?)?.toInt() ?? 0),
+            headers: hdrs,
+            expiresAtMs: DateTime.now()
+                .add(const Duration(hours: 2))
+                .millisecondsSinceEpoch,
+            clientUsed: 'PIPED',
+          );
+          _streamCache[cacheKey] = res;
+          return res;
+        }
       } catch (_) {}
     }
 

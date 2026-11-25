@@ -1106,6 +1106,11 @@ Future<void> _playSong(AudioTrack song) async {
   }
 
   void _playNextTrack() {
+    /* v30_1_yt_skip */
+    if (_currentSong != null && _currentSong!.path.startsWith('http') && NamiYoutubePlaybackBridge.activeYtTrack.value != null) {
+      NamiYoutubePlaybackBridge.playNextInRadioQueue();
+      return;
+    }
     if (_playNextQueue.isNotEmpty) {
       final next = _playNextQueue.removeAt(0);
       _playSong(next);
@@ -1132,6 +1137,11 @@ Future<void> _playSong(AudioTrack song) async {
   }
 
   void _playPrevTrack() {
+    /* v30_1_yt_skip */
+    if (_currentSong != null && _currentSong!.path.startsWith('http') && NamiYoutubePlaybackBridge.activeYtTrack.value != null) {
+      NamiYoutubePlaybackBridge.playPrevInRadioQueue();
+      return;
+    }
     if (_filteredSongs.isNotEmpty && _currentSong != null) {
       int prevIdx = (_filteredSongs.indexOf(_currentSong!) -
               1 +
@@ -2761,7 +2771,7 @@ const SizedBox(height: 10),
       track: song,
       onFetchCoverOnline: () => _openTrackCoverOnlinePicker(song),
       coverArt: _buildCoverArt(song, 50, 12),
-      formatBadgeText: '${song.path.split('.').last.toUpperCase()} ${song.bitDepth > 0 ? '${song.bitDepth}B' : ''}'.trim(),
+      formatBadgeText: namiFormatBadgeForPath(song.path, bitDepth: song.bitDepth),
       isFavorite: false,
       onToggleFavorite: () => setState(() {}),
       onPlayNext: () { setState(() => _playNextQueue.add(song));
@@ -2778,7 +2788,7 @@ const SizedBox(height: 10),
   }
 
   void _showTrackFileInfoSheet(AudioTrack song) {
-    final ext = song.path.contains('.') ? song.path.split('.').last.toUpperCase() : 'AUDIO';
+    final ext = namiFormatBadgeForPath(song.path);
     final sizeMb = song.fileSize > 0 ? '${(song.fileSize / (1024 * 1024)).toStringAsFixed(2)} MB' : 'Unknown';
     final khz = (song.sampleRateHz / 1000.0).toStringAsFixed(1);
     showModalBottomSheet(
@@ -8674,10 +8684,10 @@ void _showCreatePlaylistDialog() {
               label: 'Playlists',
             ),
             NavigationDestination(
-              icon: Icon(Icons.extension_outlined, color: Colors.white60, size: 23),
-              selectedIcon: Icon(Icons.extension_rounded, color: Colors.white, size: 23),
-              label: 'Mornye',
-            ),
+                      icon: Icon(Icons.ondemand_video_rounded, color: Colors.white60, size: 25),
+                      selectedIcon: Icon(Icons.play_circle_filled_rounded, color: Colors.white, size: 25),
+                      label: 'YouTube',
+                    ),
           ],
         ),
         ),
@@ -10421,7 +10431,7 @@ void _showListenBrainzSettingsDialog() {
         track: track,
       onFetchCoverOnline: () => _openTrackCoverOnlinePicker(track),
         coverArt: _buildCoverArt(track, 50, 12),
-        formatBadgeText: '${track.path.split('.').last.toUpperCase()} ${track.bitDepth > 0 ? '${track.bitDepth}B' : ''}'.trim(),
+        formatBadgeText: namiFormatBadgeForPath(track.path, bitDepth: track.bitDepth),
         isFavorite: false,
         onToggleFavorite: () => setState(() {}),
         onPlayNext: () => setState(() => _playNextQueue.insert(0, track)),
@@ -11923,12 +11933,33 @@ Future<void> _exportUnifiedNamiBackup() async {
     }
   }
 
-  Future<void> _playV30YoutubeAudioTrack(AudioTrack track) async {
+  Future<void> _playV30YoutubeAudioTrack(
+    AudioTrack track, {
+    Map<String, String>? httpHeaders,
+  }) async {
+    /* v30_1_direct_yt_mpv */
+    if (!track.path.startsWith('http')) {
+      await _playSong(track);
+      return;
+    }
+    setState(() {
+      _currentSong = track;
+    });
     try {
-      _playSong(track);
-    } catch (_) {
-      setState(() => _currentSong = track);
-      await _audioPlayer.open(Media(track.path));
+      await _audioPlayer.open(
+        Media(
+          track.path,
+          httpHeaders: httpHeaders ?? const <String, String>{},
+        ),
+        play: true,
+      );
+      await _audioPlayer.play();
+    } catch (e) {
+      debugPrint('[NamiYT] libmpv open failed: $e');
+      NamiLiveToastController.showMessage(
+        'Playback error — retrying stream',
+        icon: Icons.error_outline_rounded,
+      );
     }
     _syncV27WidgetAndSession(force: true);
   }

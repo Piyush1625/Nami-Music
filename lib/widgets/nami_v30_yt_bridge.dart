@@ -1,5 +1,31 @@
 part of '../main.dart';
 
+/// Cleanly derives a short audio format badge (`FLAC 24B`, `MP3`, `YT OPUS`, `YT M4A`)
+/// without ever leaking HTTP/YouTube query parameters (`421&LMT=1786...`) onto the UI.
+String namiFormatBadgeForPath(
+  String? path, {
+  int bitDepth = 0,
+  String fallback = 'AUDIO',
+}) {
+  if (path == null || path.isEmpty) return fallback;
+  final lower = path.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    if (lower.contains('.m3u8') || lower.contains('manifest/hls')) return 'YT HLS';
+    if (lower.contains('mime=audio%2fwebm') || lower.contains('opus') || lower.contains('itag=251') || lower.contains('itag=250')) {
+      return 'YT OPUS';
+    }
+    if (lower.contains('mime=audio%2fmp4') || lower.contains('m4a') || lower.contains('itag=140')) {
+      return 'YT M4A';
+    }
+    return 'YT AUDIO';
+  }
+  final clean = path.split('?').first;
+  final ext = clean.contains('.') ? clean.split('.').last.toUpperCase() : fallback;
+  final safeExt = (ext.isEmpty || ext.length > 8) ? fallback : ext;
+  return bitDepth > 0 ? '$safeExt ${bitDepth}B' : safeExt;
+}
+
+
 /// Unified YouTube -> libmpv Playback Bridge, SponsorBlock & Auto-Start Radio Controller.
 class NamiYoutubePlaybackBridge {
   static final ValueNotifier<NamiYtTrack?> activeYtTrack =
@@ -62,6 +88,20 @@ class NamiYoutubePlaybackBridge {
   static void dispose() {
     _sbSub?.cancel();
     _sbSub = null;
+  }
+
+  static Future<bool> playNextInRadioQueue() async {
+    final q = radioQueue.value;
+    if (q.isEmpty) return false;
+    final next = q.first;
+    final rest = q.skip(1).toList();
+    return playTrack(next, upcoming: rest);
+  }
+
+  static Future<bool> playPrevInRadioQueue() async {
+    final hist = NamiYoutubeStore.instance.history;
+    if (hist.length < 2) return false;
+    return playTrack(hist[1]);
   }
 
   static void clearActiveYoutubeTrack() {
@@ -132,7 +172,7 @@ class NamiYoutubePlaybackBridge {
       _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, enrichedYt);
 
       // Hand off to Nami's unified player pipeline (sets _currentSong, libmpv, Widget & Lyrics)
-      await shell._playV30YoutubeAudioTrack(audioTrack);
+      await shell._playV30YoutubeAudioTrack(audioTrack, httpHeaders: stream.headers);
 
       // Persist play in local-first YouTube store (History, Recent Listens, Most Played, Mixes)
       await NamiYoutubeStore.instance.recordPlay(enrichedYt);

@@ -210,7 +210,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
     return ValueListenableBuilder<AudioTrack?>(
       valueListenable: widget.currentSongNotifier,
       builder: (context, song, _) {
-        final ext = (song?.path.split('.').last ?? 'FLAC').toUpperCase();
+        final ext = namiFormatBadgeForPath(song?.path, fallback: 'FLAC');
         final bitrate = song?.bitrateKbps ?? 1645;
         final kHz = ((song?.sampleRateHz ?? 48000) / 1000.0).toStringAsFixed(1);
         final mq = MediaQuery.of(context);

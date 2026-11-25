@@ -390,6 +390,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
   bool _dragging = false;
   bool _useCurve = true;
   bool _isReversing = false;
+  bool _immersiveApplied = false;
 
   Widget? _cachedCoverWidget;
   String _cachedCoverKey = '';
@@ -417,6 +418,19 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         v == 1.0) {
       _namiSafeSetNotifier<double>(NamiExpandablePlayerController.progress, v);
       _namiSafeSetNotifier<double>(NamiMorphPlayerController.progress, v);
+      /* v30_1_immersive */
+      if (NamiUxPrefs.immersiveMode) {
+        if (v > 0.88 && !_immersiveApplied) {
+          _immersiveApplied = true;
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        } else if (v < 0.20 && _immersiveApplied) {
+          _immersiveApplied = false;
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        }
+      } else if (_immersiveApplied) {
+        _immersiveApplied = false;
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      }
     }
   }
 

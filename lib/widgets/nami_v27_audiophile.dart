@@ -23,6 +23,17 @@ class NamiAudiophileEngine {
       await dyn.setProperty('replaygain', NamiUxPrefs.replayGainMode);
       await dyn.setProperty('replaygain-preamp', '0');
       await dyn.setProperty('replaygain-clip', 'no');
+      /* v30_1_real_dsp */
+      await dyn.setProperty(
+        'af',
+        NamiUxPrefs.skipSilence
+            ? 'lavfi=[silenceremove=start_periods=1:start_threshold=-50dB:stop_periods=-1:stop_duration=0.4:stop_threshold=-50dB]'
+            : '',
+      );
+      final bufMb = (NamiUxPrefs.audioCacheLimitGb * 32).clamp(32, 256);
+      await dyn.setProperty('demuxer-max-bytes', '${bufMb}MiB');
+      PaintingBinding.instance.imageCache.maximumSizeBytes =
+          NamiUxPrefs.imageCacheLimitMb.clamp(64, 1024) * 1024 * 1024;
     } catch (_) {}
   }
 
