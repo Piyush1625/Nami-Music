@@ -599,7 +599,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                       offstage: true,
                       child: TickerMode(
                         enabled: false,
-                        child: fullChild,
+                        child: fullChild ?? const SizedBox.shrink(),
                       ),
                     ),
                   );
