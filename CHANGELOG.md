@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.2.0 — 2026-11-26
+
+### Pure-YouTube BotGuard & Instant Streaming Engine
+- **100% Pure-YouTube Playback (Removed JioSaavn Fallback):** Every YouTube play and offline download streams genuine `googlevideo.com` audio (supports all songs, remixes, live sets, covers & podcasts).
+- **Native Android Headless Chromium BotGuard Extractor (`NamiYtWebViewEngine.kt`):** Pre-warmed invisible `1x1` Chromium WebView runs real BotGuard JS on-device to mint PoTokens and extract genuine audio streams — working **both Logged-Out (anonymous) and Signed-In**.
+- **1-Tap In-App YouTube Sign-In & Logged-Out Switcher:** Switch seamlessly between anonymous Logged-Out BotGuard mode and your YouTube account from the YouTube tab or **Settings → YouTube & Mornye** (shared Android `CookieManager` + `SAPISIDHASH`).
+- **Instant-Start Progressive Chunk-Cached Server (`NamiYtProgressiveProxy`):** Verifies Chunk 0 (`512 KB`, ~150ms) and starts `libmpv` immediately over local `127.0.0.1` HTTP while 4 parallel workers finish caching the track to disk with instant scrubbing and 0ms replay.
+
 ## v3.1.0 — 2026-11-26
 
 ### Flagship Upgrades

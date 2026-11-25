@@ -220,8 +220,6 @@ class NamiYtDownloadManager {
             region: NamiUxPrefs.youtubeRegion,
             forceRefresh: attempt > 0,
             excludeClients: exclude,
-            fallbackTitle: track.title,
-            fallbackArtist: track.artist,
           );
           if (stream == null) break;
           final downloaded = await NamiYtAudioCache.instance.ensureCachedAudioFile(

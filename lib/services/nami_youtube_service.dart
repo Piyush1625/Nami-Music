@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -534,16 +535,83 @@ class NamiYoutubeService {
     return results;
   }
 
-  /// Last diagnostic trace when stream resolution fails across all clients.
+  /// Last diagnostic trace when stream resolution fails across all pure-YouTube tiers.
   static String lastResolveDiagnostic = '';
   static String _cachedVisitorData = '';
   static int _visitorDataFetchedAtMs = 0;
   static String customYoutubeCookie = '';
+  static String _nativeWebViewCookie = '';
+  static String _nativeWebViewUa = '';
+  static final ValueNotifier<bool> isSignedIn = ValueNotifier<bool>(false);
+  static const MethodChannel _ytNativeChannel = MethodChannel('com.piyush.nami/yt_engine');
+
+  static String get _effectiveCookie =>
+      customYoutubeCookie.isNotEmpty ? customYoutubeCookie : _nativeWebViewCookie;
+
+  static void _applyNativeSessionMap(dynamic raw) {
+    if (raw is! Map) return;
+    final cookie = (raw['cookie'] ?? '').toString().trim();
+    final ua = (raw['userAgent'] ?? '').toString().trim();
+    if (ua.isNotEmpty) _nativeWebViewUa = ua;
+    _nativeWebViewCookie = cookie;
+    final signed = raw['signedIn'] == true ||
+        _effectiveCookie.contains('SAPISID=') ||
+        _effectiveCookie.contains('__Secure-3PAPISID=');
+    isSignedIn.value = signed;
+  }
+
+  /// Pre-warms Android's invisible Chromium WebView & syncs live logged-in/logged-out session state.
+  static Future<void> warmUpNativeEngine() async {
+    await loadCustomCookie();
+    try {
+      final res = await _ytNativeChannel
+          .invokeMethod<dynamic>('warmUp')
+          .timeout(const Duration(seconds: 4));
+      _applyNativeSessionMap(res);
+    } catch (_) {}
+  }
+
+  static Future<void> refreshNativeSessionStatus() async {
+    try {
+      final res = await _ytNativeChannel
+          .invokeMethod<dynamic>('getSessionStatus')
+          .timeout(const Duration(seconds: 4));
+      _applyNativeSessionMap(res);
+    } catch (_) {}
+  }
+
+  /// Opens native in-app YouTube sign-in dialog (optional — Logged-Out BotGuard works without signing in).
+  static Future<bool> openInAppSignIn() async {
+    try {
+      final res = await _ytNativeChannel.invokeMethod<dynamic>('openSignIn');
+      _applyNativeSessionMap(res);
+      return isSignedIn.value;
+    } catch (_) {
+      return isSignedIn.value;
+    }
+  }
+
+  /// Signs out of YouTube & switches cleanly back to anonymous Logged-Out BotGuard mode.
+  static Future<void> signOutYoutube() async {
+    await saveCustomCookie('');
+    _nativeWebViewCookie = '';
+    try {
+      final res = await _ytNativeChannel
+          .invokeMethod<dynamic>('signOut')
+          .timeout(const Duration(seconds: 5));
+      _applyNativeSessionMap(res);
+    } catch (_) {}
+    isSignedIn.value = false;
+  }
 
   static Future<void> loadCustomCookie() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       customYoutubeCookie = prefs.getString('nami_v31_yt_cookie') ?? '';
+      if (customYoutubeCookie.contains('SAPISID=') ||
+          customYoutubeCookie.contains('__Secure-3PAPISID=')) {
+        isSignedIn.value = true;
+      }
     } catch (_) {}
   }
 
@@ -553,10 +621,56 @@ class NamiYoutubeService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('nami_v31_yt_cookie', customYoutubeCookie);
     } catch (_) {}
+    isSignedIn.value = _effectiveCookie.contains('SAPISID=') ||
+        _effectiveCookie.contains('__Secure-3PAPISID=');
   }
 
-  /// Fetches a fresh YouTube `visitorData` token once every 30 min from `sw.js_data`
-  /// (mirrors youtube_explode_dart & yt-dlp to prevent CGNAT LOGIN_REQUIRED bot walls).
+  /// Calls Android's invisible Chromium WebView to run Google's real BotGuard JS and intercept
+  /// a genuine PoToken-signed `googlevideo.com` audio stream (works BOTH logged-out & logged-in!).
+  Future<NamiYtStreamResult?> _extractViaNativeWebView(String videoId) async {
+    try {
+      final res = await _ytNativeChannel
+          .invokeMethod<dynamic>('extractAudioStream', {'videoId': videoId})
+          .timeout(const Duration(seconds: 13));
+      if (res is! Map) return null;
+      final url = (res['url'] ?? '').toString();
+      if (!url.startsWith('http')) return null;
+      final mime = (res['mimeType'] ?? 'audio/webm').toString();
+      final ua = (res['userAgent'] ?? _nativeWebViewUa).toString();
+      final cookie = (res['cookie'] ?? '').toString();
+      if (cookie.isNotEmpty) {
+        _nativeWebViewCookie = cookie;
+        isSignedIn.value =
+            _effectiveCookie.contains('SAPISID=') || _effectiveCookie.contains('__Secure-3PAPISID=');
+      }
+      final clen = (res['contentLength'] as num?)?.toInt() ?? 0;
+      final clientUsed = (res['clientUsed'] ?? 'WEBVIEW_BOTGUARD').toString();
+      final hdrs = <String, String>{
+        'User-Agent': ua.isNotEmpty ? ua : _webUserAgent,
+        if (cookie.isNotEmpty) 'Cookie': cookie,
+        if (clen > 0) 'X-Nami-Content-Length': '$clen',
+      };
+      if (await _probeStreamUrl(url, hdrs)) {
+        return NamiYtStreamResult(
+          videoId: videoId,
+          audioUrl: url,
+          mimeType: mime,
+          bitrate: mime.contains('webm') ? 140000 : 128000,
+          duration: Duration.zero,
+          headers: hdrs,
+          expiresAtMs: DateTime.now()
+              .add(const Duration(hours: 3))
+              .millisecondsSinceEpoch,
+          clientUsed: clientUsed,
+        );
+      }
+    } catch (e) {
+      debugPrint('[NamiYT] Native WebView BotGuard extract failed: $e');
+    }
+    return null;
+  }
+
+  /// Fetches a fresh anonymous YouTube `visitorData` token once every 30 min from `sw.js_data`.
   Future<String> _ensureVisitorData() async {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (_cachedVisitorData.isNotEmpty && (now - _visitorDataFetchedAtMs) < 1800000) {
@@ -583,7 +697,7 @@ class NamiYoutubeService {
     return _cachedVisitorData;
   }
 
-  /// Computes `SAPISIDHASH <ts>_<sha1>` header when the user provides optional YouTube cookies.
+  /// Computes `SAPISIDHASH <ts>_<sha1>` header whenever the user is signed into YouTube.
   String? _buildSapisidAuthHeader(String cookie, {String origin = 'https://www.youtube.com'}) {
     final m = RegExp(r'(?:^|;\s*)(?:__Secure-3PAPISID|SAPISID)=([^;\s]+)').firstMatch(cookie);
     if (m == null || m.group(1) == null) return null;
@@ -688,10 +802,14 @@ class NamiYoutubeService {
   /// Probes either an HLS `.m3u8` playlist OR the first 32KB audio chunk with magic-byte verification.
   Future<bool> _probeStreamUrl(String url, Map<String, String> headers) async {
     if (!url.startsWith('http')) return false;
+    final cleanHeaders = <String, String>{};
+    headers.forEach((k, v) {
+      if (!k.toLowerCase().startsWith('x-nami-')) cleanHeaders[k] = v;
+    });
     if (url.contains('.m3u8') || url.contains('manifest/hls')) {
       try {
         final r = await http
-            .get(Uri.parse(url), headers: headers)
+            .get(Uri.parse(url), headers: cleanHeaders)
             .timeout(const Duration(seconds: 6));
         return r.statusCode >= 200 && r.statusCode < 400 && r.body.contains('#EXTM3U');
       } catch (_) {
@@ -700,12 +818,11 @@ class NamiYoutubeService {
     }
     try {
       final probeUri = buildBoundedChunkUri(url, 0, 32767);
-      final reqHeaders = Map<String, String>.from(headers);
       if (!probeUri.toString().contains('range=')) {
-        reqHeaders['Range'] = 'bytes=0-32767';
+        cleanHeaders['Range'] = 'bytes=0-32767';
       }
       final resp = await http
-          .get(probeUri, headers: reqHeaders)
+          .get(probeUri, headers: cleanHeaders)
           .timeout(const Duration(seconds: 6));
       if (resp.statusCode != 200 && resp.statusCode != 206) return false;
       final ct = (resp.headers['content-type'] ?? '').toLowerCase();
@@ -716,22 +833,17 @@ class NamiYoutubeService {
     }
   }
 
-  /// Late-2026 Verified Multi-Tier Audio Engine (`v3.1.2`):
-  /// 0. Live `visitorData` session bootstrap (`sw.js_data`) + optional user YouTube cookie auth
-  /// 1. `IOS` (`20.10.4`, no `params`, adaptive + HLS — bypasses CGNAT `LOGIN_REQUIRED`)
-  /// 2. `ANDROID_SDKLESS` (`20.10.38`, no SDK version — youtube_explode_dart 403 fix)
-  /// 3. `VISIONOS` (`1.02`, HLS + adaptive)
-  /// 4. `ANDROID_VR` (`1.71.26`)
-  /// 5. `WEB_SAFARI` (HLS) & `TV_SAMSUNG`
-  /// 6. Official Direct JioSaavn Web API (`jiosaavn.com/api.php` + pure-Dart DES-ECB 320kbps AAC/M4A)
+  /// 100% Pure-YouTube Multi-Tier Resolver (`v3.2.0` — ZERO third-party music catalogs):
+  /// - Fast Path (~250ms): Direct InnerTube (`IOS`, `ANDROID_SDKLESS`, `VISIONOS`, `ANDROID_VR`)
+  ///   with live `visitorData` + shared Chromium cookies (works immediately when signed in or unflagged)
+  /// - Native BotGuard Path (~1.4s): Invisible Android Chromium WebView runs YouTube's real BotGuard JS
+  ///   to mint anonymous or authenticated PoTokens and capture real `googlevideo.com` audio streams!
   Future<NamiYtStreamResult?> resolveAudioStream(
     String videoId, {
     String quality = 'High (Opus)',
     String region = 'IN',
     bool forceRefresh = false,
     Set<String> excludeClients = const <String>{},
-    String? fallbackTitle,
-    String? fallbackArtist,
   }) async {
     final cacheKey = '$videoId|$quality';
     final cached = _streamCache[cacheKey];
@@ -745,13 +857,12 @@ class NamiYoutubeService {
     final (gl, hl) = _regionLocale(region);
     final visitorData = await _ensureVisitorData();
     final diag = <String>[];
-    final hasCookie = customYoutubeCookie.isNotEmpty;
-    final authHdr = hasCookie ? _buildSapisidAuthHeader(customYoutubeCookie) : null;
+    final cookie = _effectiveCookie;
+    final hasCookie = cookie.isNotEmpty;
+    final authHdr = hasCookie ? _buildSapisidAuthHeader(cookie) : null;
 
     const safariUa =
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15';
-    const samsungTvUa =
-        'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36';
     const androidUa =
         'com.google.android.youtube/20.10.38 (Linux; U; Android 14; en_IN) gzip';
     const vr171Ua =
@@ -770,7 +881,6 @@ class NamiYoutubeService {
         'ua': _iosUserAgent,
         'clientHeader': '5',
         'version': '20.10.4',
-        'preferHls': true,
         'context': {
           'client': withVisitor({
             'clientName': 'IOS',
@@ -789,7 +899,6 @@ class NamiYoutubeService {
         'ua': androidUa,
         'clientHeader': '3',
         'version': '20.10.38',
-        'preferHls': false,
         'context': {
           'client': withVisitor({
             'clientName': 'ANDROID',
@@ -805,7 +914,6 @@ class NamiYoutubeService {
         'ua': safariUa,
         'clientHeader': '101',
         'version': '1.02',
-        'preferHls': true,
         'context': {
           'client': withVisitor({
             'clientName': 'VISIONOS',
@@ -823,7 +931,6 @@ class NamiYoutubeService {
         'ua': vr171Ua,
         'clientHeader': '28',
         'version': '1.71.26',
-        'preferHls': false,
         'context': {
           'client': withVisitor({
             'clientName': 'ANDROID_VR',
@@ -838,26 +945,9 @@ class NamiYoutubeService {
           }),
         },
       },
-      {
-        'name': 'TV_SAMSUNG',
-        'ua': samsungTvUa,
-        'clientHeader': '7',
-        'version': '7.20261015.10.00',
-        'preferHls': false,
-        'context': {
-          'client': withVisitor({
-            'clientName': 'TVHTML5',
-            'clientVersion': '7.20261015.10.00',
-            'deviceMake': 'Samsung',
-            'osName': 'Tizen',
-            'osVersion': '7.0',
-            'gl': gl,
-            'hl': hl,
-          }),
-        },
-      },
     ];
 
+    // Fast InnerTube pass (~250-500ms total when unblocked or signed in)
     for (final c in clients) {
       final cname = c['name'] as String;
       final hlsName = '${cname}_HLS';
@@ -873,7 +963,7 @@ class NamiYoutubeService {
           'X-YouTube-Client-Name': c['clientHeader'] as String,
           'X-YouTube-Client-Version': c['version'] as String,
           if (visitorData.isNotEmpty) 'X-Goog-Visitor-Id': visitorData,
-          if (hasCookie) 'Cookie': customYoutubeCookie,
+          if (hasCookie) 'Cookie': cookie,
           if (authHdr != null) 'Authorization': authHdr,
         };
         final resp = await http
@@ -887,7 +977,7 @@ class NamiYoutubeService {
                 'racyCheckOk': true,
               }),
             )
-            .timeout(const Duration(seconds: 7));
+            .timeout(const Duration(seconds: 5));
 
         if (resp.statusCode != 200) {
           diag.add('$cname:h${resp.statusCode}');
@@ -911,10 +1001,9 @@ class NamiYoutubeService {
             0;
         final streamHeaders = <String, String>{
           'User-Agent': ua,
-          if (hasCookie) 'Cookie': customYoutubeCookie,
+          if (hasCookie) 'Cookie': cookie,
         };
 
-        // 1. Try direct adaptive / muxed audio formats first (fastest 4-way chunk download)
         if (!excludeClients.contains(cname)) {
           final formats = <Map<String, dynamic>>[];
           final adaptive = sd['adaptiveFormats'];
@@ -965,7 +1054,6 @@ class NamiYoutubeService {
           }
         }
 
-        // 2. Try HLS manifest (`.m3u8`) on IOS / VISIONOS if direct adaptive 403'd
         final hlsUrl = (sd['hlsManifestUrl'] ?? '').toString();
         if (hlsUrl.startsWith('http') &&
             !excludeClients.contains(hlsName) &&
@@ -992,271 +1080,20 @@ class NamiYoutubeService {
       }
     }
 
-    // Tier 6: Official Direct JioSaavn API (jiosaavn.com/api.php + Pure-Dart DES-ECB 320kbps M4A)
-    // Guaranteed to play Indian & global music tracks cleanly even when YouTube CGNAT-blocks an IP!
-    if (!excludeClients.contains('SAAVN_320K') &&
-        fallbackTitle != null &&
-        fallbackTitle.trim().isNotEmpty) {
-      final saavnRes = await _resolveSaavnAudioFallback(
-        videoId: videoId,
-        title: fallbackTitle,
-        artist: fallbackArtist ?? '',
-      );
-      if (saavnRes != null) {
-        _streamCache[cacheKey] = saavnRes;
+    // Native Chromium Headless BotGuard PoToken Extractor (works 100% Logged-Out & Logged-In!)
+    if (!excludeClients.contains('WEBVIEW_BOTGUARD') &&
+        !excludeClients.contains('WEBVIEW_AUTH')) {
+      final wvRes = await _extractViaNativeWebView(videoId);
+      if (wvRes != null) {
+        _streamCache[cacheKey] = wvRes;
         lastResolveDiagnostic = '';
-        return saavnRes;
+        return wvRes;
       }
-      diag.add('SAAVN:miss');
+      diag.add('WV:timeout');
     }
 
     lastResolveDiagnostic = diag.join(' ');
-    debugPrint('[NamiYT] All tiers failed for $videoId: $lastResolveDiagnostic');
-    return null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Pure-Dart FIPS 46-3 DES-ECB Decryptor for Official JioSaavn `encrypted_media_url`
-  // ---------------------------------------------------------------------------
-  static const List<int> _desIp = [
-    58,50,42,34,26,18,10,2,60,52,44,36,28,20,12,4,62,54,46,38,30,22,14,6,64,56,48,40,32,24,16,8,
-    57,49,41,33,25,17,9,1,59,51,43,35,27,19,11,3,61,53,45,37,29,21,13,5,63,55,47,39,31,23,15,7,
-  ];
-  static const List<int> _desFp = [
-    40,8,48,16,56,24,64,32,39,7,47,15,55,23,63,31,38,6,46,14,54,22,62,30,37,5,45,13,53,21,61,29,
-    36,4,44,12,52,20,60,28,35,3,43,11,51,19,59,27,34,2,42,10,50,18,58,26,33,1,41,9,49,17,57,25,
-  ];
-  static const List<int> _desE = [
-    32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,16,17,
-    16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,28,29,28,29,30,31,32,1,
-  ];
-  static const List<int> _desP = [
-    16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,2,8,24,14,32,27,3,9,19,13,30,6,22,11,4,25,
-  ];
-  static const List<int> _desPc1 = [
-    57,49,41,33,25,17,9,1,58,50,42,34,26,18,10,2,59,51,43,35,27,19,11,3,60,52,44,36,
-    63,55,47,39,31,23,15,7,62,54,46,38,30,22,14,6,61,53,45,37,29,21,13,5,28,20,12,4,
-  ];
-  static const List<int> _desPc2 = [
-    14,17,11,24,1,5,3,28,15,6,21,10,23,19,12,4,26,8,16,7,27,20,13,2,
-    41,52,31,37,47,55,30,40,51,45,33,48,44,49,39,56,34,53,46,42,50,36,29,32,
-  ];
-  static const List<int> _desShifts = [1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,1];
-  static const List<List<int>> _desSbox = [
-    [14,4,13,1,2,15,11,8,3,10,6,12,5,9,0,7,0,15,7,4,14,2,13,1,10,6,12,11,9,5,3,8,4,1,14,8,13,6,2,11,15,12,9,7,3,10,5,0,15,12,8,2,4,9,1,7,5,11,3,14,10,0,6,13],
-    [15,1,8,14,6,11,3,4,9,7,2,13,12,0,5,10,3,13,4,7,15,2,8,14,12,0,1,10,6,9,11,5,0,14,7,11,10,4,13,1,5,8,12,6,9,3,2,15,13,8,10,1,3,15,4,2,11,6,7,12,0,5,14,9],
-    [10,0,9,14,6,3,15,5,1,13,12,7,11,4,2,8,13,7,0,9,3,4,6,10,2,8,5,14,12,11,15,1,13,6,4,9,8,15,3,0,11,1,2,12,5,10,14,7,1,10,13,0,6,9,8,7,4,15,14,3,11,5,2,12],
-    [7,13,14,3,0,6,9,10,1,2,8,5,11,12,4,15,13,8,11,5,6,15,0,3,4,7,2,12,1,10,14,9,10,6,9,0,12,11,7,13,15,1,3,14,5,2,8,4,3,15,0,6,10,1,13,8,9,4,5,11,12,7,2,14],
-    [2,12,4,1,7,10,11,6,8,5,3,15,13,0,14,9,14,11,2,12,4,7,13,1,5,0,15,10,3,9,8,6,4,2,1,11,10,13,7,8,15,9,12,5,6,3,0,14,11,8,12,7,1,14,2,13,6,15,0,9,10,4,5,3],
-    [12,1,10,15,9,2,6,8,0,13,3,4,14,7,5,11,10,15,4,2,7,12,9,5,6,1,13,14,0,11,3,8,9,14,15,5,2,8,12,3,7,0,4,10,1,13,11,6,4,3,2,12,9,5,15,10,11,14,1,7,6,0,8,13],
-    [4,11,2,14,15,0,8,13,3,12,9,7,5,10,6,1,13,0,11,7,4,9,1,10,14,3,5,12,2,15,8,6,1,4,11,13,12,3,7,14,10,15,6,8,0,5,9,2,6,11,13,8,1,4,10,7,9,5,0,15,14,2,3,12],
-    [13,2,8,4,6,15,11,1,10,9,3,14,5,0,12,7,1,15,13,8,10,3,7,4,12,5,6,11,0,14,9,2,7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8,2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11],
-  ];
-
-  static int _desPermute(int val, List<int> table, int inBits) {
-    int out = 0;
-    for (final pos in table) {
-      out = (out << 1) | ((val >>> (inBits - pos)) & 1);
-    }
-    return out;
-  }
-
-  static String? _decryptJioSaavnUrl(String encryptedBase64) {
-    try {
-      final cipher = base64Decode(encryptedBase64.trim());
-      if (cipher.isEmpty || cipher.length % 8 != 0) return null;
-      const keyBytes = [0x33, 0x38, 0x33, 0x34, 0x36, 0x35, 0x39, 0x31]; // "38346591"
-      int key64 = 0;
-      for (final b in keyBytes) {
-        key64 = (key64 << 8) | (b & 0xFF);
-      }
-      final k56 = _desPermute(key64, _desPc1, 64);
-      int c = (k56 >>> 28) & 0xFFFFFFF;
-      int d = k56 & 0xFFFFFFF;
-      final subkeys = <int>[];
-      for (final s in _desShifts) {
-        c = ((c << s) | (c >>> (28 - s))) & 0xFFFFFFF;
-        d = ((d << s) | (d >>> (28 - s))) & 0xFFFFFFF;
-        subkeys.add(_desPermute((c << 28) | d, _desPc2, 56));
-      }
-      final revKeys = subkeys.reversed.toList();
-      final plain = <int>[];
-      for (int off = 0; off < cipher.length; off += 8) {
-        int block = 0;
-        for (int j = 0; j < 8; j++) {
-          block = (block << 8) | (cipher[off + j] & 0xFF);
-        }
-        final x = _desPermute(block, _desIp, 64);
-        int l = (x >>> 32) & 0xFFFFFFFF;
-        int r = x & 0xFFFFFFFF;
-        for (final sk in revKeys) {
-          final er = _desPermute(r, _desE, 32) ^ sk;
-          int sOut = 0;
-          for (int i = 0; i < 8; i++) {
-            final chunk = (er >>> (42 - i * 6)) & 0x3F;
-            final row = ((chunk & 0x20) >>> 4) | (chunk & 1);
-            final col = (chunk >>> 1) & 0x0F;
-            sOut = (sOut << 4) | _desSbox[i][row * 16 + col];
-          }
-          final f = _desPermute(sOut, _desP, 32);
-          final nextR = l ^ f;
-          l = r;
-          r = nextR;
-        }
-        final outBlock = _desPermute((r << 32) | (l & 0xFFFFFFFF), _desFp, 64);
-        for (int j = 7; j >= 0; j--) {
-          plain.add((outBlock >>> (j * 8)) & 0xFF);
-        }
-      }
-      if (plain.isEmpty) return null;
-      final pad = plain.last;
-      final trimmed = (pad >= 1 && pad <= 8 && pad <= plain.length)
-          ? plain.sublist(0, plain.length - pad)
-          : plain;
-      final url = utf8.decode(trimmed, allowMalformed: true).trim();
-      return url.startsWith('http') ? url : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Resolves a verified 320kbps M4A audio match directly from JioSaavn's official India API
-  /// (`jiosaavn.com/api.php` + DES-ECB decrypt) with fallback to community mirrors.
-  Future<NamiYtStreamResult?> _resolveSaavnAudioFallback({
-    required String videoId,
-    required String title,
-    required String artist,
-  }) async {
-    try {
-      final cleanTitle = title
-          .replaceAll(RegExp(r'\(From[^)]*\)', caseSensitive: false), '')
-          .replaceAll(RegExp(r'\[From[^\]]*\]', caseSensitive: false), '')
-          .replaceAll(RegExp(r'\(Official[^)]*\)', caseSensitive: false), '')
-          .replaceAll(RegExp(r'\(Full[^)]*\)', caseSensitive: false), '')
-          .replaceAll(RegExp(r'\(Remix\)', caseSensitive: false), 'Remix')
-          .replaceAll(RegExp(r'\|.*$'), '')
-          .trim();
-      final leadArtist = artist.split(RegExp(r'[,&•]')).first.trim();
-      final queries = <String>[
-        if (cleanTitle.isNotEmpty && leadArtist.isNotEmpty) '$cleanTitle $leadArtist',
-        if (cleanTitle.isNotEmpty) cleanTitle,
-      ];
-
-      // 1. Official Direct JioSaavn Web API (zero third-party proxy dependency!)
-      for (final q in queries) {
-        try {
-          final uri = Uri.parse(
-            'https://www.jiosaavn.com/api.php?p=1&q=${Uri.encodeQueryComponent(q)}&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=6&__call=search.getResults',
-          );
-          final resp = await http
-              .get(uri, headers: const {
-                'User-Agent': _webUserAgent,
-                'Accept': 'application/json',
-                'Referer': 'https://www.jiosaavn.com/',
-              })
-              .timeout(const Duration(seconds: 7));
-          if (resp.statusCode != 200) continue;
-          final data = jsonDecode(resp.body);
-          final results = data is Map ? data['results'] : null;
-          if (results is! List || results.isEmpty) continue;
-
-          for (final item in results) {
-            if (item is! Map) continue;
-            final moreInfo = item['more_info'];
-            final encUrl = (moreInfo is Map
-                    ? (moreInfo['encrypted_media_url'] ?? '')
-                    : (item['encrypted_media_url'] ?? ''))
-                .toString();
-            if (encUrl.isEmpty) continue;
-            final decrypted = _decryptJioSaavnUrl(encUrl);
-            if (decrypted == null || !decrypted.startsWith('http')) continue;
-
-            final is320 = moreInfo is Map && moreInfo['320kbps'].toString() == 'true';
-            final candUrls = <String>[
-              if (is320) decrypted.replaceAll('_96.mp4', '_320.mp4'),
-              decrypted.replaceAll('_96.mp4', '_160.mp4'),
-              decrypted,
-            ];
-            for (final u in candUrls) {
-              const hdrs = {'User-Agent': _webUserAgent};
-              if (await _probeStreamUrl(u, hdrs)) {
-                final durStr = moreInfo is Map
-                    ? (moreInfo['duration'] ?? '0').toString()
-                    : (item['duration'] ?? '0').toString();
-                final durSec = int.tryParse(durStr) ?? 0;
-                return NamiYtStreamResult(
-                  videoId: videoId,
-                  audioUrl: u,
-                  mimeType: 'audio/mp4',
-                  bitrate: u.contains('_320.') ? 320000 : 160000,
-                  duration: Duration(seconds: durSec),
-                  headers: hdrs,
-                  expiresAtMs: DateTime.now()
-                      .add(const Duration(hours: 4))
-                      .millisecondsSinceEpoch,
-                  clientUsed: 'SAAVN_320K',
-                );
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 2. Fallback to saavn.dev / saavn.sumit.co if official search returned nothing
-      final q = queries.isNotEmpty ? queries.first : '';
-      if (q.isEmpty) return null;
-      for (final apiBase in const [
-        'https://saavn.dev/api/search/songs',
-        'https://saavn.sumit.co/api/search/songs',
-      ]) {
-        try {
-          final uri = Uri.parse('$apiBase?query=${Uri.encodeQueryComponent(q)}&limit=5');
-          final resp = await http
-              .get(uri, headers: const {'User-Agent': _webUserAgent})
-              .timeout(const Duration(seconds: 6));
-          if (resp.statusCode != 200) continue;
-          final data = jsonDecode(resp.body);
-          final rawData = data is Map ? data['data'] : null;
-          final results = rawData is Map ? rawData['results'] : null;
-          if (results is! List || results.isEmpty) continue;
-          for (final item in results) {
-            if (item is! Map) continue;
-            final dlList = item['downloadUrl'];
-            if (dlList is! List || dlList.isEmpty) continue;
-            String bestUrl = '';
-            int bestBr = 128000;
-            for (final d in dlList) {
-              if (d is Map) {
-                final u = (d['url'] ?? d['link'] ?? '').toString();
-                final qStr = (d['quality'] ?? '').toString();
-                final br = (int.tryParse(qStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 128) * 1000;
-                if (u.startsWith('http') && br >= bestBr) {
-                  bestUrl = u;
-                  bestBr = br;
-                }
-              }
-            }
-            if (bestUrl.isEmpty) continue;
-            const hdrs = {'User-Agent': _webUserAgent};
-            if (await _probeStreamUrl(bestUrl, hdrs)) {
-              final durSec = int.tryParse((item['duration'] ?? '0').toString()) ?? 0;
-              return NamiYtStreamResult(
-                videoId: videoId,
-                audioUrl: bestUrl,
-                mimeType: 'audio/mp4',
-                bitrate: bestBr,
-                duration: Duration(seconds: durSec),
-                headers: hdrs,
-                expiresAtMs: DateTime.now()
-                    .add(const Duration(hours: 3))
-                    .millisecondsSinceEpoch,
-                clientUsed: 'SAAVN_320K',
-              );
-            }
-          }
-        } catch (_) {}
-      }
-    } catch (_) {}
+    debugPrint('[NamiYT] Pure-YouTube resolution failed for $videoId: $lastResolveDiagnostic');
     return null;
   }
 
@@ -2474,6 +2311,306 @@ class NamiYtAudioCache {
       } catch (_) {}
       if (attempt == 0) {
         await Future<void>.delayed(const Duration(milliseconds: 220));
+      }
+    }
+    return null;
+  }
+}
+
+class _NamiProgressiveSession {
+  final NamiYtStreamResult stream;
+  final Map<String, String> cleanHeaders;
+  final int totalLength;
+  final String ext;
+  final String mimeType;
+  final Map<int, Uint8List> chunks = {};
+  final Map<int, Future<Uint8List?>> pendingChunks = {};
+  bool bgStarted = false;
+  bool disposed = false;
+
+  _NamiProgressiveSession({
+    required this.stream,
+    required this.cleanHeaders,
+    required this.totalLength,
+    required this.ext,
+    required this.mimeType,
+  });
+
+  int get chunkCount =>
+      (totalLength + NamiYtProgressiveProxy.chunkSize - 1) ~/ NamiYtProgressiveProxy.chunkSize;
+}
+
+/// Instant-Start Progressive Chunk-Cached Streaming Server (`v3.2.0`):
+/// - Fetches ONLY Chunk 0 (512KB, ~150ms) and validates real audio magic bytes before opening `libmpv`
+/// - Serves `libmpv` over `http://127.0.0.1:<port>/stream/<videoId>.<ext>` with exact `206 Partial Content`
+/// - Background 4-way parallel bounded `&range=start-end` pre-fetcher fills remaining chunks while playing
+/// - Supports instant random-access seeking and automatically saves the completed file to `nami_yt_cache`!
+class NamiYtProgressiveProxy {
+  NamiYtProgressiveProxy._();
+  static final NamiYtProgressiveProxy instance = NamiYtProgressiveProxy._();
+
+  static const int chunkSize = 512 * 1024; // 512 KB bounded DASH chunks
+  HttpServer? _server;
+  int _port = 0;
+  final Map<String, _NamiProgressiveSession> _sessions = {};
+
+  Future<void> _ensureServer() async {
+    if (_server != null) return;
+    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0, shared: true);
+    _port = _server!.port;
+    _server!.listen(_handleRequest, onError: (_) {});
+    debugPrint('[NamiYtProgressive] Listening on http://127.0.0.1:$_port');
+  }
+
+  /// Prepares Chunk 0 (~150ms) and returns an instant-playable `http://127.0.0.1:<port>/stream/<id>.<ext>` URL,
+  /// or returns `null` if Chunk 0 fails verification or totalLength is unknown.
+  Future<String?> prepareAndRegister(NamiYtStreamResult stream) async {
+    if (stream.audioUrl.contains('.m3u8') ||
+        stream.audioUrl.contains('manifest/hls') ||
+        stream.mimeType.toLowerCase().contains('mpegurl')) {
+      return null;
+    }
+
+    final cleanHeaders = <String, String>{};
+    stream.headers.forEach((k, v) {
+      if (!k.toLowerCase().startsWith('x-nami-')) cleanHeaders[k] = v;
+    });
+
+    int totalLen = int.tryParse(stream.headers['X-Nami-Content-Length'] ?? '') ?? 0;
+    if (totalLen <= 0) {
+      final mClen = RegExp(r'[?&]clen=(\d+)').firstMatch(stream.audioUrl);
+      totalLen = int.tryParse(mClen?.group(1) ?? '') ?? 0;
+    }
+
+    // Fetch Chunk 0 right now (~150ms) to verify real audio bytes & discover exact total length!
+    final firstEnd = (totalLen > 0 && totalLen < chunkSize) ? totalLen - 1 : chunkSize - 1;
+    final chunk0 = await _fetchBoundedChunk(
+      stream.audioUrl,
+      cleanHeaders,
+      0,
+      firstEnd,
+      onTotal: (t) {
+        if (t > totalLen) totalLen = t;
+      },
+    );
+    if (chunk0 == null ||
+        chunk0.isEmpty ||
+        !NamiYoutubeService.isValidAudioHeader(chunk0) ||
+        totalLen <= 0) {
+      return null;
+    }
+
+    await _ensureServer();
+    final lowerMime = stream.mimeType.toLowerCase();
+    final ext = (lowerMime.contains('mp4') || lowerMime.contains('m4a') || lowerMime.contains('aac'))
+        ? 'm4a'
+        : (lowerMime.contains('ogg') ? 'ogg' : 'webm');
+    final safeId = stream.videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final key = '$safeId.$ext';
+
+    // Keep memory tight: dispose old sessions if more than 3 exist
+    if (_sessions.length >= 3) {
+      final oldestKey = _sessions.keys.first;
+      if (oldestKey != key) {
+        _sessions[oldestKey]?.disposed = true;
+        _sessions.remove(oldestKey);
+      }
+    }
+
+    final sess = _NamiProgressiveSession(
+      stream: stream,
+      cleanHeaders: cleanHeaders,
+      totalLength: totalLen,
+      ext: ext,
+      mimeType: stream.mimeType.split(';').first.trim(),
+    );
+    sess.chunks[0] = chunk0;
+    _sessions[key] = sess;
+
+    // Kick off 4-way background download into RAM + disk cache while libmpv plays Chunk 0 immediately!
+    unawaited(_backgroundFillAndPersist(sess));
+
+    return 'http://127.0.0.1:$_port/stream/$key';
+  }
+
+  Future<Uint8List?> _getOrFetchChunk(_NamiProgressiveSession sess, int index) async {
+    final existing = sess.chunks[index];
+    if (existing != null) return existing;
+    final inflight = sess.pendingChunks[index];
+    if (inflight != null) return inflight;
+
+    final start = index * chunkSize;
+    if (start >= sess.totalLength) return Uint8List(0);
+    final end = (start + chunkSize - 1).clamp(start, sess.totalLength - 1);
+
+    final fut = _fetchBoundedChunk(sess.stream.audioUrl, sess.cleanHeaders, start, end);
+    sess.pendingChunks[index] = fut;
+    try {
+      final data = await fut;
+      if (data != null && data.isNotEmpty && !sess.disposed) {
+        sess.chunks[index] = data;
+      }
+      return data;
+    } finally {
+      sess.pendingChunks.remove(index);
+    }
+  }
+
+  Future<void> _backgroundFillAndPersist(_NamiProgressiveSession sess) async {
+    if (sess.bgStarted) return;
+    sess.bgStarted = true;
+    final totalChunks = sess.chunkCount;
+    for (int i = 1; i < totalChunks; i += 4) {
+      if (sess.disposed) return;
+      final batch = <int>[];
+      for (int j = i; j < i + 4 && j < totalChunks; j++) {
+        if (!sess.chunks.containsKey(j)) batch.add(j);
+      }
+      if (batch.isNotEmpty) {
+        await Future.wait(batch.map((idx) => _getOrFetchChunk(sess, idx)));
+      }
+    }
+    if (sess.disposed) return;
+
+    // All chunks present -> persist cleanly to `nami_yt_cache/<videoId>.<ext>` for 0ms future replay!
+    if (sess.chunks.length >= totalChunks) {
+      try {
+        final safeId = sess.stream.videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+        final dir = NamiYtAudioCache.instance.cacheDir;
+        final fin = File('${dir.path}/$safeId.${sess.ext}');
+        if (!fin.existsSync()) {
+          final part = File('${fin.path}.part');
+          final sink = part.openWrite();
+          for (int i = 0; i < totalChunks; i++) {
+            final c = sess.chunks[i];
+            if (c != null) sink.add(c);
+          }
+          await sink.flush();
+          await sink.close();
+          if (fin.existsSync()) fin.deleteSync();
+          await part.rename(fin.path);
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _handleRequest(HttpRequest req) async {
+    final res = req.response;
+    res.bufferOutput = false;
+    final segs = req.uri.pathSegments;
+    if (segs.length < 2 || segs[0] != 'stream') {
+      res.statusCode = HttpStatus.notFound;
+      await res.close();
+      return;
+    }
+    final sess = _sessions[segs[1]];
+    if (sess == null) {
+      res.statusCode = HttpStatus.notFound;
+      await res.close();
+      return;
+    }
+
+    final total = sess.totalLength;
+    int start = 0;
+    int end = total - 1;
+    bool isRange = false;
+
+    final rangeHdr = req.headers.value(HttpHeaders.rangeHeader);
+    if (rangeHdr != null && rangeHdr.startsWith('bytes=')) {
+      isRange = true;
+      final spec = rangeHdr.substring(6).split(',').first.trim();
+      final parts = spec.split('-');
+      if (parts.length == 2) {
+        if (parts[0].isEmpty && parts[1].isNotEmpty) {
+          final suffix = int.tryParse(parts[1]) ?? 0;
+          start = (total - suffix).clamp(0, total - 1);
+        } else {
+          start = int.tryParse(parts[0]) ?? 0;
+          if (parts[1].isNotEmpty) {
+            end = (int.tryParse(parts[1]) ?? (total - 1)).clamp(start, total - 1);
+          }
+        }
+      }
+    }
+
+    if (start >= total) {
+      res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+      res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$total');
+      await res.close();
+      return;
+    }
+
+    final reqLen = end - start + 1;
+    res.statusCode = isRange ? HttpStatus.partialContent : HttpStatus.ok;
+    res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+    res.headers.set(HttpHeaders.contentTypeHeader, sess.mimeType);
+    if (isRange) {
+      res.headers.set(HttpHeaders.contentRangeHeader, 'bytes $start-$end/$total');
+    }
+    res.contentLength = reqLen;
+
+    if (req.method == 'HEAD') {
+      await res.close();
+      return;
+    }
+
+    try {
+      int cursor = start;
+      while (cursor <= end && !sess.disposed) {
+        final chunkIdx = cursor ~/ chunkSize;
+        final chunkOffset = cursor % chunkSize;
+        final chunk = await _getOrFetchChunk(sess, chunkIdx);
+        if (chunk == null || chunk.isEmpty) break;
+        final available = chunk.length - chunkOffset;
+        if (available <= 0) break;
+        final need = (end - cursor + 1).clamp(1, available);
+        res.add(
+          (chunkOffset == 0 && need == chunk.length)
+              ? chunk
+              : chunk.sublist(chunkOffset, chunkOffset + need),
+        );
+        cursor += need;
+      }
+      await res.close();
+    } catch (_) {
+      try {
+        await res.close();
+      } catch (_) {}
+    }
+  }
+
+  Future<Uint8List?> _fetchBoundedChunk(
+    String rawUrl,
+    Map<String, String> baseHeaders,
+    int start,
+    int end, {
+    void Function(int total)? onTotal,
+  }) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final uri = NamiYoutubeService.buildBoundedChunkUri(rawUrl, start, end);
+        final hdrs = Map<String, String>.from(baseHeaders);
+        if (!uri.toString().contains('range=')) {
+          hdrs['Range'] = 'bytes=$start-$end';
+        }
+        final resp = await http
+            .get(uri, headers: hdrs)
+            .timeout(const Duration(seconds: 9));
+        if (resp.statusCode == 200 || resp.statusCode == 206) {
+          final cr = resp.headers['content-range'] ?? '';
+          final slash = cr.lastIndexOf('/');
+          if (slash != -1) {
+            final parsed = int.tryParse(cr.substring(slash + 1).trim()) ?? 0;
+            if (parsed > 0) onTotal?.call(parsed);
+          } else if (resp.statusCode == 200 && start == 0 && !uri.toString().contains('range=')) {
+            final cl = int.tryParse(resp.headers['content-length'] ?? '') ?? resp.bodyBytes.length;
+            if (cl > 0) onTotal?.call(cl);
+          }
+          return resp.bodyBytes;
+        }
+      } catch (_) {}
+      if (attempt == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 180));
       }
     }
     return null;

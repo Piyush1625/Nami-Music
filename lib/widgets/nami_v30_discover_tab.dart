@@ -154,6 +154,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
     NamiYoutubeStore.instance.ensureLoaded().then((_) {
       if (mounted) setState(() {});
     });
+    NamiYoutubeService.warmUpNativeEngine();
     _loadMusicBrowse();
   }
 
@@ -458,6 +459,18 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                     tooltip: 'Mornye Extensions',
                     icon: const Icon(Icons.extension_outlined, color: Colors.white70, size: 21),
                     onPressed: () => _selectSubTab(2),
+                  ),
+                  ValueListenableBuilder<bool>(
+                    valueListenable: NamiYoutubeService.isSignedIn,
+                    builder: (_, signedIn, __) => IconButton(
+                      tooltip: signedIn ? 'YouTube Account (Signed In)' : 'YouTube Mode (Logged-Out)',
+                      icon: Icon(
+                        signedIn ? Icons.verified_user_rounded : Icons.account_circle_outlined,
+                        color: signedIn ? const Color(0xFF10B981) : Colors.white70,
+                        size: 22,
+                      ),
+                      onPressed: () => showNamiYoutubeAccountSheet(context),
+                    ),
                   ),
                 ],
               ),
