@@ -85,14 +85,14 @@ class _NamiFullArtRectReporterState extends State<NamiFullArtRectReporter> {
 
   @override
   Widget build(BuildContext context) {
-    /* v30_2_single_art */
+    /* v30_3_zero_blank_overlap */
     return KeyedSubtree(
       key: _key,
       child: ValueListenableBuilder<double>(
-        valueListenable: NamiExpandablePlayerController.progress,
+        valueListenable: NamiExpandablePlayerController.curvedProgress,
         child: widget.child,
-        builder: (_, p, c) => Opacity(
-          opacity: (p >= 0.988 || p <= 0.001) ? 1.0 : 0.0,
+        builder: (_, t, c) => Opacity(
+          opacity: (t >= 0.94 || t <= 0.001) ? 1.0 : 0.0,
           child: c,
         ),
       ),
@@ -804,7 +804,7 @@ class _NamiSpringMiniPlayerWrapState extends State<NamiSpringMiniPlayerWrap>
             child: ValueListenableBuilder<double>(
               valueListenable: NamiMorphPlayerController.progress,
               builder: (_, morphProgress, child) {
-                final hidden = morphProgress > 0.005;
+                final hidden = morphProgress > 0.0015;
                 return Opacity(
                   opacity: hidden ? 0.0 : 1.0,
                   child: child,

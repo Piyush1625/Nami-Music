@@ -11,10 +11,10 @@ String namiFormatBadgeForPath(
   final lower = path.toLowerCase();
   if (lower.startsWith('http://') || lower.startsWith('https://')) {
     if (lower.contains('.m3u8') || lower.contains('manifest/hls')) return 'YT HLS';
-    if (lower.contains('mime=audio%2fwebm') || lower.contains('opus') || lower.contains('itag=251') || lower.contains('itag=250')) {
+    if (lower.endsWith('.webm') || lower.endsWith('.opus') || lower.contains('mime=audio%2fwebm') || lower.contains('opus') || lower.contains('itag=251') || lower.contains('itag=250')) {
       return 'YT OPUS';
     }
-    if (lower.contains('mime=audio%2fmp4') || lower.contains('m4a') || lower.contains('itag=140')) {
+    if (lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.contains('mime=audio%2fmp4') || lower.contains('m4a') || lower.contains('itag=140')) {
       return 'YT M4A';
     }
     return 'YT AUDIO';
@@ -72,8 +72,9 @@ class NamiYoutubePlaybackBridge {
       debugPrint('[NamiMPV Error] $err');
       final active = activeYtTrack.value;
       if (active != null) {
+        final shortErr = err.trim().length > 46 ? '${err.trim().substring(0, 46)}...' : err.trim();
         NamiLiveToastController.showMessage(
-          'Stream error — trying fallback source...',
+          'MPV: $shortErr',
           icon: Icons.refresh_rounded,
         );
       }
@@ -199,9 +200,26 @@ class NamiYoutubePlaybackBridge {
         cachedThumbPath: cachedThumb ?? yt.cachedThumbPath,
         duration: stream.duration.inSeconds > 0 ? stream.duration : yt.duration,
       );
+      /* v30_3_localhost_proxy */
+      String playbackUrl = stream.audioUrl;
+      Map<String, String> mpvHeaders = stream.headers;
+      if (!stream.audioUrl.contains('.m3u8') && !stream.audioUrl.contains('manifest/hls')) {
+        try {
+          playbackUrl = await NamiYtLocalProxy.instance.registerStream(
+            videoId: yt.videoId,
+            upstreamUrl: stream.audioUrl,
+            headers: stream.headers,
+            mimeType: stream.mimeType,
+          );
+          mpvHeaders = const <String, String>{};
+        } catch (e) {
+          debugPrint('[NamiYtProxy] fallback to direct URL: $e');
+        }
+      }
+
       final audioTrack = toAudioTrack(
         enrichedYt,
-        streamUrl: stream.audioUrl,
+        streamUrl: playbackUrl,
         localThumbPath: cachedThumb,
         resolvedDuration: stream.duration,
       );
@@ -211,7 +229,7 @@ class NamiYoutubePlaybackBridge {
       _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, enrichedYt);
 
       // Hand off to Nami's unified player pipeline (sets _currentSong, libmpv, Widget & Lyrics)
-      await shell._playV30YoutubeAudioTrack(audioTrack, httpHeaders: stream.headers);
+      await shell._playV30YoutubeAudioTrack(audioTrack, httpHeaders: mpvHeaders);
 
       // Watchdog: if libmpv stays stuck at 00:00 after 3.8s, blacklist this client & failover!
       _playbackWatchdog?.cancel();

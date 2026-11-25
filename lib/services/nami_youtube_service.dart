@@ -613,6 +613,27 @@ class NamiYoutubeService {
         },
       },
       {
+        'name': 'ANDROID_VR_M4A',
+        'ua': _vrUserAgent,
+        'clientHeader': '28',
+        'version': '1.65.10',
+        'preferHls': false,
+        'forceM4a': true,
+        'context': {
+          'client': {
+            'clientName': 'ANDROID_VR',
+            'clientVersion': '1.65.10',
+            'deviceMake': 'Oculus',
+            'deviceModel': 'Quest 3',
+            'androidSdkVersion': 32,
+            'osName': 'Android',
+            'osVersion': '12L',
+            'gl': gl,
+            'hl': hl,
+          },
+        },
+      },
+      {
         'name': 'IOS',
         'ua': _iosUserAgent,
         'clientHeader': '5',
@@ -734,7 +755,9 @@ class NamiYoutubeService {
             }
           }
           if (formats.isNotEmpty) {
-            final picked = _pickStreamByQuality(formats, quality);
+            final picked = (c['forceM4a'] == true)
+                ? formats.firstWhere((f) => (f['mimeType'] ?? '').toString().toLowerCase().contains('mp4'), orElse: () => _pickStreamByQuality(formats, quality))
+                : _pickStreamByQuality(formats, quality);
             final candUrl = picked['url'].toString();
             if (await _probeStreamUrl(candUrl, streamHeaders)) {
               final res = NamiYtStreamResult(
@@ -1558,3 +1581,132 @@ class NamiYoutubeStore {
       .whereType<NamiYtTrack>()
       .toList();
 }
+
+class _NamiYtProxyTarget {
+  final String upstreamUrl;
+  final Map<String, String> headers;
+  final String mimeType;
+  final int? contentLength;
+
+  const _NamiYtProxyTarget({
+    required this.upstreamUrl,
+    required this.headers,
+    required this.mimeType,
+    this.contentLength,
+  });
+}
+
+/// Pure-Dart localhost HTTP streaming proxy (`http://127.0.0.1:<port>/yt/<videoId>.<ext>`).
+/// Bridges Dart's BoringSSL `HttpClient` (which passes googlevideo.com TLS + User-Agent + Range checks)
+/// directly to Android `libmpv` over plain loopback HTTP with instant seeking & zero 403/TLS failures.
+class NamiYtLocalProxy {
+  NamiYtLocalProxy._();
+  static final NamiYtLocalProxy instance = NamiYtLocalProxy._();
+
+  HttpServer? _server;
+  int _port = 0;
+  final Map<String, _NamiYtProxyTarget> _targets = {};
+
+  Future<void> _ensureStarted() async {
+    if (_server != null) return;
+    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0, shared: true);
+    _port = _server!.port;
+    _server!.listen(_handleRequest, onError: (_) {});
+    debugPrint('[NamiYtProxy] Listening on http://127.0.0.1:$_port');
+  }
+
+  /// Registers a verified upstream audio URL and returns a clean local loopback URL for `libmpv`.
+  Future<String> registerStream({
+    required String videoId,
+    required String upstreamUrl,
+    required Map<String, String> headers,
+    required String mimeType,
+    int? contentLength,
+  }) async {
+    await _ensureStarted();
+    final lower = mimeType.toLowerCase();
+    final ext = lower.contains('mpegurl') || upstreamUrl.contains('.m3u8')
+        ? 'm3u8'
+        : (lower.contains('mp4') || lower.contains('m4a') || lower.contains('aac')
+            ? 'm4a'
+            : 'webm');
+    final safeId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final key = '$safeId.$ext';
+    _targets[key] = _NamiYtProxyTarget(
+      upstreamUrl: upstreamUrl,
+      headers: Map<String, String>.from(headers),
+      mimeType: mimeType.split(';').first.trim(),
+      contentLength: contentLength,
+    );
+    return 'http://127.0.0.1:$_port/yt/$key';
+  }
+
+  Future<void> _handleRequest(HttpRequest req) async {
+    final res = req.response;
+    res.bufferOutput = false;
+    final segs = req.uri.pathSegments;
+    if (segs.length < 2 || segs[0] != 'yt') {
+      res.statusCode = HttpStatus.notFound;
+      await res.close();
+      return;
+    }
+    final target = _targets[segs[1]];
+    if (target == null) {
+      res.statusCode = HttpStatus.notFound;
+      await res.close();
+      return;
+    }
+
+    final client = HttpClient()
+      ..autoUncompress = false
+      ..connectionTimeout = const Duration(seconds: 10);
+
+    try {
+      final upReq = await client.openUrl(req.method, Uri.parse(target.upstreamUrl));
+      upReq.followRedirects = true;
+      upReq.maxRedirects = 5;
+      target.headers.forEach((k, v) {
+        upReq.headers.set(k, v);
+      });
+      final rangeHdr = req.headers.value(HttpHeaders.rangeHeader);
+      if (rangeHdr != null && rangeHdr.isNotEmpty) {
+        upReq.headers.set(HttpHeaders.rangeHeader, rangeHdr);
+      }
+      upReq.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
+
+      final upRes = await upReq.close().timeout(const Duration(seconds: 12));
+      res.statusCode = upRes.statusCode;
+      res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+      final upCt = upRes.headers.value(HttpHeaders.contentTypeHeader);
+      res.headers.set(
+        HttpHeaders.contentTypeHeader,
+        (upCt != null && upCt.isNotEmpty) ? upCt : target.mimeType,
+      );
+      final upCr = upRes.headers.value(HttpHeaders.contentRangeHeader);
+      if (upCr != null && upCr.isNotEmpty) {
+        res.headers.set(HttpHeaders.contentRangeHeader, upCr);
+      }
+      if (upRes.contentLength >= 0) {
+        res.contentLength = upRes.contentLength;
+      }
+
+      if (req.method == 'HEAD') {
+        await upRes.drain<void>();
+        await res.close();
+        return;
+      }
+
+      await for (final chunk in upRes) {
+        res.add(chunk);
+      }
+      await res.close();
+    } catch (_) {
+      try {
+        await res.close();
+      } catch (_) {}
+    } finally {
+      client.close(force: true);
+    }
+  }
+}
+

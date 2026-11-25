@@ -305,6 +305,7 @@ class _NamiShellNavigatorState extends State<NamiShellNavigator> {
 
 class NamiExpandablePlayerController {
   static final ValueNotifier<double> progress = ValueNotifier<double>(0.0);
+  static final ValueNotifier<double> curvedProgress = ValueNotifier<double>(0.0);
   static final ValueNotifier<bool> hasSong = ValueNotifier<bool>(false);
   static _NamiExpandablePlayerHostState? _host;
 
@@ -341,11 +342,11 @@ class NamiExpandablePlayerController {
       );
 }
 
-/// Zero-Ghosting 120FPS Permanent In-Tree Expandable Player Host (`v3.0.2`).
-/// - Exactly ONE cover art flies 1:1 from `miniArtRect` to `fullArtRect` while
-///   `NamiFullArtRectReporter` hides `NowPlayingModal`'s static cover until `t >= 0.99`.
-/// - Zero duplicate title/artist or duplicate play/pause buttons!
-/// - Constant widget tree (no `Offstage` swap hitch at `t = 0.0`).
+/// Zero-Flicker, Zero-Blank 120FPS Permanent In-Tree Expandable Player Host (`v3.0.3`).
+/// - Syncs both flying cover art AND `NamiFullArtRectReporter` to `curvedProgress` with an
+///   overlapping cross-fade on `[0.94 .. 0.996]` -> mathematically impossible to flash blank!
+/// - Renders a clipped mini-bar interior inside `cardRect` on `[0.0 .. 0.26]` so the mini-player
+///   never turns into an empty dark box on collapse or expand.
 class NamiExpandablePlayerHost extends StatefulWidget {
   final Widget child;
   final bool hasSong;
@@ -388,14 +389,20 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
   static const Curve _expandCurve = _NamiSpringCurve(6.6);
   static const Curve _collapseCurve = _NamiSpringCurve(6.4);
 
+  double _computeCurvedT(double rawT) {
+    if (!_useCurve || _dragging) return rawT;
+    if (_isReversing) return 1.0 - _collapseCurve.transform(1.0 - rawT);
+    return _expandCurve.transform(rawT);
+  }
+
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
       value: 0.0,
-      duration: const Duration(milliseconds: 360),
-      reverseDuration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 350),
+      reverseDuration: const Duration(milliseconds: 310),
     )..addListener(_syncProgress);
     NamiExpandablePlayerController._host = this;
     _namiSafeSetNotifier<bool>(NamiExpandablePlayerController.hasSong, widget.hasSong);
@@ -403,17 +410,19 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
 
   void _syncProgress() {
     final v = _ctrl.value.clamp(0.0, 1.0);
+    final curved = _computeCurvedT(v).clamp(0.0, 1.0);
     if ((NamiExpandablePlayerController.progress.value - v).abs() > 0.0005 ||
         v == 0.0 ||
         v == 1.0) {
       _namiSafeSetNotifier<double>(NamiExpandablePlayerController.progress, v);
-      _namiSafeSetNotifier<double>(NamiMorphPlayerController.progress, v);
+      _namiSafeSetNotifier<double>(NamiExpandablePlayerController.curvedProgress, curved);
+      _namiSafeSetNotifier<double>(NamiMorphPlayerController.progress, curved);
       /* v30_1_immersive */
       if (NamiUxPrefs.immersiveMode) {
-        if (v > 0.88 && !_immersiveApplied) {
+        if (curved > 0.88 && !_immersiveApplied) {
           _immersiveApplied = true;
           SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        } else if (v < 0.20 && _immersiveApplied) {
+        } else if (curved < 0.20 && _immersiveApplied) {
           _immersiveApplied = false;
           SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
         }
@@ -445,6 +454,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     if (NamiExpandablePlayerController._host == this) {
       NamiExpandablePlayerController._host = null;
       _namiSafeSetNotifier<double>(NamiExpandablePlayerController.progress, 0.0);
+      _namiSafeSetNotifier<double>(NamiExpandablePlayerController.curvedProgress, 0.0);
       _namiSafeSetNotifier<double>(NamiMorphPlayerController.progress, 0.0);
     }
     _ctrl.removeListener(_syncProgress);
@@ -478,7 +488,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     _useCurve = true;
     _isReversing = false;
     final rem = (1.0 - _ctrl.value).clamp(0.15, 1.0);
-    final ms = (360 * rem * NamiUxPrefs.motionScale).round().clamp(180, 480);
+    final ms = (350 * rem * NamiUxPrefs.motionScale).round().clamp(180, 460);
     _ctrl.animateTo(
       1.0,
       duration: Duration(milliseconds: ms),
@@ -492,7 +502,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     _useCurve = true;
     _isReversing = true;
     final rem = _ctrl.value.clamp(0.15, 1.0);
-    final ms = (320 * rem * NamiUxPrefs.motionScale).round().clamp(160, 420);
+    final ms = (310 * rem * NamiUxPrefs.motionScale).round().clamp(160, 400);
     _ctrl.animateBack(
       0.0,
       duration: Duration(milliseconds: ms),
@@ -536,7 +546,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     if (shouldOpen) {
       _isReversing = false;
       final rem = (1.0 - cur).clamp(0.08, 1.0);
-      final ms = (320 * rem * NamiUxPrefs.motionScale).round().clamp(140, 380);
+      final ms = (310 * rem * NamiUxPrefs.motionScale).round().clamp(140, 360);
       _ctrl
           .animateTo(
             1.0,
@@ -549,7 +559,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     } else {
       _isReversing = true;
       final rem = cur.clamp(0.08, 1.0);
-      final ms = (280 * rem * NamiUxPrefs.motionScale).round().clamp(130, 340);
+      final ms = (270 * rem * NamiUxPrefs.motionScale).round().clamp(130, 330);
       _ctrl
           .animateBack(
             0.0,
@@ -587,7 +597,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         const NamiTopLibraryBannerOverlay(),
         const NamiLivePillToastOverlay(),
 
-        // 2. Permanent Zero-Ghosting 120FPS Expandable Now Playing Layer
+        // 2. Permanent Zero-Flicker 120FPS Expandable Now Playing Layer
         if (mountedFullPlayer != null)
           Positioned.fill(
             child: AnimatedBuilder(
@@ -595,14 +605,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
               child: mountedFullPlayer,
               builder: (ctx, fullChild) {
                 final rawT = _ctrl.value.clamp(0.0, 1.0);
-                final double t;
-                if (!_useCurve || _dragging) {
-                  t = rawT;
-                } else if (_isReversing) {
-                  t = 1.0 - _collapseCurve.transform(1.0 - rawT);
-                } else {
-                  t = _expandCurve.transform(rawT);
-                }
+                final t = _computeCurvedT(rawT).clamp(0.0, 1.0);
 
                 final active = t > 0.0015;
                 final startRect = NamiMorphPlayerController.lastMiniRect ??
@@ -637,12 +640,21 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                 final curArtRect = Rect.lerp(miniArtRect, fullArtRect, t)!;
                 final curArtRadius = ui.lerpDouble(10.0, 16.0, t)!;
 
-                // Single-element fade: NowPlayingModal chrome glides smoothly UP with the sheet
-                // while its static cover art stays hidden (via NamiFullArtRectReporter) until t >= 0.99!
+                // Mini-bar interior stays visible on [0.0 .. 0.28] -> ZERO empty dark box!
+                final miniInteriorOpacity = !active
+                    ? 0.0
+                    : (1.0 - (t / 0.28)).clamp(0.0, 1.0);
+
+                // NowPlayingModal fades cleanly on [0.22 .. 0.72] -> ZERO overlap with mini-bar!
                 final fullChildOpacity = !active
                     ? 0.0
-                    : ((t - 0.16) / 0.56).clamp(0.0, 1.0);
-                final showFlyingArt = active && t < 0.99;
+                    : ((t - 0.22) / 0.50).clamp(0.0, 1.0);
+
+                // Flying art stays at 1.0 until t=0.96, then dissolves cleanly on [0.96 .. 0.996]
+                // while NamiFullArtRectReporter is ALREADY at 1.0 from t=0.94 -> ZERO blank flash!
+                final flyingArtOpacity = !active || t >= 0.996
+                    ? 0.0
+                    : (t <= 0.96 ? 1.0 : ((0.996 - t) / 0.036).clamp(0.0, 1.0));
 
                 return IgnorePointer(
                   ignoring: !active,
@@ -657,7 +669,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                             ),
                           ),
 
-                        // Expanding AMOLED sheet containing ONE NowPlayingModal (zero duplicate text/controls!)
+                        // Morphing AMOLED card hosting NowPlayingModal + low-t Mini-Bar interior
                         Positioned.fromRect(
                           rect: active ? cardRect : fullRect,
                           child: ClipRRect(
@@ -677,6 +689,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                               child: Stack(
                                 clipBehavior: Clip.hardEdge,
                                 children: [
+                                  // Full NowPlayingModal
                                   Positioned(
                                     left: active ? -cardRect.left : 0.0,
                                     top: active ? -cardRect.top : 0.0,
@@ -689,27 +702,108 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                         child: Opacity(
                                           opacity: fullChildOpacity,
                                           child: Transform.translate(
-                                            offset: Offset(0, active ? (1.0 - t) * 34.0 : 0.0),
+                                            offset: Offset(0, active ? (1.0 - t) * 28.0 : 0.0),
                                             child: fullChild ?? const SizedBox.shrink(),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
+
+                                  // Seamless Mini-Bar interior for low t (0.0 -> 0.28): ZERO blank box!
+                                  if (miniInteriorOpacity > 0.01)
+                                    Positioned(
+                                      left: miniArtSize + 20,
+                                      right: 10,
+                                      top: 0,
+                                      height: startRect.height,
+                                      child: IgnorePointer(
+                                        child: Opacity(
+                                          opacity: miniInteriorOpacity,
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Column(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      widget.title,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontSize: 13.8,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      widget.artist,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontSize: 11.4,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Colors.white60,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              StreamBuilder<bool>(
+                                                stream: widget.isPlayingStream,
+                                                initialData: widget.initialPlaying,
+                                                builder: (_, snap) {
+                                                  final playing = snap.data ?? widget.initialPlaying;
+                                                  return Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(Icons.skip_previous_rounded, color: Colors.white70, size: 21),
+                                                      const SizedBox(width: 6),
+                                                      Container(
+                                                        width: 36,
+                                                        height: 36,
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.white.withValues(alpha: 0.10),
+                                                          shape: BoxShape.circle,
+                                                          border: Border.all(color: Colors.white24, width: 0.9),
+                                                        ),
+                                                        child: Icon(
+                                                          playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                                          color: Colors.white,
+                                                          size: 20,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 21),
+                                                    ],
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
                           ),
                         ),
 
-                        // SINGLE GPU-scaled flying album art (zero double cover, zero text collision!)
-                        if (showFlyingArt)
+                        // SINGLE GPU-scaled flying album art (overlaps static cover on [0.94..0.996] -> 0ms blank!)
+                        if (flyingArtOpacity > 0.005)
                           Positioned.fromRect(
                             rect: curArtRect,
                             child: IgnorePointer(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(curArtRadius),
-                                child: _getCachedCover(widget.trackKey),
+                              child: Opacity(
+                                opacity: flyingArtOpacity,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(curArtRadius),
+                                  child: _getCachedCover(widget.trackKey),
+                                ),
                               ),
                             ),
                           ),
@@ -733,7 +827,7 @@ class NamiExpandableBottomNavWrap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<double>(
-      valueListenable: NamiExpandablePlayerController.progress,
+      valueListenable: NamiExpandablePlayerController.curvedProgress,
       child: child,
       builder: (_, t, c) {
         final clamped = t.clamp(0.0, 1.0);

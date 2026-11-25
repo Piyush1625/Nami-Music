@@ -407,7 +407,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       children: [
                         const Text('Nami Music Player', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: Colors.white)),
                         const SizedBox(height: 3),
-                        Text('Version 2.0.0 • Build v3.0.2 (v39)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor)),
+                        Text('Version 2.0.0 • Build v3.0.3 (v40)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: themeColor)),
                       ],
                     ),
                   ),
@@ -516,7 +516,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              const Text("WHAT'S NEW IN v3.0.2 (v39)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54)),
+              const Text("WHAT'S NEW IN v3.0.3 (v40)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: Colors.white54)),
               const SizedBox(height: 10),
               for (final item in const [
                 ('Home Overhaul', 'Customizable reorderable shelves, live tappable DAC output & AutoEQ switcher, Time-of-Day & Forgotten Favorites mixes, Weekly Recap strip, and long-press card actions.'),
