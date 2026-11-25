@@ -52,6 +52,7 @@ part 'widgets/nami_v29_shell.dart';
 part 'widgets/nami_v29_settings_studio.dart';
 part 'widgets/nami_v29_8_gestures.dart';
 part 'widgets/nami_v30_yt_bridge.dart';
+part 'widgets/nami_v30_discover_tab.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -8177,7 +8178,7 @@ void _showCreatePlaylistDialog() {
   @override
   Widget build(BuildContext context) {
     final uniqueArtistsForHome = _buildArtistGroupsMap();
-    final List<String> tabTitles = ['Nami', 'Tracks', 'Artists', 'Playlists', 'Mornye'];
+    final List<String> tabTitles = ['Nami', 'Tracks', 'Artists', 'Playlists', 'YouTube'];
 
     final List<Widget> pages = [
       _buildNamiHomeScreen(uniqueArtistsForHome),
@@ -8613,7 +8614,10 @@ void _showCreatePlaylistDialog() {
                   setState(() => _selectedIndex = idx);
                 }
               },
-              children: pages,
+              children: [
+                for (int i = 0; i < pages.length; i++)
+                  i == 4 ? NamiDiscoverHubTab(mornyeTab: pages[i]) : pages[i],
+              ],
             ),
           ),
         ),

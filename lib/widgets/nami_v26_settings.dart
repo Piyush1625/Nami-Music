@@ -32,6 +32,23 @@ class NamiUxPrefs {
   static bool ytDownloadMetadataTags = true;
   static int ytDimMiniAfterSec = 15;
   static int ytDimIntensityPct = 50;
+  static String themeModePref = 'dark';
+  static bool autoColoring = false;
+  static bool usePitchBlack = true;
+  static bool refreshOnStartup = false;
+  static bool extractFeatArtists = true;
+  static bool respectNomedia = true;
+  static bool preventDuplicateTracks = true;
+  static int minTrackDurationSec = 5;
+  static int minFileSizeKb = 100;
+  static bool skipSilence = false;
+  static bool enableFadeEffect = false;
+  static int pauseFadeDurationMs = 300;
+  static bool infinityQueue = true;
+  static bool immersiveMode = false;
+  static String performanceMode = '120Hz High';
+  static int imageCacheLimitMb = 256;
+  static int audioCacheLimitGb = 4;
 
   static final ValueNotifier<Duration?> sleepRemaining = ValueNotifier<Duration?>(null);
   static Timer? _sleepTicker;
@@ -80,6 +97,23 @@ class NamiUxPrefs {
       ytDownloadMetadataTags = prefs.getBool('nami_v30_yt_dl_tags') ?? true;
       ytDimMiniAfterSec = prefs.getInt('nami_v30_yt_dim_sec') ?? 15;
       ytDimIntensityPct = prefs.getInt('nami_v30_yt_dim_pct') ?? 50;
+      themeModePref = prefs.getString('nami_v30_theme_mode') ?? 'dark';
+      autoColoring = prefs.getBool('nami_v30_auto_color') ?? false;
+      usePitchBlack = prefs.getBool('nami_v30_pitch_black') ?? true;
+      refreshOnStartup = prefs.getBool('nami_v30_refresh_start') ?? false;
+      extractFeatArtists = prefs.getBool('nami_v30_extract_feat') ?? true;
+      respectNomedia = prefs.getBool('nami_v30_nomedia') ?? true;
+      preventDuplicateTracks = prefs.getBool('nami_v30_no_dups') ?? true;
+      minTrackDurationSec = prefs.getInt('nami_v30_min_dur') ?? 5;
+      minFileSizeKb = prefs.getInt('nami_v30_min_kb') ?? 100;
+      skipSilence = prefs.getBool('nami_v30_skip_sil') ?? false;
+      enableFadeEffect = prefs.getBool('nami_v30_fade_on') ?? false;
+      pauseFadeDurationMs = prefs.getInt('nami_v30_pause_fade') ?? 300;
+      infinityQueue = prefs.getBool('nami_v30_inf_queue') ?? true;
+      immersiveMode = prefs.getBool('nami_v30_immersive') ?? false;
+      performanceMode = prefs.getString('nami_v30_perf_mode') ?? '120Hz High';
+      imageCacheLimitMb = prefs.getInt('nami_v30_img_cache_mb') ?? 256;
+      audioCacheLimitGb = prefs.getInt('nami_v30_aud_cache_gb') ?? 4;
       NamiArtistMetadataService.indiaFirst = indiaFirstMetadata;
     } catch (_) {}
   }
@@ -116,6 +150,23 @@ class NamiUxPrefs {
       await prefs.setBool('nami_v30_yt_dl_tags', ytDownloadMetadataTags);
       await prefs.setInt('nami_v30_yt_dim_sec', ytDimMiniAfterSec);
       await prefs.setInt('nami_v30_yt_dim_pct', ytDimIntensityPct);
+      await prefs.setString('nami_v30_theme_mode', themeModePref);
+      await prefs.setBool('nami_v30_auto_color', autoColoring);
+      await prefs.setBool('nami_v30_pitch_black', usePitchBlack);
+      await prefs.setBool('nami_v30_refresh_start', refreshOnStartup);
+      await prefs.setBool('nami_v30_extract_feat', extractFeatArtists);
+      await prefs.setBool('nami_v30_nomedia', respectNomedia);
+      await prefs.setBool('nami_v30_no_dups', preventDuplicateTracks);
+      await prefs.setInt('nami_v30_min_dur', minTrackDurationSec);
+      await prefs.setInt('nami_v30_min_kb', minFileSizeKb);
+      await prefs.setBool('nami_v30_skip_sil', skipSilence);
+      await prefs.setBool('nami_v30_fade_on', enableFadeEffect);
+      await prefs.setInt('nami_v30_pause_fade', pauseFadeDurationMs);
+      await prefs.setBool('nami_v30_inf_queue', infinityQueue);
+      await prefs.setBool('nami_v30_immersive', immersiveMode);
+      await prefs.setString('nami_v30_perf_mode', performanceMode);
+      await prefs.setInt('nami_v30_img_cache_mb', imageCacheLimitMb);
+      await prefs.setInt('nami_v30_aud_cache_gb', audioCacheLimitGb);
     } catch (_) {}
   }
 
