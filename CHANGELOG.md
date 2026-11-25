@@ -1,22 +1,22 @@
 # Changelog
 
-All notable changes to **Nami Music** are documented in this file.
+## v3.0.3 (Stable) — 2026-11-26
 
-## [v2.0.0 — Repo & Architecture Overhaul (v17)] - 2026-11
-### Infrastructure & Distribution
-- Added 45-second `flutter analyze` pre-build CI gate, Pub/Gradle caching, monotonic CI build numbers, and automated GitHub Releases publishing (`nami-arm64-v8a.apk` + `SHA256SUMS.txt`).
-- Modularized `lib/main.dart` into `lib/models/nami_models.dart`, `lib/widgets/nami_widgets.dart`, `lib/screens/settings_screen.dart`, `lib/screens/now_playing_screen.dart`, and `lib/services/`.
-- Added R8 ProGuard keep-rules (`android/app/proguard-rules.pro`) and permanent native configurator (`scripts/configure_android_native.py`).
-- Added visual `README.md` with SVG waveform banner, Obtainium import config, MIT `LICENSE`, GitHub Issue Templates, Mornye `.sflx` spec & starter manifests, Fastlane metadata, and GitHub Pages landing site (`docs/index.html`).
+### New & Refined
+- **Settings Consolidation & Zero-Redundancy Polish:** Separated `Equalizer & AutoEQ` (with quick Sleep Timer sheet & USB DAC request) from `Playback & DAC`, eliminated non-functional/redundant toggles, and unified Backup, ListenBrainz, Widget Sync, and Cache controls into a clean 7-category AMOLED hierarchy.
+- **Zero-Blank 120Hz Expandable Morph:** Synchronized curved progress across flying artwork and Now Playing's cover anchor with an overlapping `[0.94..0.996]` crossfade and a clipped mini-bar interior on `[0.0..0.28]`, eliminating blank cover flashes and empty mini-player boxes.
+- **Pure-Dart YouTube Localhost Streaming Proxy (`NamiYtLocalProxy`):** Streams verified Dart `HttpClient` chunks over `127.0.0.1` loopback HTTP directly into `libmpv` with Range seeking, 6-tier failover (`ANDROID_VR` / `ANDROID_VR_M4A` / `IOS_HLS` / `IOS` / `TVHTML5_EMBED` / `Invidious` / `Piped`), and automatic 3.8s stall recovery.
+- **Clean Format Badges Everywhere:** Added `namiFormatBadgeForPath()` across every mini-player, Now Playing bar, Signal Chain sheet, and Track Info card so HTTP/YouTube streams show crisp `YT OPUS` / `YT M4A` / `YT HLS` badges.
+- **Repo Audit & Identity Cleanup:** Removed dead legacy settings screens, unused transition wrappers, and third-party brand references across the codebase.
 
-## [v2.0.0 — All-5-Tabs & Settings Overhaul (v16)] - 2026-11
-- **Home:** Drag-to-reorder & hide/show shelves, live tappable DAC output & AutoEQ switcher, Time-of-Day & Forgotten Favorites mixes, Weekly Recap strip, and long-press quick action sheets.
-- **Tracks:** Full Sort & Order sheet, Library Health filters (`Untagged`, `No Cover`, `Duplicates`), Batch Tag & Cover Editor, dual customizable swipe gestures, and uppercase `24B`/`16B` codec badges.
-- **Artists:** Edge-to-edge parallax hero header, chronological album timeline, Top 5 preview, Primary vs. Appears On split, Artist Alias/Merge tool, expandable bio, and Similar Local Artists.
-- **Playlists:** Compact horizontal shortcuts rail, Rule-Based Smart Playlist Builder, 2x2 mosaic collage covers, custom covers & descriptions, in-playlist search/sort/dedupe, pins, and auto `.m3u8` sync.
-- **Mornye:** Interactive Album & Artist drill-down pages with Download Entire Album, In-Library badges, Extension Store directory + live endpoint latency pings, folder templates, and direct Stream-to-Queue.
-- **Settings:** Top search bar, live status dots, Bit-Perfect vs. Tuned presets, Appearance live preview, unified `.nami-backup` archive, per-section resets, and in-app GitHub Releases updater.
+## v3.0.0 — 2026-11-25
+- Added unified Option A 5th Tab sharing YouTube Music (`Home Local`, `Music`, `Channels Local`, `Playlists Local`, `Downloads`) and `Mornye` extensions inside a 6-item morphing pill bar.
+- Built pure-Dart YouTube InnerTube engine, SponsorBlock auto-skip, Return YouTube Dislike, and account-free on-device YouTube persistence.
+- Redesigned Settings & About page with live library/YouTube statistics and inline vertical-bar waveform sliders.
 
-## [v2.0.0 — Polish, Permissions & Core Engines (v11–v15)] - 2026-11
-- Added 10-band ISO Equalizer with AutoEQ IEM profiles, true Dual-Deck Overlapping Crossfade, permanent FLAC/MP3 in-file tag & cover writer, Mornye queued Download Manager, ListenBrainz scrobbling, reactive folder watchers, and lazy split-table caching.
-- Added Full Storage (`MANAGE_EXTERNAL_STORAGE`) and USB DAC (`UsbManager.requestPermission`) permissions, minimal categorized Settings with interactive About Nami changelog, unified Tap/Hold Repeat/Shuffle button, instant artist photo updates, and ghost-track purging.
+## v2.9.8 — 2026-11-24
+- Added 1:1 spring-back track row swipe actions (`Play After` & `Track Info`), in-place mutating bottom pill toast, pull-to-refresh summary banner, and optional 120Hz GPU blur budget.
+
+## v2.9.0 – v2.9.6 — 2026-11-23
+- Replaced `PageRoute` player morphing with a permanent in-tree `NamiExpandablePlayerHost` (preserving Synced Lyrics state across collapses).
+- Migrated main tabs to a keep-alive swipeable 120Hz `PageView` and mounted a shell-scoped nested `Navigator` keeping the Mini-Player and Bottom Nav pinned across Settings and detail screens.

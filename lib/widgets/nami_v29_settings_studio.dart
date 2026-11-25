@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-/// Namida-inspired bespoke vertical-bar waveform slider (compact right-inline or wide).
+/// Bespoke vertical-bar waveform slider for Nami numeric settings (compact inline right-aligned).
 class NamiWaveformSlider extends StatefulWidget {
   final String title;
   final String subtitle;
@@ -145,7 +145,7 @@ class _NamiWaveformSliderState extends State<NamiWaveformSlider> {
   }
 }
 
-/// Sleek Namida-style monochrome pill toggle switch.
+/// Minimal pitch-black AMOLED monochrome pill toggle switch.
 class _NamiMonoSwitch extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -212,9 +212,9 @@ class _NamiSettingSearchEntry {
   });
 }
 
-/// 100% Real-Wired Minimal Pitch-Black AMOLED Settings Hub (ZERO hidden old screens, ZERO dummy toggles).
+/// Clean, zero-redundancy AMOLED Settings Hub for Nami v3.0.3 Stable.
+/// Every visible row, toggle, and slider is backed by a live functional callback.
 class NamiUnifiedSettingsHub extends StatefulWidget {
-  // Real state values from MainSettingsScreen
   final String outputDevice;
   final String? activeEqPresetLabel;
   final bool usbDacExclusive;
@@ -241,7 +241,6 @@ class NamiUnifiedSettingsHub extends StatefulWidget {
   final Future<String>? thumbCacheSizeFuture;
   final Color? currentAccentColor;
 
-  // Real callbacks from MainSettingsScreen & Shell
   final VoidCallback onGrantStorage;
   final VoidCallback onRequestUsbDac;
   final VoidCallback onMergeArtists;
@@ -353,69 +352,58 @@ class NamiUnifiedSettingsHub extends StatefulWidget {
 }
 
 class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
+  // 7 Focused Categories (Zero Duplication, Zero Filler):
+  // 0: Theme & Appearance | 1: Library & Indexer | 2: Playback & DAC
+  // 3: Motion, Lyrics & Gestures | 4: YouTube & Mornye | 5: Backup, Cache & Sync | 6: About Nami
   static const List<_NamiSettingSearchEntry> _searchIndex = [
     _NamiSettingSearchEntry(
-      title: 'Pitch Black AMOLED, Auto Coloring & Accent Swatches',
-      subtitle: 'Theme',
+      title: 'Pitch Black AMOLED, Auto Coloring & Accent Colors',
+      subtitle: 'Theme & Appearance',
       keywords: 'theme pitch black amoled auto coloring accent color glow blur compact badge',
       icon: Icons.format_paint_outlined,
       categoryIndex: 0,
     ),
     _NamiSettingSearchEntry(
       title: 'Scan Folders, Storage Access & India-First Metadata',
-      subtitle: 'Indexer',
+      subtitle: 'Library & Indexer',
       keywords: 'indexer folder storage scan refresh clips duration artist photos jiosaavn apple covers merge',
       icon: Icons.layers_outlined,
       categoryIndex: 1,
     ),
     _NamiSettingSearchEntry(
-      title: 'USB DAC, Equalizer, Gapless, ReplayGain, Skip Silence & Sleep',
-      subtitle: 'Playback',
-      keywords: 'playback dac usb bit perfect equalizer eq gapless replaygain normalize sleep timer seek silence notification disconnect',
+      title: 'USB DAC, Gapless, ReplayGain, Sleep Timer & Seek',
+      subtitle: 'Playback & DAC',
+      keywords: 'playback dac usb bit perfect gapless replaygain normalize sleep timer seek notification disconnect',
       icon: Icons.play_circle_outline_rounded,
       categoryIndex: 2,
     ),
     _NamiSettingSearchEntry(
-      title: '120Hz Motion, Haptics, Lyrics, Gestures & Immersive Mode',
-      subtitle: 'Customizations',
+      title: '120Hz Motion, Haptics, Synced Lyrics & Swipe Gestures',
+      subtitle: 'Motion, Lyrics & Gestures',
       keywords: 'customizations 120hz motion haptics breathing cover lyrics syllable blur swipe row immersive',
       icon: Icons.brush_outlined,
       categoryIndex: 3,
     ),
     _NamiSettingSearchEntry(
       title: 'YouTube Region, Audio Quality, SponsorBlock, RYD & Mornye',
-      subtitle: 'YouTube',
+      subtitle: 'YouTube & Mornye',
       keywords: 'youtube mornye extensions sponsorblock dislike radio region opus quality search cleanup',
       icon: Icons.ondemand_video_rounded,
       categoryIndex: 4,
     ),
     _NamiSettingSearchEntry(
-      title: 'ListenBrainz Scrobbling & AMOLED Home Screen Widget',
-      subtitle: 'Extras',
-      keywords: 'extras listenbrainz scrobble widget amoled youtube search',
-      icon: Icons.extension_outlined,
+      title: 'Backup Archive, ListenBrainz, Widget & Cover Cache',
+      subtitle: 'Backup, Cache & Sync',
+      keywords: 'backup restore export import archive listenbrainz scrobble widget cache clear thumbnail memory',
+      icon: Icons.settings_backup_restore_rounded,
       categoryIndex: 5,
     ),
     _NamiSettingSearchEntry(
-      title: 'Export / Import .nami-backup Archive & Scan Folders',
-      subtitle: 'Backup & Restore',
-      keywords: 'backup restore export import archive database folders',
-      icon: Icons.settings_backup_restore_rounded,
-      categoryIndex: 6,
-    ),
-    _NamiSettingSearchEntry(
-      title: 'Cover Cache, YouTube Cache & libmpv Buffer Budget',
-      subtitle: 'Advanced',
-      keywords: 'advanced cache clear image audio buffer mpv thumbnail memory',
-      icon: Icons.tune_rounded,
-      categoryIndex: 7,
-    ),
-    _NamiSettingSearchEntry(
-      title: 'About Nami, GitHub Releases Updater & Library Statistics',
-      subtitle: 'About',
+      title: 'About Nami, GitHub Releases Updater & Statistics',
+      subtitle: 'About Nami',
       keywords: 'about version statistics tracks albums artists duration github update piyush',
       icon: Icons.info_outline_rounded,
-      categoryIndex: 8,
+      categoryIndex: 6,
     ),
   ];
 
@@ -437,6 +425,120 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
           onOpenSearch: _openSearchSheet,
         ),
       ),
+    );
+  }
+
+  void _openQuickSleepSheet() {
+    NamiUxPrefs.hapticLight();
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      sheetAnimationStyle: namiSmoothSheetStyle,
+      builder: (sheetCtx) {
+        final accent = Theme.of(sheetCtx).colorScheme.primary;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 26),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0A0F),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: ValueListenableBuilder<Duration?>(
+              valueListenable: NamiUxPrefs.sleepRemaining,
+              builder: (_, rem, __) {
+                final activeLabel = rem == null
+                    ? 'Off'
+                    : (rem.inMinutes <= 15
+                        ? '15m'
+                        : (rem.inMinutes <= 30
+                            ? '30m'
+                            : (rem.inMinutes <= 45 ? '45m' : '60m')));
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Icon(Icons.bedtime_outlined, color: accent, size: 20),
+                        const SizedBox(width: 10),
+                        Text(
+                          rem == null
+                              ? 'Sleep Timer'
+                              : 'Sleep Timer • ${rem.inMinutes.toString().padLeft(2, '0')}:${(rem.inSeconds % 60).toString().padLeft(2, '0')}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        for (final opt in const ['Off', '15m', '30m', '45m', '60m']) ...[
+                          if (opt != 'Off') const SizedBox(width: 8),
+                          Expanded(
+                            child: NamiSpringTap(
+                              pressedScale: 0.94,
+                              onTap: () {
+                                if (opt == 'Off') {
+                                  NamiUxPrefs.startSleepTimer(null, widget.onSleepExpire);
+                                } else {
+                                  final mins = int.tryParse(opt.replaceAll('m', '')) ?? 30;
+                                  NamiUxPrefs.startSleepTimer(Duration(minutes: mins), widget.onSleepExpire);
+                                }
+                                Navigator.of(sheetCtx).pop();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: activeLabel == opt
+                                      ? accent.withValues(alpha: 0.20)
+                                      : const Color(0xFF15151E),
+                                  borderRadius: BorderRadius.circular(13),
+                                  border: Border.all(
+                                    color: activeLabel == opt
+                                        ? accent.withValues(alpha: 0.65)
+                                        : Colors.white.withValues(alpha: 0.08),
+                                  ),
+                                ),
+                                child: Text(
+                                  opt,
+                                  style: TextStyle(
+                                    color: activeLabel == opt ? accent : Colors.white70,
+                                    fontSize: 12.6,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -556,8 +658,10 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
     required String subtitle,
     required VoidCallback onTap,
     required IconData rightIcon1,
+    required String rightTooltip1,
     required VoidCallback onRight1,
     required IconData rightIcon2,
+    required String rightTooltip2,
     required VoidCallback onRight2,
   }) {
     return InkWell(
@@ -594,6 +698,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               ),
             ),
             IconButton(
+              tooltip: rightTooltip1,
               icon: Icon(rightIcon1, color: Colors.white70, size: 20),
               onPressed: () {
                 NamiUxPrefs.hapticLight();
@@ -601,6 +706,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               },
             ),
             IconButton(
+              tooltip: rightTooltip2,
               icon: Icon(rightIcon2, color: Colors.white70, size: 20),
               onPressed: () {
                 NamiUxPrefs.hapticLight();
@@ -671,7 +777,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
     final outName = widget.outputDevice.isNotEmpty ? widget.outputDevice : 'Phone Speaker';
     final eqLabel = (widget.activeEqPresetLabel != null && widget.activeEqPresetLabel!.isNotEmpty)
         ? widget.activeEqPresetLabel!
-        : 'Bit-Perfect';
+        : 'EQ Bypass';
 
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
@@ -709,7 +815,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
           IconButton(
             tooltip: 'About Nami',
             icon: const Icon(Icons.help_outline_rounded, color: Colors.white70, size: 21),
-            onPressed: () => _openCategory(8),
+            onPressed: () => _openCategory(6),
           ),
         ],
       ),
@@ -729,9 +835,10 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
           ListView(
             padding: const EdgeInsets.only(top: 4, bottom: 162),
             children: [
+              // Quick Action 1: Scan Folders (Folder Explorer + Refresh + Artist Fetch)
               _quickActionRow(
                 icon: Icons.create_new_folder_outlined,
-                title: 'Add Folder',
+                title: 'Scan Folders',
                 subtitle: '${widget.folderCount} scan folder(s) • Local storage & FLAC tags',
                 onTap: () {
                   if (widget.onOpenFolderExplorer != null) {
@@ -741,45 +848,47 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
                   }
                 },
                 rightIcon1: Icons.refresh_rounded,
+                rightTooltip1: 'Refresh Library',
                 onRight1: () {
                   _NamiHomeShellState.activeInstance?._handleV29TracksPullRefresh();
                 },
                 rightIcon2: Icons.cloud_download_outlined,
+                rightTooltip2: 'Batch Fetch Missing Artist Portraits',
                 onRight2: widget.onBatchFetchArtists,
               ),
-              _quickActionRow(
-                icon: Icons.headphones_outlined,
-                title: 'Sound & Equalizer',
-                subtitle: '$outName • $eqLabel',
-                onTap: () => _openCategory(2),
-                rightIcon1: Icons.timer_outlined,
-                onRight1: () => _openCategory(2),
-                rightIcon2: Icons.equalizer_rounded,
-                onRight2: () {
-                  if (widget.onOpenEqualizer != null) {
-                    widget.onOpenEqualizer!();
-                  } else {
-                    _openCategory(2);
-                  }
-                },
-              ),
+              // Quick Action 2: Equalizer & AutoEQ (Opens Equalizer directly — NO duplicate Playback link!)
+              if (widget.onOpenEqualizer != null)
+                _quickActionRow(
+                  icon: Icons.equalizer_rounded,
+                  title: 'Equalizer & AutoEQ',
+                  subtitle: '$outName • $eqLabel',
+                  onTap: widget.onOpenEqualizer!,
+                  rightIcon1: Icons.bedtime_outlined,
+                  rightTooltip1: 'Quick Sleep Timer',
+                  onRight1: _openQuickSleepSheet,
+                  rightIcon2: Icons.usb_rounded,
+                  rightTooltip2: 'Request Direct USB DAC',
+                  onRight2: widget.onRequestUsbDac,
+                ),
               const SizedBox(height: 6),
+
+              // 7 Clean, Zero-Overlap Categories
               _categoryRow(
                 icon: Icons.format_paint_outlined,
-                title: 'Theme',
+                title: 'Theme & Appearance',
                 subtitle: 'Pitch Black AMOLED, Auto Coloring & Accent Colors',
                 index: 0,
               ),
               _categoryRow(
                 icon: Icons.layers_outlined,
-                title: 'Indexer',
+                title: 'Library & Indexer',
                 subtitle: 'Scan folders, storage access & India-First portraits',
                 index: 1,
               ),
               _categoryRow(
                 icon: Icons.play_circle_outline_rounded,
-                title: 'Playback',
-                subtitle: 'USB DAC, Equalizer, Gapless, ReplayGain, Skip Silence & Sleep',
+                title: 'Playback & DAC',
+                subtitle: 'USB DAC, Gapless, ReplayGain, Sleep Timer & Seek',
                 index: 2,
                 trailingBadge: ValueListenableBuilder<Duration?>(
                   valueListenable: NamiUxPrefs.sleepRemaining,
@@ -803,38 +912,27 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               ),
               _categoryRow(
                 icon: Icons.brush_outlined,
-                title: 'Customizations',
-                subtitle: '120Hz motion, lyrics, track swipes & immersive mode',
+                title: 'Motion, Lyrics & Gestures',
+                subtitle: '120Hz tempo, synced lyrics, track swipes & immersive mode',
                 index: 3,
               ),
               _categoryRow(
                 icon: Icons.ondemand_video_rounded,
-                title: 'YouTube',
-                subtitle: 'Region (${NamiUxPrefs.youtubeRegion}), SponsorBlock, RYD & Mornye',
+                title: 'YouTube & Mornye',
+                subtitle: 'Region (${NamiUxPrefs.youtubeRegion}), SponsorBlock, RYD & Extensions',
                 index: 4,
               ),
               _categoryRow(
-                icon: Icons.extension_outlined,
-                title: 'Extras',
-                subtitle: 'ListenBrainz scrobbling & AMOLED Home Screen Widget',
+                icon: Icons.settings_backup_restore_rounded,
+                title: 'Backup, Cache & Sync',
+                subtitle: '.nami-backup archive, ListenBrainz, Widget & cover cache',
                 index: 5,
               ),
               _categoryRow(
-                icon: Icons.settings_backup_restore_rounded,
-                title: 'Backup & Restore',
-                subtitle: 'Export & import .nami-backup archives',
-                index: 6,
-              ),
-              _categoryRow(
-                icon: Icons.tune_rounded,
-                title: 'Advanced',
-                subtitle: 'Image cache, YouTube thumb cache & libmpv buffer',
-                index: 7,
-              ),
-              _categoryRow(
                 icon: Icons.info_outline_rounded,
-                title: 'About',
-                index: 8,
+                title: 'About Nami',
+                subtitle: 'v3.0.3 Stable • Releases & Library Statistics',
+                index: 6,
               ),
             ],
           ),
@@ -905,26 +1003,22 @@ class _NamiSettingsSubPage extends StatefulWidget {
 
 class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
   static const List<String> _titles = [
-    'Theme',
-    'Indexer',
-    'Playback',
-    'Customizations',
-    'YouTube',
-    'Extras',
-    'Backup & Restore',
-    'Advanced',
-    'About',
+    'Theme & Appearance',
+    'Library & Indexer',
+    'Playback & DAC',
+    'Motion, Lyrics & Gestures',
+    'YouTube & Mornye',
+    'Backup, Cache & Sync',
+    'About Nami',
   ];
 
   static const List<String> _subtitles = [
     'Pitch Black AMOLED, Auto Coloring & Accent Colors',
     'Manage scan folders, metadata & artist portraits',
-    'USB DAC, Equalizer, Gapless, ReplayGain & Sleep Timer',
-    '120Hz motion, lyrics, gestures & immersive layout',
+    'USB DAC, Gapless, ReplayGain, Sleep Timer & Seek',
+    '120Hz motion, synced lyrics, gestures & immersive mode',
     'YouTube Music region, SponsorBlock, RYD & Mornye',
-    'ListenBrainz scrobbling & AMOLED Widget',
-    'Export & import .nami-backup archives',
-    'Live image cache & libmpv audio buffer controls',
+    'Backups, ListenBrainz, AMOLED Widget & cover cache',
     'Version, Developer & Library Statistics',
   ];
 
@@ -934,24 +1028,21 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
     Icons.play_circle_outline_rounded,
     Icons.brush_outlined,
     Icons.ondemand_video_rounded,
-    Icons.extension_outlined,
     Icons.settings_backup_restore_rounded,
-    Icons.tune_rounded,
     Icons.info_outline_rounded,
   ];
 
   static const List<Color> _accentSwatches = [
-    Color(0xFF8B5CF6), // Electric Violet
-    Color(0xFFE11D48), // Crimson Rose
-    Color(0xFF06B6D4), // Cyan Pulse
-    Color(0xFF10B981), // Emerald Mint
-    Color(0xFFF59E0B), // Amber Gold
-    Color(0xFF3B82F6), // Cobalt Blue
-    Color(0xFFEC4899), // Magenta Neon
-    Color(0xFFFFFFFF), // Pure Monochrome
+    Color(0xFF8B5CF6),
+    Color(0xFFE11D48),
+    Color(0xFF06B6D4),
+    Color(0xFF10B981),
+    Color(0xFFF59E0B),
+    Color(0xFF3B82F6),
+    Color(0xFFEC4899),
+    Color(0xFFFFFFFF),
   ];
 
-  // Local instant UI mirrors synced directly with MainSettingsScreen callbacks
   late bool _usbDac;
   late bool _gapless;
   late bool _notif;
@@ -1001,7 +1092,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
     _minTrackSec = w.minTrackSeconds.clamp(0, 60);
     _selectedAccent = w.currentAccentColor ?? const Color(0xFF8B5CF6);
 
-    if (widget.categoryIndex == 7) {
+    if (widget.categoryIndex == 5) {
       _measureCaches();
     }
   }
@@ -1071,8 +1162,6 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           _gapless = true;
           NamiUxPrefs.gaplessPlayback = true;
           NamiUxPrefs.replayGainMode = 'track';
-          NamiUxPrefs.skipSilence = false;
-          NamiUxPrefs.infinityQueue = true;
           _doubleTapSeek = 10;
           NamiUxPrefs.seekDurationSec = 10;
           widget.hubWidget.onGaplessChanged?.call(true);
@@ -1100,11 +1189,9 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           NamiUxPrefs.ytAutoStartRadio = true;
           NamiUxPrefs.ytSearchCleanup = true;
           break;
-        case 7:
+        case 5:
           NamiUxPrefs.imageCacheLimitMb = 256;
-          NamiUxPrefs.audioCacheLimitGb = 2;
           PaintingBinding.instance.imageCache.maximumSizeBytes = 256 * 1024 * 1024;
-          widget.hubWidget.onApplyAudioProps();
           break;
       }
     });
@@ -1330,7 +1417,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
     );
   }
 
-  Widget _buildNamidaAboutPage(Color accent) {
+  Widget _buildNamiAboutPage(Color accent) {
     final shell = _NamiHomeShellState.activeInstance;
     final songs = shell?._songs ?? const <AudioTrack>[];
     final trackCount = songs.length;
@@ -1423,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.0.3 (v40)',
+                    'v3.0.3 Stable (v40)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1590,7 +1677,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Here is some info about your library',
+                          'Live overview of your music library',
                           style: TextStyle(color: Colors.white54, fontSize: 11.5),
                         ),
                       ],
@@ -1607,7 +1694,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   statPill(Icons.album_outlined, '$albumCount Albums'),
                   statPill(Icons.mic_none_rounded, '$artistCount Artists'),
                   statPill(Icons.category_outlined, '$genreCount Genres'),
-                  statPill(Icons.schedule_rounded, '${totalHours}h ${totalMins}min Total Tracks Duration'),
+                  statPill(Icons.schedule_rounded, '${totalHours}h ${totalMins}min Total Duration'),
                   statPill(Icons.ondemand_video_rounded, '${ytHours}h ${ytMins}min YouTube ($ytPlays plays)'),
                 ],
               ),
@@ -1634,7 +1721,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.0 Engine',
+                          'Nami v3.0.3 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),
@@ -1654,9 +1741,9 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                 children: [
                   milestoneChip(Icons.usb_rounded, 'Bit-Perfect USB DAC'),
                   milestoneChip(Icons.bolt_rounded, '120Hz Butter Motion'),
-                  milestoneChip(Icons.lyrics_outlined, 'Apple-Style Lyrics'),
+                  milestoneChip(Icons.lyrics_outlined, 'Synced Lyrics'),
                   milestoneChip(Icons.public_rounded, 'India-First Metadata'),
-                  milestoneChip(Icons.play_circle_outline_rounded, 'YouTube InnerTube'),
+                  milestoneChip(Icons.play_circle_outline_rounded, 'YouTube Proxy Stream'),
                   milestoneChip(Icons.extension_outlined, 'Mornye Extensions'),
                 ],
               ),
@@ -1674,7 +1761,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
     final outName = w.outputDevice.isNotEmpty ? w.outputDevice : 'Phone Speaker';
 
     switch (widget.categoryIndex) {
-      case 0: // Theme — 100% Real-Wired
+      case 0: // Theme & Appearance
         return [
           if (w.onPitchBlackChanged != null)
             _switchRow(
@@ -1815,7 +1902,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           ],
         ];
 
-      case 1: // Indexer — 100% Real-Wired
+      case 1: // Library & Indexer
         final artCount = songs
             .where((s) => (s.thumbPath != null && s.thumbPath!.isNotEmpty) || s.albumArt != null)
             .length;
@@ -1977,13 +2064,13 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             ),
         ];
 
-      case 2: // Playback — 100% Real-Wired
+      case 2: // Playback & DAC (Zero dead toggles, zero EQ duplication!)
         return [
           if (w.onUsbDacChanged != null)
             _switchRow(
               icon: Icons.usb_rounded,
               title: 'Bit-Perfect USB DAC Exclusive',
-              subtitle: 'Output: $outName',
+              subtitle: 'Active output: $outName',
               value: _usbDac,
               onChanged: (v) {
                 _usbDac = v;
@@ -1993,18 +2080,10 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           _actionRow(
             icon: Icons.settings_input_component_rounded,
             title: 'Request Direct USB DAC Permission',
-            subtitle: 'Active device: $outName',
+            subtitle: 'Grant hardware access for attached USB DAC',
             trailingText: 'Request',
             onTap: w.onRequestUsbDac,
           ),
-          if (w.onOpenEqualizer != null)
-            _actionRow(
-              icon: Icons.equalizer_rounded,
-              title: 'Equalizer, AutoEQ & DSP Bands',
-              subtitle: 'Active preset: ${w.activeEqPresetLabel ?? 'Flat / Bypass'}',
-              showChevron: true,
-              onTap: w.onOpenEqualizer!,
-            ),
           _divider(),
           _pillChoiceRow(
             icon: Icons.graphic_eq_rounded,
@@ -2030,16 +2109,6 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
               _gapless = v;
               NamiUxPrefs.gaplessPlayback = v;
               w.onGaplessChanged?.call(v);
-              w.onApplyAudioProps();
-            },
-          ),
-          _switchRow(
-            icon: Icons.fast_forward_outlined,
-            title: 'Skip Silence (libmpv DSP)',
-            subtitle: 'Trims silent pauses via live libmpv silenceremove filter',
-            value: NamiUxPrefs.skipSilence,
-            onChanged: (v) {
-              NamiUxPrefs.skipSilence = v;
               w.onApplyAudioProps();
             },
           ),
@@ -2127,7 +2196,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             ),
         ];
 
-      case 3: // Customizations — 100% Real-Wired
+      case 3: // Motion, Lyrics & Gestures
         return [
           _pillChoiceRow(
             icon: Icons.bolt_rounded,
@@ -2158,7 +2227,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             _switchRow(
               icon: Icons.subtitles_outlined,
               title: 'Word-by-Word Synced Lyrics',
-              subtitle: 'Smooth Apple Music-style syllable highlighting',
+              subtitle: 'Smooth syllable-level live lyric highlighting',
               value: _syllableLyrics,
               onChanged: (v) {
                 _syllableLyrics = v;
@@ -2218,7 +2287,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           ),
         ];
 
-      case 4: // YouTube & Mornye — 100% Real-Wired
+      case 4: // YouTube & Mornye
         return [
           _switchRow(
             icon: Icons.block_rounded,
@@ -2246,7 +2315,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           _pillChoiceRow(
             icon: Icons.high_quality_outlined,
             title: 'Stream Audio Quality',
-            subtitle: 'Direct libmpv stream selection',
+            subtitle: 'Direct localhost-proxied libmpv stream selection',
             options: const ['High (Opus)', 'Balanced', 'Data Saver'],
             selected: NamiUxPrefs.youtubeAudioQuality,
             onSelect: (opt) => NamiUxPrefs.youtubeAudioQuality = opt,
@@ -2278,9 +2347,27 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           ],
         ];
 
-      case 5: // Extras — 100% Real-Wired
+      default: // 5: Backup, Cache & Sync (consolidated, zero dead controls)
+        final ytThumbMb = (_ytThumbBytes / (1024 * 1024)).toStringAsFixed(2);
         return [
+          if (w.onExportBackup != null)
+            _actionRow(
+              icon: Icons.upload_file_rounded,
+              title: 'Export .nami-backup Archive',
+              subtitle: 'Save playlists, favorites, artist aliases & preferences',
+              trailingText: 'Export',
+              onTap: w.onExportBackup!,
+            ),
+          if (w.onImportBackup != null)
+            _actionRow(
+              icon: Icons.download_outlined,
+              title: 'Import .nami-backup Archive',
+              subtitle: 'Restore your saved Nami library backup',
+              trailingText: 'Import',
+              onTap: w.onImportBackup!,
+            ),
           if (w.onOpenScrobbling != null) ...[
+            _divider(),
             _actionRow(
               icon: Icons.podcasts_rounded,
               title: 'ListenBrainz Scrobbling',
@@ -2288,8 +2375,8 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
               showChevron: true,
               onTap: w.onOpenScrobbling!,
             ),
-            _divider(),
           ],
+          _divider(),
           _actionRow(
             icon: Icons.widgets_outlined,
             title: 'Sync AMOLED Home Screen Widget (4×1)',
@@ -2304,50 +2391,6 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             },
           ),
           _divider(),
-          _actionRow(
-            icon: Icons.play_circle_outline_rounded,
-            title: 'Quick YouTube Music Search',
-            subtitle: 'Open live InnerTube search & local history sheet',
-            showChevron: true,
-            onTap: () => showNamiYoutubeEngineBetaSheet(context),
-          ),
-        ];
-
-      case 6: // Backup & Restore — 100% Real-Wired (NO hidden v2.0.0 screen!)
-        return [
-          if (w.onExportBackup != null)
-            _actionRow(
-              icon: Icons.upload_file_rounded,
-              title: 'Export .nami-backup Archive',
-              subtitle: 'Save playlists, favorites, artist aliases & preferences',
-              trailingText: 'Export',
-              onTap: w.onExportBackup!,
-            ),
-          if (w.onImportBackup != null) ...[
-            _divider(),
-            _actionRow(
-              icon: Icons.download_outlined,
-              title: 'Import .nami-backup Archive',
-              subtitle: 'Restore your saved Nami library backup',
-              trailingText: 'Import',
-              onTap: w.onImportBackup!,
-            ),
-          ],
-          if (w.onOpenFolderExplorer != null) ...[
-            _divider(),
-            _actionRow(
-              icon: Icons.folder_open_rounded,
-              title: 'Library Scan Folders',
-              subtitle: '${w.folderCount} configured music folder(s)',
-              showChevron: true,
-              onTap: w.onOpenFolderExplorer!,
-            ),
-          ],
-        ];
-
-      default: // 7: Advanced & Cache — 100% Real-Wired
-        final ytThumbMb = (_ytThumbBytes / (1024 * 1024)).toStringAsFixed(2);
-        return [
           NamiWaveformSlider(
             leadingIcon: Icons.memory_rounded,
             title: 'In-Memory Image Cache Limit',
@@ -2387,23 +2430,6 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             trailingText: 'Clear',
             onTap: _clearYtThumbCache,
           ),
-          _divider(),
-          NamiWaveformSlider(
-            leadingIcon: Icons.audiotrack_outlined,
-            title: 'libmpv Audio Buffer Budget',
-            subtitle: 'Applies live demuxer-max-bytes on audio engine',
-            value: NamiUxPrefs.audioCacheLimitGb.toDouble().clamp(1, 8),
-            min: 1,
-            max: 8,
-            divisions: 7,
-            valueFormatter: (v) => '${v.round() * 32} MB',
-            accentColor: accent,
-            onChanged: (v) {
-              setState(() => NamiUxPrefs.audioCacheLimitGb = v.round());
-              NamiUxPrefs.save();
-              w.onApplyAudioProps();
-            },
-          ),
         ];
     }
   }
@@ -2412,8 +2438,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final idx = widget.categoryIndex.clamp(0, _titles.length - 1);
-    final isAbout = idx == 8;
-    final canReset = idx == 0 || idx == 1 || idx == 2 || idx == 3 || idx == 4 || idx == 7;
+    final isAbout = idx == 6;
 
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
@@ -2443,7 +2468,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 22),
             onPressed: widget.onOpenSearch,
           ),
-          if (canReset)
+          if (!isAbout)
             IconButton(
               tooltip: 'Reset category defaults',
               icon: const Icon(Icons.restore_rounded, color: Colors.white70, size: 21),
@@ -2454,7 +2479,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
       body: Stack(
         children: [
           if (isAbout)
-            _buildNamidaAboutPage(accent)
+            _buildNamiAboutPage(accent)
           else
             ListView(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 155),
@@ -2494,11 +2519,10 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                                 ],
                               ),
                             ),
-                            if (canReset)
-                              IconButton(
-                                icon: const Icon(Icons.flag_outlined, color: Colors.white38, size: 20),
-                                onPressed: _resetCategoryDefaults,
-                              ),
+                            IconButton(
+                              icon: const Icon(Icons.flag_outlined, color: Colors.white38, size: 20),
+                              onPressed: _resetCategoryDefaults,
+                            ),
                           ],
                         ),
                       ),

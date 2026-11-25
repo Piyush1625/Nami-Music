@@ -88,7 +88,7 @@ class _NamiDiscoverPillItem {
 }
 
 /// Step 5 (v3.0.0) — Unified 5th Tab (Option A):
-/// Combines Namida's YouTube Music experience & Nami's Mornye Extensions inside one
+/// Combines Nami's YouTube Music experience & Nami's Mornye Extensions inside one
 /// 6-item morphing pill bar + nested 120Hz keep-alive `PageView` with boundary handoff.
 class NamiDiscoverHubTab extends StatefulWidget {
   final Widget mornyeTab;
@@ -419,7 +419,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   }
 
   // ---------------------------------------------------------------------------
-  // SUB-TAB 0: Home (Local) — Matches Namida 127228.png
+  // SUB-TAB 0: Home (Local) — Matches Nami 127228.png
   // ---------------------------------------------------------------------------
   Widget _buildHomeLocalTab(Color accent) {
     return ValueListenableBuilder<int>(
@@ -745,7 +745,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   }
 
   // ---------------------------------------------------------------------------
-  // SUB-TAB 1: Music — Matches Namida 127229.png (Explore/Charts/Moods/New releases,
+  // SUB-TAB 1: Music — Matches Nami 127229.png (Explore/Charts/Moods/New releases,
   // Genre chips, 4-row horizontally swipeable Song mixes, New releases carousels & Shimmer)
   // ---------------------------------------------------------------------------
   Widget _buildMusicBrowseTab(Color accent) {
@@ -943,7 +943,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
     );
   }
 
-  /// Namida 127229.png exact 4-row horizontally swipeable `Song mixes` pager!
+  /// Nami 127229.png exact 4-row horizontally swipeable `Song mixes` pager!
   Widget _build4RowSongMixesCarousel(List<NamiYtTrack> tracks) {
     final pageCount = (tracks.length / 4).ceil().clamp(1, 6);
     final screenW = MediaQuery.sizeOf(context).width;
@@ -1288,7 +1288,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   }
 
   // ---------------------------------------------------------------------------
-  // SUB-TAB 4: Playlists (Local) — Matches Namida 127232.png
+  // SUB-TAB 4: Playlists (Local) — Matches Nami 127232.png
   // ---------------------------------------------------------------------------
   Widget _buildPlaylistsLocalTab(Color accent) {
     return ValueListenableBuilder<int>(
@@ -1558,7 +1558,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   }
 
   // ---------------------------------------------------------------------------
-  // SUB-TAB 5: Downloads — Matches Namida 127233.png (`All | Ongoing | Finished`)
+  // SUB-TAB 5: Downloads — Matches Nami 127233.png (`All | Ongoing | Finished`)
   // ---------------------------------------------------------------------------
   Widget _buildDownloadsTab(Color accent) {
     final shell = _NamiHomeShellState.activeInstance;
@@ -1746,7 +1746,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   }
 }
 
-/// Namida-Style Watch Details & Radio Queue Sheet (matching 127234.png - 127236.png).
+/// Nami-Style Watch Details & Radio Queue Sheet (matching 127234.png - 127236.png).
 Future<void> showNamiYtWatchSheet(BuildContext context, NamiYtTrack track) {
   return showModalBottomSheet<void>(
     context: context,

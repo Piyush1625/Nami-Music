@@ -9110,7 +9110,7 @@ List<String> _getSmartMornyeQuickSearches() {
     );
   }
 
-/// Namida-style Home Screen Listening Statistics Card with Interactive Donut/Pie Chart & Heavy Detail
+/// Nami-style Home Screen Listening Statistics Card with Interactive Donut/Pie Chart & Heavy Detail
 
 
 
@@ -9119,11 +9119,11 @@ List<String> _getSmartMornyeQuickSearches() {
 
 
 
-  /// Namida-Style Fullscreen Synced Lyrics Mode
-  /// Namida-Style Fullscreen Synced Lyrics Mode (opens on Long-Press of Lyrics in Now Playing!)
-  /// Matches Namida UI: Top-left back chevron, centered Title/Artist, top-right Lyrics Sheet icon,
+  /// Nami-Style Fullscreen Synced Lyrics Mode
+  /// Nami-Style Fullscreen Synced Lyrics Mode (opens on Long-Press of Lyrics in Now Playing!)
+  /// Matches Nami UI: Top-left back chevron, centered Title/Artist, top-right Lyrics Sheet icon,
   /// dark warm-tinted gradient, ShaderMask top/bottom fade, highlighted translucent pill for active line,
-  /// tap-to-seek, bottom waveform seekbar + timestamps + Namida outlined transport controls!
+  /// tap-to-seek, bottom waveform seekbar + timestamps + Nami outlined transport controls!
 
 
 

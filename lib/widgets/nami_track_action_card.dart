@@ -278,7 +278,7 @@ void showNamiTrackActionCard({
                         },
                       ),
 
-                      // Go to Artist (Namida SS4 inline expandable multi-artist selector!)
+                      // Go to Artist (Nami SS4 inline expandable multi-artist selector!)
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                         decoration: BoxDecoration(

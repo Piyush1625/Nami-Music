@@ -390,7 +390,7 @@ class NamiYoutubeService {
     };
   }
 
-  /// Cleans noisy suffixes when `cleanQuery == true` (mirrors Namida's Search Cleanup).
+  /// Cleans noisy suffixes when `cleanQuery == true` (mirrors Nami's Search Cleanup).
   String sanitizeSearchQuery(String query, {bool clean = true}) {
     var q = query.trim();
     if (!clean || q.isEmpty) return q;
@@ -1464,7 +1464,7 @@ class NamiYoutubeStore {
     return list;
   }
 
-  /// Auto-generates Namida-style local Mixes (`Recommended` & `"<TopTrack>" Supremacy`).
+  /// Auto-generates Nami-style local Mixes (`Recommended` & `"<TopTrack>" Supremacy`).
   List<NamiYtMix> generatedMixes() {
     final hist = history;
     if (hist.isEmpty) return const [];

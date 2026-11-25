@@ -40,7 +40,7 @@ class _NamiPillToastData {
   });
 }
 
-/// Global controller for Nami's Namida-style in-place mutating bottom pill toast.
+/// Global controller for Nami's Nami-style in-place mutating bottom pill toast.
 /// Swiping multiple tracks updates the existing pill (`Added: 2 Tracks  +1`) instead of stacking SnackBars.
 class NamiLiveToastController {
   static final ValueNotifier<_NamiPillToastData?> current =
@@ -236,7 +236,7 @@ class _NamiLibraryBannerData {
   });
 }
 
-/// Global controller for Namida-style non-blocking top Library Refresh status banner.
+/// Global controller for Nami-style non-blocking top Library Refresh status banner.
 class NamiTopBannerController {
   static final ValueNotifier<_NamiLibraryBannerData?> current =
       ValueNotifier<_NamiLibraryBannerData?>(null);
@@ -578,7 +578,7 @@ class _NamiSwipeableTrackRowState extends State<NamiSwipeableTrackRow>
   }
 }
 
-/// Centered Namida-style Pitch-Black AMOLED Floating Track Info Card (`220ms` 0.92 -> 1.0 scale + fade).
+/// Centered Nami-style Pitch-Black AMOLED Floating Track Info Card (`220ms` 0.92 -> 1.0 scale + fade).
 Future<void> showNamiFloatingTrackInfoCard(
   BuildContext context, {
   required AudioTrack track,

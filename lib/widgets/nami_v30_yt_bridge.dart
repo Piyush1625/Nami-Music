@@ -234,6 +234,7 @@ class NamiYoutubePlaybackBridge {
       // Watchdog: if libmpv stays stuck at 00:00 after 3.8s, blacklist this client & failover!
       _playbackWatchdog?.cancel();
       final triedSet = _failedClientsByVid.putIfAbsent(yt.videoId, () => <String>{});
+      if (triedSet.length >= 4) triedSet.clear();
       final usedClient = stream.clientUsed;
       _playbackWatchdog = Timer(const Duration(milliseconds: 3800), () {
         if (activeYtTrack.value?.videoId != yt.videoId) return;
@@ -459,7 +460,7 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'YouTube InnerTube Engine (v3.0.0-beta)',
+                          'YouTube Music Search',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 15,

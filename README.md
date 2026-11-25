@@ -1,121 +1,29 @@
-<p align="center">
-  <img src="assets/nami_banner.svg" alt="Nami Music Player Banner" width="100%" />
-</p>
+# Nami Music
 
-<p align="center">
-  <a href="https://github.com/Piyush1625/Nami-Music/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Piyush1625/Nami-Music?style=for-the-badge&color=E53935&label=Latest%20APK" alt="Latest Release" />
-  </a>
-  <a href="https://github.com/Piyush1625/Nami-Music/releases">
-    <img src="https://img.shields.io/github/downloads/Piyush1625/Nami-Music/total?style=for-the-badge&color=1E1E2E" alt="Total Downloads" />
-  </a>
-  <a href="https://github.com/Piyush1625/Nami-Music/actions/workflows/build.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/Piyush1625/Nami-Music/build.yml?branch=main&style=for-the-badge&label=CI%20Build" alt="CI Build Status" />
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/github/license/Piyush1625/Nami-Music?style=for-the-badge&color=26A69A" alt="MIT License" />
-  </a>
-</p>
+A custom, pitch-black AMOLED audiophile music player for Android built with Flutter and `libmpv` (`media_kit`) — designed for locked 120Hz fluidity, bit-perfect USB DAC output, India-first metadata, and seamless offline + online playback.
 
-<p align="center">
-  <strong>Nami Music</strong> is an open-source Flutter Android music player engineered for <strong>bit-perfect USB DAC lossless playback</strong>, <strong>120Hz pitch-black AMOLED polish</strong>, <strong>in-file FLAC/MP3 tag editing</strong>, and <strong>Mornye <code>.sflx</code> extension discovery</strong>.
-</p>
+## Highlights (`v3.0.3` Stable)
 
-<p align="center">
-  <a href="https://github.com/Piyush1625/Nami-Music/releases/latest"><strong>Download Latest Signed ARM64 APK</strong></a> •
-  <a href="docs/SFLX_SPEC.md"><strong>Mornye .sflx Spec</strong></a> •
-  <a href="CHANGELOG.md"><strong>Changelog</strong></a> •
-  <a href="https://piyush1625.github.io/Nami-Music/"><strong>Project Site</strong></a>
-</p>
+- **120Hz Butter Motion & Zero-Blank Expandable Player:** Permanent in-tree expandable player sheet with 1:1 finger-tracked drag-up/drag-down morphing, critically damped spring curves, single-layer GPU-cached artwork handoff, and persistent Synced Lyrics state across collapses.
+- **Swipeable Keep-Alive Shell:** 120Hz horizontal `PageView` across all 5 main tabs (`Home`, `Tracks`, `Artists`, `Playlists`, `YouTube`) with `AutomaticKeepAliveClientMixin` scroll preservation and a persistent nested `Navigator` keeping the Mini-Player and Bottom Navigation Bar pinned across Settings and detail pages.
+- **Unified YouTube & Mornye 5th Tab (Option A):** Combines `Home (Local)`, `Music`, `Mornye (Extensions)`, `Channels (Local)`, `Playlists (Local)`, and `Downloads` inside a 6-item morphing pill bar with nested `PageView` boundary handoff and AMOLED shimmer skeletons.
+- **Pure-Dart YouTube InnerTube Engine & Loopback Proxy:** Account-free local-first YouTube Music experience featuring India-first `FEmusic_home` feeds, multi-tier verified audio stream resolution bridged over a pure-Dart `127.0.0.1` loopback HTTP proxy to `libmpv`, **SponsorBlock** auto-skip, **Return YouTube Dislike**, **Auto-Start Radio**, and Watch/Queue sheets.
+- **Audiophile Core (`libmpv`):** Direct bit-perfect USB DAC support, True Gapless playback, ReplayGain loudness normalization (`Off` / `Track` / `Album`), Equalizer & AutoEQ presets, and interactive Audio Signal Chain inspection.
+- **India-First Metadata & Artwork Studio:** Prioritizes JioSaavn IN and Apple Music IN catalogs for accurate Indian artist portraits and album art, includes a bad-placeholder portrait cleaner, artist merge/aliasing, and permanent local FLAC/MP3 tag & cover writing.
+- **Tactile Library Gestures:** 1:1 spring-back track row swipes (`Left → Play After` with an in-place mutating bottom pill toast, `Right → Floating Track Info Card`), pull-to-refresh verification with a non-blocking top status banner, and a merged tap-to-shuffle / hold-to-locate FAB.
+- **Minimal AMOLED Settings & About:** Zero-filler pitch-black Settings hierarchy with direct `Scan Folders` and `Equalizer & AutoEQ` quick actions, compact inline vertical-bar waveform sliders, instant keyword search, live Library & YouTube Statistics, and an in-app GitHub Releases updater.
+- **4×1 AMOLED Home Screen Widget:** Live track title, artist, album artwork, and play/pause/skip transport controls synced directly to your Android launcher.
 
----
+## Building
 
-## Highlights
-
-| Area | Capabilities |
-| :--- | :--- |
-| **Audiophile Engine (`libmpv`)** | 16B / 24B FLAC, ALAC, WAV, MP3, M4A, OGG • Exclusive USB DAC permission (`UsbManager`) • Live Audio Path telemetry • 10-Band ISO Equalizer with **AutoEQ IEM profiles** (Harman IE, IEM Neutral, Studio DF) • True **Dual-Deck Overlapping Crossfade** (`0s–8s`) • Independent Pitch & Stereo L/R Balance |
-| **Home & Analytics** | Customizable drag-to-reorder shelves • Live tappable DAC output & AutoEQ switcher • Time-of-Day & Forgotten Favorites mixes • Weekly Recap strip • Timestamped 7-day cadence, 28-day listening heatmap & active streak • **ListenBrainz** scrobbling with offline queue |
-| **Tracks, Artists & Playlists** | Multi-criteria sort sheet & health filters (`Untagged`, `No Cover`, `Duplicates`) • Dual customizable swipe gestures • **Permanent in-file FLAC/MP3 tag & cover art writer** (`Isolate.run`) • Edge-to-edge parallax Artist Hero with chronological albums, Primary vs. Appears On split, Bio, and **Artist Alias/Merge Tool** • Rule-Based Smart Playlists, 2x2 mosaic collage covers, pins & auto `.m3u8` sync |
-| **Mornye `.sflx` Ecosystem** | Interactive Album & Artist drill-down with **Download Entire Album** • Queued background Download Manager with progress, auto-cover & LRCLIB `.lrc` embedding • Folder/filename templates • Extension Store directory & live latency pings • Direct **Stream-to-Queue** playback |
-| **Minimal Settings & Updates** | Category-based pitch-black Settings with top search bar, live permission/cache status dots, one-tap **Bit-Perfect vs. Tuned** presets, Appearance live preview, unified `.nami-backup` archive, and an **in-app GitHub Releases updater** |
-
----
-
-## Screenshots
-
-> Add your phone screenshots into `assets/screenshots/` (`home.png`, `now_playing.png`, `artist.png`, `settings.png`) to display them here.
-
-| Home | Now Playing | Artist Parallax | Minimal Settings |
-| :---: | :---: | :---: | :---: |
-| `assets/screenshots/home.png` | `assets/screenshots/now_playing.png` | `assets/screenshots/artist.png` | `assets/screenshots/settings.png` |
-
----
-
-## Installation & In-Place Updates
-
-### Direct APK Download
-1. Open [**Releases**](https://github.com/Piyush1625/Nami-Music/releases/latest) and download `nami-arm64-v8a.apk`.
-2. Install directly over any previous signed Nami release—your playlists, listening history, and settings stay intact.
-3. Grant **All Files Access** (`MANAGE_EXTERNAL_STORAGE`) inside **Settings -> Permissions & Hardware** for permanent in-file tag editing and deletion.
-
-### Track Updates with Obtainium
-Paste this JSON into **Obtainium -> Import / Add App** to receive automatic signed release updates:
-
-```json
-{
-  "id": "com.piyush.nami",
-  "url": "https://github.com/Piyush1625/Nami-Music",
-  "author": "Piyush1625",
-  "name": "Nami Music",
-  "additionalSettings": "{\"apkFilterRegEx\":\"arm64-v8a\\\\.apk$\",\"includePrereleases\":false}"
-}
-```
-
----
-
-## Building Mornye `.sflx` Extensions
-
-Mornye supports standalone `.sflx` JSON manifests, repo indexes, and `.zip` extension bundles.
-* Read the full schema in [**`docs/SFLX_SPEC.md`**](docs/SFLX_SPEC.md).
-* Copy starter templates from [**`examples/sample_provider.sflx`**](examples/sample_provider.sflx) and [**`examples/sample_repo_index.json`**](examples/sample_repo_index.json).
-
----
-
-## Repository Architecture
-
-```text
-├── .github/workflows/build.yml      # Fast analyze gate + cached ARM64 build + auto GitHub Releases
-├── .github/ISSUE_TEMPLATE/          # Structured Bug Report & Feature Request forms
-├── android/app/proguard-rules.pro   # R8 shrinking keep-rules for libmpv, audio_service & USB DAC
-├── assets/                          # Vector waveform banner & app screenshots
-├── docs/                            # GitHub Pages landing site (index.html) & SFLX_SPEC.md
-├── examples/                        # Sample .sflx extension manifests
-├── fastlane/metadata/android/en-US/ # IzzyOnDroid / F-Droid storefront metadata
-├── lib/
-│   ├── main.dart                    # App entry, NamiApp & NamiHomeShell
-│   ├── models/nami_models.dart      # AudioTrack, CustomPlaylist, Mornye & Lyrics models
-│   ├── screens/                     # Modular Settings & Now Playing screens
-│   ├── services/                    # Tag Writer, Crossfade Engine, Download Manager, Scrobbler, Store, Updater
-│   └── widgets/nami_widgets.dart    # HuePaletteCanvas, FastScroller, AnimatedPlayingBars & Skeletons
-└── scripts/configure_android_native.py
-```
-
----
-
-## Single-Branch Release Workflow (Termux)
+Signed ARM64 release APKs are compiled automatically via GitHub Actions on pushes and version tags (`v*`).
 
 ```bash
-# Regular development push on main:
-cd ~/nami && git add -A && git commit -m "Your change" && git push origin main
-
-# Cut a signed GitHub Release (triggers auto-publish to Releases & In-App Updater):
-git tag v2.1.0 && git push origin v2.1.0
+flutter pub get
+flutter analyze --no-fatal-infos --no-fatal-warnings
+flutter build apk --release --target-platform android-arm64
 ```
 
----
+## License
 
-## Author & License
-
-Created and maintained by **Piyush ([Piyush1625](https://github.com/Piyush1625))**.
-Released under the [**MIT License**](LICENSE).
+Open-source project maintained by [Piyush1625](https://github.com/Piyush1625/Nami-Music).

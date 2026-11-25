@@ -23,7 +23,7 @@ class NamiButterScrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-/// Global 120Hz Page Transition: iOS/Namida-inspired parallax slide + subtle depth scale
+/// Global 120Hz Page Transition: iOS/Nami-crafted parallax slide + subtle depth scale
 /// with critically smooth Cubic(0.22, 1.0, 0.36, 1.0) curves for every page jump.
 class NamiSmoothPageTransitionsBuilder extends PageTransitionsBuilder {
   const NamiSmoothPageTransitionsBuilder();
@@ -137,76 +137,6 @@ class _NamiSpringTapState extends State<NamiSpringTap> {
         curve: _down ? Curves.easeOutQuad : Curves.easeOutBack,
         child: widget.child,
       ),
-    );
-  }
-}
-
-/// State-preserving 120Hz tab transition wrapper: gives IndexedStack tab switches
-/// a crisp 190ms glide + fade without losing scroll positions on any tab.
-class NamiTabMotionWrapper extends StatefulWidget {
-  final int activeIndex;
-  final Widget child;
-
-  const NamiTabMotionWrapper({
-    super.key,
-    required this.activeIndex,
-    required this.child,
-  });
-
-  @override
-  State<NamiTabMotionWrapper> createState() => _NamiTabMotionWrapperState();
-}
-
-class _NamiTabMotionWrapperState extends State<NamiTabMotionWrapper>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 190),
-      value: 1.0,
-    );
-    _anim = CurvedAnimation(
-      parent: _ctrl,
-      curve: const Cubic(0.22, 1.0, 0.36, 1.0),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant NamiTabMotionWrapper oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.activeIndex != oldWidget.activeIndex) {
-      final ms = (190 * NamiUxPrefs.motionScale).round().clamp(110, 280);
-      _ctrl.duration = Duration(milliseconds: ms);
-      _ctrl.forward(from: 0.0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      child: widget.child,
-      builder: (_, c) {
-        final t = _anim.value.clamp(0.0, 1.0);
-        return Opacity(
-          opacity: (0.76 + 0.24 * t).clamp(0.0, 1.0),
-          child: Transform.translate(
-            offset: Offset(0, (1.0 - t) * 6.0),
-            child: c,
-          ),
-        );
-      },
     );
   }
 }
