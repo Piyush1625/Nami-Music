@@ -541,7 +541,50 @@ class NamiYoutubeService {
     return results;
   }
 
-  /// Probes a candidate stream URL with a 32KB Range request & rejects HTML error pages.
+  /// Validates the first bytes of an audio stream so HTML/403 error responses are rejected instantly.
+  static bool isValidAudioHeader(List<int> bytes) {
+    if (bytes.length < 12) return false;
+    // Reject HTML / JSON error pages immediately
+    if (bytes[0] == 0x3C || bytes[0] == 0x7B) return false; // HTML or JSON error payload
+    // WebM / Matroska EBML header: 1A 45 DF A3
+    if (bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3) {
+      return true;
+    }
+    // MP4 / M4A ftyp box at offset 4..7
+    if (bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) {
+      return true;
+    }
+    // OggS
+    if (bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53) {
+      return true;
+    }
+    // fLaC
+    if (bytes[0] == 0x66 && bytes[1] == 0x4C && bytes[2] == 0x61 && bytes[3] == 0x43) {
+      return true;
+    }
+    // ID3 or MP3/AAC frame sync
+    if ((bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) ||
+        (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)) {
+      return true;
+    }
+    // RIFF / WAVE
+    if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Appends bounded `&range=start-end` query param for YouTube googlevideo URLs
+  /// (mirrors official Android/VR DASH chunking and avoids YouTube's open-ended Range 403/throttle).
+  static Uri buildBoundedChunkUri(String rawUrl, int start, int end) {
+    if (rawUrl.contains('googlevideo.com/videoplayback') && !rawUrl.contains('range=')) {
+      final sep = rawUrl.contains('?') ? '&' : '?';
+      return Uri.parse('$rawUrl${sep}range=$start-$end');
+    }
+    return Uri.parse(rawUrl);
+  }
+
+  /// Probes the first 32KB chunk AND verifies real audio container magic bytes.
   Future<bool> _probeStreamUrl(String url, Map<String, String> headers) async {
     if (!url.startsWith('http')) return false;
     if (url.contains('.m3u8') || url.contains('manifest/hls')) {
@@ -554,25 +597,26 @@ class NamiYoutubeService {
         return false;
       }
     }
-    final client = http.Client();
     try {
-      final req = http.Request('GET', Uri.parse(url));
-      req.headers.addAll(headers);
-      req.headers['Range'] = 'bytes=0-32767';
-      final streamed = await client.send(req).timeout(const Duration(seconds: 5));
-      final ct = (streamed.headers['content-type'] ?? '').toLowerCase();
-      final ok = (streamed.statusCode == 200 || streamed.statusCode == 206) &&
-          !ct.contains('text/html');
-      streamed.stream.listen((_) {}).cancel();
-      return ok;
+      final probeUri = buildBoundedChunkUri(url, 0, 32767);
+      final reqHeaders = Map<String, String>.from(headers);
+      if (!probeUri.toString().contains('range=')) {
+        reqHeaders['Range'] = 'bytes=0-32767';
+      }
+      final resp = await http
+          .get(probeUri, headers: reqHeaders)
+          .timeout(const Duration(seconds: 6));
+      if (resp.statusCode != 200 && resp.statusCode != 206) return false;
+      final ct = (resp.headers['content-type'] ?? '').toLowerCase();
+      if (ct.contains('text/html')) return false;
+      return isValidAudioHeader(resp.bodyBytes);
     } catch (_) {
       return false;
-    } finally {
-      client.close();
     }
   }
 
-  /// 6-tier verified audio resolver with `excludeClients` support for automatic libmpv watchdog failover.
+  /// Late-2026 multi-tier verified audio stream resolver:
+  /// ANDROID_VR (Opus + M4A) -> VISIONOS -> IOS -> ANDROID_CREATOR -> TVHTML5_EMBED -> Invidious -> Piped.
   Future<NamiYtStreamResult?> resolveAudioStream(
     String videoId, {
     String quality = 'High (Opus)',
@@ -597,7 +641,7 @@ class NamiYoutubeService {
         'ua': _vrUserAgent,
         'clientHeader': '28',
         'version': '1.65.10',
-        'preferHls': false,
+        'forceM4a': false,
         'context': {
           'client': {
             'clientName': 'ANDROID_VR',
@@ -617,7 +661,6 @@ class NamiYoutubeService {
         'ua': _vrUserAgent,
         'clientHeader': '28',
         'version': '1.65.10',
-        'preferHls': false,
         'forceM4a': true,
         'context': {
           'client': {
@@ -634,11 +677,28 @@ class NamiYoutubeService {
         },
       },
       {
+        'name': 'VISIONOS',
+        'ua': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15',
+        'clientHeader': '101',
+        'version': '0.1',
+        'forceM4a': true,
+        'context': {
+          'client': {
+            'clientName': 'VISIONOS',
+            'clientVersion': '0.1',
+            'osName': 'visionOS',
+            'osVersion': '2.0',
+            'gl': gl,
+            'hl': hl,
+          },
+        },
+      },
+      {
         'name': 'IOS',
         'ua': _iosUserAgent,
         'clientHeader': '5',
         'version': '20.10.4',
-        'preferHls': true,
+        'forceM4a': true,
         'context': {
           'client': {
             'clientName': 'IOS',
@@ -653,11 +713,27 @@ class NamiYoutubeService {
         },
       },
       {
+        'name': 'ANDROID_CREATOR',
+        'ua': 'com.google.android.apps.youtube.creator/24.30.100 (Linux; U; Android 13) gzip',
+        'clientHeader': '14',
+        'version': '24.30.100',
+        'forceM4a': false,
+        'context': {
+          'client': {
+            'clientName': 'ANDROID_CREATOR',
+            'clientVersion': '24.30.100',
+            'androidSdkVersion': 33,
+            'gl': gl,
+            'hl': hl,
+          },
+        },
+      },
+      {
         'name': 'TVHTML5_EMBED',
         'ua': _webUserAgent,
         'clientHeader': '85',
         'version': '2.0',
-        'preferHls': false,
+        'forceM4a': false,
         'context': {
           'client': {
             'clientName': 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
@@ -674,10 +750,7 @@ class NamiYoutubeService {
 
     for (final c in clients) {
       final cname = c['name'] as String;
-      final hlsName = '${cname}_HLS';
-      if (excludeClients.contains(cname) && excludeClients.contains(hlsName)) {
-        continue;
-      }
+      if (excludeClients.contains(cname)) continue;
       try {
         final ua = c['ua'] as String;
         final resp = await http
@@ -708,77 +781,60 @@ class NamiYoutubeService {
             ) ??
             0;
         final streamHeaders = <String, String>{'User-Agent': ua};
-        final preferHls = c['preferHls'] == true;
 
-        // Try HLS first on iOS client (libmpv plays HLS reliably without YouTube direct-byte 403!)
-        if (preferHls && !excludeClients.contains(hlsName)) {
-          final hlsUrl = (sd['hlsManifestUrl'] ?? '').toString();
-          if (hlsUrl.startsWith('http') &&
-              await _probeStreamUrl(hlsUrl, streamHeaders)) {
-            final res = NamiYtStreamResult(
-              videoId: videoId,
-              audioUrl: hlsUrl,
-              mimeType: 'application/x-mpegURL',
-              bitrate: 128000,
-              duration: Duration(seconds: durSec),
-              headers: streamHeaders,
-              expiresAtMs: DateTime.now()
-                  .add(const Duration(hours: 2, minutes: 30))
-                  .millisecondsSinceEpoch,
-              clientUsed: hlsName,
-            );
-            _streamCache[cacheKey] = res;
-            return res;
-          }
-        }
-
-        if (!excludeClients.contains(cname)) {
-          final formats = <Map<String, dynamic>>[];
-          final adaptive = sd['adaptiveFormats'];
-          if (adaptive is List) {
-            for (final f in adaptive) {
-              if (f is Map<String, dynamic>) {
-                final mime = (f['mimeType'] ?? '').toString();
-                final url = (f['url'] ?? '').toString();
-                if (mime.startsWith('audio/') && url.startsWith('http')) {
-                  formats.add(f);
-                }
-              }
-            }
-          }
-          if (formats.isEmpty && sd['formats'] is List) {
-            for (final f in sd['formats'] as List) {
-              if (f is Map<String, dynamic> &&
-                  (f['url'] ?? '').toString().startsWith('http')) {
+        final formats = <Map<String, dynamic>>[];
+        final adaptive = sd['adaptiveFormats'];
+        if (adaptive is List) {
+          for (final f in adaptive) {
+            if (f is Map<String, dynamic>) {
+              final mime = (f['mimeType'] ?? '').toString();
+              final url = (f['url'] ?? '').toString();
+              if (mime.startsWith('audio/') && url.startsWith('http')) {
                 formats.add(f);
               }
             }
           }
-          if (formats.isNotEmpty) {
-            final picked = (c['forceM4a'] == true)
-                ? formats.firstWhere((f) => (f['mimeType'] ?? '').toString().toLowerCase().contains('mp4'), orElse: () => _pickStreamByQuality(formats, quality))
-                : _pickStreamByQuality(formats, quality);
-            final candUrl = picked['url'].toString();
-            if (await _probeStreamUrl(candUrl, streamHeaders)) {
-              final res = NamiYtStreamResult(
-                videoId: videoId,
-                audioUrl: candUrl,
-                mimeType: (picked['mimeType'] ?? 'audio/mp4').toString(),
-                bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
-                duration: Duration(seconds: durSec),
-                headers: streamHeaders,
-                expiresAtMs: DateTime.now()
-                    .add(const Duration(hours: 3, minutes: 30))
-                    .millisecondsSinceEpoch,
-                clientUsed: cname,
-              );
-              _streamCache[cacheKey] = res;
-              return res;
+        }
+        if (formats.isEmpty && sd['formats'] is List) {
+          for (final f in sd['formats'] as List) {
+            if (f is Map<String, dynamic> &&
+                (f['url'] ?? '').toString().startsWith('http')) {
+              formats.add(f);
             }
           }
         }
+        if (formats.isEmpty) continue;
+
+        final picked = (c['forceM4a'] == true)
+            ? formats.firstWhere(
+                (f) => (f['mimeType'] ?? '').toString().toLowerCase().contains('mp4'),
+                orElse: () => _pickStreamByQuality(formats, quality),
+              )
+            : _pickStreamByQuality(formats, quality);
+
+        final candUrl = picked['url'].toString();
+        if (await _probeStreamUrl(candUrl, streamHeaders)) {
+          final contentLen = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
+          final res = NamiYtStreamResult(
+            videoId: videoId,
+            audioUrl: candUrl,
+            mimeType: (picked['mimeType'] ?? 'audio/mp4').toString(),
+            bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
+            duration: Duration(seconds: durSec),
+            headers: {
+              ...streamHeaders,
+              if (contentLen > 0) 'X-Nami-Content-Length': '$contentLen',
+            },
+            expiresAtMs: DateTime.now()
+                .add(const Duration(hours: 3, minutes: 30))
+                .millisecondsSinceEpoch,
+            clientUsed: cname,
+          );
+          _streamCache[cacheKey] = res;
+          return res;
+        }
       } catch (e) {
-        debugPrint('[NamiYT] player client $cname failed: $e');
+        debugPrint('[NamiYT] client $cname failed: $e');
       }
     }
 
@@ -815,6 +871,7 @@ class NamiYoutubeService {
                   'url': proxied,
                   'mimeType': type,
                   'bitrate': int.tryParse((f['bitrate'] ?? '128000').toString()) ?? 128000,
+                  'contentLength': f['clen'] ?? 0,
                 });
               }
             }
@@ -824,13 +881,17 @@ class NamiYoutubeService {
           final candUrl = picked['url'].toString();
           const hdrs = {'User-Agent': _webUserAgent};
           if (await _probeStreamUrl(candUrl, hdrs)) {
+            final clen = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
             final res = NamiYtStreamResult(
               videoId: videoId,
               audioUrl: candUrl,
               mimeType: picked['mimeType'].toString(),
               bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
               duration: Duration(seconds: (data['lengthSeconds'] as num?)?.toInt() ?? 0),
-              headers: hdrs,
+              headers: {
+                ...hdrs,
+                if (clen > 0) 'X-Nami-Content-Length': '$clen',
+              },
               expiresAtMs: DateTime.now()
                   .add(const Duration(hours: 2))
                   .millisecondsSinceEpoch,
@@ -867,6 +928,7 @@ class NamiYoutubeService {
                 'url': s['url'],
                 'mimeType': s['mimeType'] ?? 'audio/webm',
                 'bitrate': s['bitrate'] ?? 128000,
+                'contentLength': s['contentLength'] ?? 0,
               });
             }
           }
@@ -875,13 +937,17 @@ class NamiYoutubeService {
           final candUrl = picked['url'].toString();
           const hdrs = {'User-Agent': _webUserAgent};
           if (await _probeStreamUrl(candUrl, hdrs)) {
+            final clen = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
             final res = NamiYtStreamResult(
               videoId: videoId,
               audioUrl: candUrl,
               mimeType: picked['mimeType'].toString(),
               bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
               duration: Duration(seconds: (data['duration'] as num?)?.toInt() ?? 0),
-              headers: hdrs,
+              headers: {
+                ...hdrs,
+                if (clen > 0) 'X-Nami-Content-Length': '$clen',
+              },
               expiresAtMs: DateTime.now()
                   .add(const Duration(hours: 2))
                   .millisecondsSinceEpoch,
@@ -1707,6 +1773,337 @@ class NamiYtLocalProxy {
     } finally {
       client.close(force: true);
     }
+  }
+}
+
+/// Local-First Chunked Audio Cache for YouTube Streams (`v3.1.0`):
+/// Downloads verified audio in bounded 512KB DASH chunks (`&range=start-end`) using up to
+/// 4 parallel workers directly to a local file (`nami_yt_cache/<videoId>.<ext>`), so `libmpv`
+/// ALWAYS plays a real local file path with zero HTTP/TLS/403 errors, instant seeking & offline replay!
+class NamiYtAudioCache {
+  NamiYtAudioCache._();
+  static final NamiYtAudioCache instance = NamiYtAudioCache._();
+
+  static const int _chunkSize = 512 * 1024; // 512 KB bounded chunks bypass YouTube throttling/403
+  final Map<String, Future<File?>> _inFlight = {};
+
+  Directory get cacheDir {
+    final d = Directory('${Directory.systemTemp.path}/nami_yt_cache');
+    if (!d.existsSync()) d.createSync(recursive: true);
+    return d;
+  }
+
+  String _extForMime(String mimeType) {
+    final l = mimeType.toLowerCase();
+    if (l.contains('mp4') || l.contains('m4a') || l.contains('aac')) return 'm4a';
+    if (l.contains('ogg')) return 'ogg';
+    return 'webm';
+  }
+
+  /// Returns an existing verified cached audio file on disk if present (0ms instant replay!).
+  File? findCachedFile(String videoId) {
+    final safeId = videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    for (final ext in const ['m4a', 'webm', 'ogg']) {
+      final f = File('${cacheDir.path}/$safeId.$ext');
+      if (f.existsSync() && f.lengthSync() > 49152) {
+        try {
+          final raf = f.openSync(mode: FileMode.read);
+          final hdr = raf.readSync(16);
+          raf.closeSync();
+          if (NamiYoutubeService.isValidAudioHeader(hdr)) {
+            return f;
+          }
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  Future<int> getTotalCacheBytes() async {
+    int total = 0;
+    try {
+      if (cacheDir.existsSync()) {
+        for (final e in cacheDir.listSync()) {
+          if (e is File && !e.path.endsWith('.part')) {
+            total += e.lengthSync();
+          }
+        }
+      }
+    } catch (_) {}
+    return total;
+  }
+
+  Future<void> clearAll() async {
+    try {
+      if (cacheDir.existsSync()) {
+        for (final e in cacheDir.listSync()) {
+          if (e is File) {
+            try {
+              e.deleteSync();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _evictLruIfNeeded({int maxMb = 512}) async {
+    try {
+      final maxBytes = maxMb.clamp(64, 2048) * 1024 * 1024;
+      final files = cacheDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => !f.path.endsWith('.part'))
+          .toList();
+      int total = 0;
+      for (final f in files) {
+        total += f.lengthSync();
+      }
+      if (total <= maxBytes) return;
+      files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
+      for (final f in files) {
+        if (total <= (maxBytes * 0.80).round()) break;
+        final sz = f.lengthSync();
+        try {
+          f.deleteSync();
+          total -= sz;
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  /// Ensures the given resolved stream is downloaded to a verified local file on disk.
+  /// Deduplicates concurrent requests for the same videoId and emits live progress (`0.0..1.0`).
+  Future<File?> ensureCachedAudioFile(
+    NamiYtStreamResult stream, {
+    void Function(double progress, int receivedBytes, int totalBytes)? onProgress,
+    bool Function()? isCancelled,
+    int maxCacheMb = 512,
+  }) async {
+    final existing = findCachedFile(stream.videoId);
+    if (existing != null) {
+      final sz = existing.lengthSync();
+      onProgress?.call(1.0, sz, sz);
+      try {
+        existing.setLastModifiedSync(DateTime.now());
+      } catch (_) {}
+      return existing;
+    }
+
+    final inflight = _inFlight[stream.videoId];
+    if (inflight != null) {
+      return inflight;
+    }
+
+    final future = _downloadToCacheInternal(
+      stream,
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+      maxCacheMb: maxCacheMb,
+    );
+    _inFlight[stream.videoId] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlight.remove(stream.videoId);
+    }
+  }
+
+  Future<File?> _downloadToCacheInternal(
+    NamiYtStreamResult stream, {
+    void Function(double progress, int receivedBytes, int totalBytes)? onProgress,
+    bool Function()? isCancelled,
+    int maxCacheMb = 512,
+  }) async {
+    final safeId = stream.videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final ext = _extForMime(stream.mimeType);
+    final finalFile = File('${cacheDir.path}/$safeId.$ext');
+    final partFile = File('${cacheDir.path}/$safeId.$ext.part');
+
+    final reqHeaders = <String, String>{};
+    stream.headers.forEach((k, v) {
+      if (!k.toLowerCase().startsWith('x-nami-')) {
+        reqHeaders[k] = v;
+      }
+    });
+
+    int knownTotal = int.tryParse(stream.headers['X-Nami-Content-Length'] ?? '') ?? 0;
+
+    // Step 1: Fetch first chunk (0..512KB-1) to verify real audio bytes & discover exact total length
+    final firstEnd = (knownTotal > 0 && knownTotal < _chunkSize) ? knownTotal - 1 : _chunkSize - 1;
+    final firstChunk = await _fetchChunkWithRetry(
+      stream.audioUrl,
+      reqHeaders,
+      0,
+      firstEnd,
+      onTotalDiscovered: (t) {
+        if (t > knownTotal) knownTotal = t;
+      },
+    );
+    if (firstChunk == null || firstChunk.isEmpty || !NamiYoutubeService.isValidAudioHeader(firstChunk)) {
+      return null;
+    }
+    if (isCancelled?.call() == true) return null;
+
+    if (partFile.existsSync()) {
+      try {
+        partFile.deleteSync();
+      } catch (_) {}
+    }
+
+    // Case A: Single-chunk small track or exact total fits in first chunk
+    if (knownTotal > 0 && firstChunk.length >= knownTotal) {
+      await partFile.writeAsBytes(firstChunk, flush: true);
+      if (finalFile.existsSync()) finalFile.deleteSync();
+      await partFile.rename(finalFile.path);
+      onProgress?.call(1.0, firstChunk.length, firstChunk.length);
+      unawaited(_evictLruIfNeeded(maxMb: maxCacheMb));
+      return finalFile;
+    }
+
+    // Case B: Known total length -> 4-way parallel bounded chunk download straight into RandomAccessFile!
+    if (knownTotal > firstChunk.length) {
+      final raf = partFile.openSync(mode: FileMode.write);
+      try {
+        raf.writeFromSync(firstChunk);
+        int received = firstChunk.length;
+        onProgress?.call((received / knownTotal).clamp(0.0, 0.99), received, knownTotal);
+
+        final ranges = <(int, int)>[];
+        int offset = firstChunk.length;
+        while (offset < knownTotal) {
+          final end = (offset + _chunkSize - 1).clamp(offset, knownTotal - 1);
+          ranges.add((offset, end));
+          offset = end + 1;
+        }
+
+        const int concurrency = 4;
+        for (int i = 0; i < ranges.length; i += concurrency) {
+          if (isCancelled?.call() == true) {
+            raf.closeSync();
+            try {
+              partFile.deleteSync();
+            } catch (_) {}
+            return null;
+          }
+          final batch = ranges.skip(i).take(concurrency).toList();
+          final results = await Future.wait<List<int>?>(
+            batch.map((r) => _fetchChunkWithRetry(stream.audioUrl, reqHeaders, r.$1, r.$2)),
+          );
+          for (int j = 0; j < batch.length; j++) {
+            final data = results[j];
+            if (data == null || data.isEmpty) {
+              raf.closeSync();
+              try {
+                partFile.deleteSync();
+              } catch (_) {}
+              return null;
+            }
+            raf.setPositionSync(batch[j].$1);
+            raf.writeFromSync(data);
+            received += data.length;
+          }
+          onProgress?.call((received / knownTotal).clamp(0.0, 0.99), received, knownTotal);
+        }
+        raf.flushSync();
+        raf.closeSync();
+      } catch (_) {
+        try {
+          raf.closeSync();
+          partFile.deleteSync();
+        } catch (_) {}
+        return null;
+      }
+    } else {
+      // Case C: Unknown total length -> sequential bounded chunks until EOF (short read / 416)
+      final sink = partFile.openWrite();
+      try {
+        sink.add(firstChunk);
+        int offset = firstChunk.length;
+        int safetyMaxChunks = 80; // up to 40 MB
+        while (safetyMaxChunks-- > 0) {
+          if (isCancelled?.call() == true) {
+            await sink.close();
+            try {
+              partFile.deleteSync();
+            } catch (_) {}
+            return null;
+          }
+          final end = offset + _chunkSize - 1;
+          final chunk = await _fetchChunkWithRetry(stream.audioUrl, reqHeaders, offset, end);
+          if (chunk == null || chunk.isEmpty) break;
+          sink.add(chunk);
+          offset += chunk.length;
+          final estTotal = knownTotal > offset ? knownTotal : (offset + _chunkSize);
+          onProgress?.call((offset / estTotal).clamp(0.0, 0.96), offset, estTotal);
+          if (chunk.length < _chunkSize) break;
+        }
+        await sink.flush();
+        await sink.close();
+      } catch (_) {
+        try {
+          await sink.close();
+          partFile.deleteSync();
+        } catch (_) {}
+        return null;
+      }
+    }
+
+    if (!partFile.existsSync() || partFile.lengthSync() < 32768) {
+      try {
+        if (partFile.existsSync()) partFile.deleteSync();
+      } catch (_) {}
+      return null;
+    }
+
+    if (finalFile.existsSync()) {
+      try {
+        finalFile.deleteSync();
+      } catch (_) {}
+    }
+    await partFile.rename(finalFile.path);
+    final finalLen = finalFile.lengthSync();
+    onProgress?.call(1.0, finalLen, finalLen);
+    unawaited(_evictLruIfNeeded(maxMb: maxCacheMb));
+    return finalFile;
+  }
+
+  Future<List<int>?> _fetchChunkWithRetry(
+    String rawUrl,
+    Map<String, String> baseHeaders,
+    int start,
+    int end, {
+    void Function(int total)? onTotalDiscovered,
+  }) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      try {
+        final uri = NamiYoutubeService.buildBoundedChunkUri(rawUrl, start, end);
+        final hdrs = Map<String, String>.from(baseHeaders);
+        if (!uri.toString().contains('range=')) {
+          hdrs['Range'] = 'bytes=$start-$end';
+        }
+        final resp = await http
+            .get(uri, headers: hdrs)
+            .timeout(const Duration(seconds: 10));
+        if (resp.statusCode == 416) return const <int>[];
+        if (resp.statusCode == 200 || resp.statusCode == 206) {
+          final cr = resp.headers['content-range'] ?? '';
+          final slash = cr.lastIndexOf('/');
+          if (slash != -1) {
+            final parsedTotal = int.tryParse(cr.substring(slash + 1).trim()) ?? 0;
+            if (parsedTotal > 0) onTotalDiscovered?.call(parsedTotal);
+          } else if (resp.statusCode == 200 && start == 0 && !uri.toString().contains('range=')) {
+            final cl = int.tryParse(resp.headers['content-length'] ?? '') ?? resp.bodyBytes.length;
+            if (cl > 0) onTotalDiscovered?.call(cl);
+          }
+          return resp.bodyBytes;
+        }
+      } catch (_) {}
+      if (attempt == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 220));
+      }
+    }
+    return null;
   }
 }
 

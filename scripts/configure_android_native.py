@@ -415,3 +415,30 @@ def _nami_generate_widget_provider():
     print('Generated NamiMusicWidgetProvider.kt, widget XML resources & manifest receiver.')
 
 _nami_generate_widget_provider()
+
+# v31_16kb_manifest_patch
+def _apply_v31_16kb_android_hardening():
+    import os as _os
+    _mp = "android/app/src/main/AndroidManifest.xml"
+    if _os.path.exists(_mp):
+        _m = open(_mp, encoding="utf-8").read()
+        _o = _m
+        if "android:usesCleartextTraffic" not in _m:
+            _m = _m.replace("<application", '<application\n        android:usesCleartextTraffic="true"', 1)
+        if "android:extractNativeLibs" not in _m:
+            _m = _m.replace("<application", '<application\n        android:extractNativeLibs="false"', 1)
+        if _m != _o:
+            open(_mp, "w", encoding="utf-8").write(_m)
+    for _gp in ("android/app/build.gradle.kts", "android/app/build.gradle"):
+        if _os.path.exists(_gp):
+            _g = open(_gp, encoding="utf-8").read()
+            if "useLegacyPackaging" not in _g and "android {" in _g:
+                _blk = (
+                    "\n    packaging {\n        jniLibs {\n            useLegacyPackaging = false\n        }\n    }\n"
+                    if _gp.endswith(".kts")
+                    else "\n    packagingOptions {\n        jniLibs {\n            useLegacyPackaging false\n        }\n    }\n"
+                )
+                open(_gp, "w", encoding="utf-8").write(_g.replace("android {", "android {" + _blk, 1))
+
+if __name__ == "__main__":
+    _apply_v31_16kb_android_hardening()

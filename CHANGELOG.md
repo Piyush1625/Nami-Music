@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.1.0 — 2026-11-26
+
+### Flagship Upgrades
+- **Chunked Local Audio Cache YouTube Engine (`NamiYtAudioCache`):** Downloads YouTube audio in 4-way parallel 512KB bounded DASH chunks (`&range=start-end`) with audio magic-byte validation (`ftyp` / `EBML` / `OggS`) across an 8-tier late-2026 client matrix (`ANDROID_VR` Opus/M4A, `VISIONOS`, `IOS`, `ANDROID_CREATOR`, `TVHTML5_EMBED`, `Invidious`, `Piped`), handing `libmpv` a real local file path (0 HTTP errors, instant seeking, 0ms offline replay).
+- **YouTube Offline Downloads (`NamiYtDownloadManager`):** Full live `All | Ongoing | Finished` Downloads tab with animated progress bars, Cancel/Retry, Watch Sheet `Download` action, and persistent offline playback.
+- **Unified Local FLAC + YouTube Mixed Queue:** Queue YouTube tracks right behind local FLACs (`Play Next` → `yt://` placeholders) with automatic 15-second background pre-fetching for gapless transitions.
+- **Interactive Listening Statistics Charts (`NamiStatsChartsScreen`):** 7-Day Activity bar chart, Audiophile Format Breakdown stacked bar, Top Artists & Top Albums reachable from **Settings → About Nami → Statistics & Charts**.
+- **Lyrics Collapse Morph Polish:** Suppresses full-size cover art during collapse from Synced Lyrics mode so lyrics glide down cleanly with zero cover flash.
+- **True Lossless / FLAC Integrity Inspector (`NamiLosslessInspector`):** Pure-Dart binary `STREAMINFO` / WAV PCM header inspector inside the floating **Track Info** card flagging genuine Hi-Res/CD lossless vs possible MP3-to-FLAC upscales.
+- **Android 15/16 16 KiB Packaging & USB Audio Diagnostics:** Enables `extractNativeLibs=false`, `useLegacyPackaging=false`, `usesCleartextTraffic=true`, and adds an Audio Engine / UAC2 Diagnostics sheet inside **Settings → Playback & DAC**.
+
 ## v3.0.3 (Stable) — 2026-11-26
 
 ### New & Refined

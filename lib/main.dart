@@ -53,6 +53,7 @@ part 'widgets/nami_v29_settings_studio.dart';
 part 'widgets/nami_v29_8_gestures.dart';
 part 'widgets/nami_v30_yt_bridge.dart';
 part 'widgets/nami_v30_discover_tab.dart';
+part 'widgets/nami_v31_suite.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -1038,6 +1039,14 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 }
 
 Future<void> _playSong(AudioTrack song) async {
+    /* v31_mixed_yt_queue_play */
+    if (song.path.startsWith('yt://')) {
+      await NamiYoutubePlaybackBridge.playByVideoId(
+        song.path.substring(5),
+        fallbackMeta: song,
+      );
+      return;
+    }
     /* v30_2_clear_yt_on_local */
     if (!song.path.startsWith('http')) {
       NamiYoutubePlaybackBridge.clearActiveYoutubeTrack();
@@ -1111,7 +1120,7 @@ Future<void> _playSong(AudioTrack song) async {
 
   void _playNextTrack() {
     /* v30_1_yt_skip */
-    if (_currentSong != null && _currentSong!.path.startsWith('http') && NamiYoutubePlaybackBridge.activeYtTrack.value != null) {
+    if (_currentSong != null && (_currentSong!.path.startsWith('http') || _currentSong!.path.contains('nami_yt_cache')) && NamiYoutubePlaybackBridge.activeYtTrack.value != null) {
       NamiYoutubePlaybackBridge.playNextInRadioQueue();
       return;
     }
@@ -1142,7 +1151,7 @@ Future<void> _playSong(AudioTrack song) async {
 
   void _playPrevTrack() {
     /* v30_1_yt_skip */
-    if (_currentSong != null && _currentSong!.path.startsWith('http') && NamiYoutubePlaybackBridge.activeYtTrack.value != null) {
+    if (_currentSong != null && (_currentSong!.path.startsWith('http') || _currentSong!.path.contains('nami_yt_cache')) && NamiYoutubePlaybackBridge.activeYtTrack.value != null) {
       NamiYoutubePlaybackBridge.playPrevInRadioQueue();
       return;
     }
@@ -11790,6 +11799,7 @@ Future<void> _exportUnifiedNamiBackup() async {
     NamiUxPrefs.ensureLoaded().then((_) {
       NamiAudiophileEngine.applyMpvProperties(_audioPlayer);
       NamiYoutubeStore.instance.ensureLoaded();
+      NamiYtDownloadManager.instance.ensureLoaded();
       NamiYoutubePlaybackBridge.bindSponsorBlock(_audioPlayer);
     });
     NamiAudiophileEngine.bindWidgetControls(
@@ -11946,9 +11956,12 @@ Future<void> _exportUnifiedNamiBackup() async {
     AudioTrack track, {
     Map<String, String>? httpHeaders,
   }) async {
-    /* v30_1_direct_yt_mpv */
-    if (!track.path.startsWith('http')) {
-      await _playSong(track);
+    /* v31_local_file_yt_mpv */
+    if (track.path.startsWith('yt://')) {
+      await NamiYoutubePlaybackBridge.playByVideoId(
+        track.path.substring(5),
+        fallbackMeta: track,
+      );
       return;
     }
     setState(() {
@@ -11957,16 +11970,18 @@ Future<void> _exportUnifiedNamiBackup() async {
     try {
       await _audioPlayer.stop();
       await _audioPlayer.open(
-        Media(
-          track.path,
-          httpHeaders: httpHeaders ?? const <String, String>{},
-        ),
+        track.path.startsWith('http')
+            ? Media(
+                track.path,
+                httpHeaders: httpHeaders ?? const <String, String>{},
+              )
+            : Media(track.path),
         play: true,
       );
     } catch (e) {
       debugPrint('[NamiYT] libmpv open failed: $e');
       NamiLiveToastController.showMessage(
-        'Playback error — retrying stream',
+        'Playback error — tap to retry',
         icon: Icons.error_outline_rounded,
       );
     }

@@ -1563,7 +1563,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   Widget _buildDownloadsTab(Color accent) {
     final shell = _NamiHomeShellState.activeInstance;
     final allSongs = shell?._songs ?? const <AudioTrack>[];
-    final downloaded = allSongs
+    final localDownloaded = allSongs
         .where((s) =>
             s.path.toLowerCase().contains('download') ||
             s.path.toLowerCase().contains('mornye') ||
@@ -1571,90 +1571,284 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
         .toList()
       ..sort((a, b) => b.addedTimestampMs.compareTo(a.addedTimestampMs));
 
-    final visible = _dlFilter == 'Ongoing' ? const <AudioTrack>[] : downloaded;
+    return ValueListenableBuilder<List<NamiYtDownloadTask>>(
+      valueListenable: NamiYtDownloadManager.instance.tasks,
+      builder: (_, ytTasks, __) {
+        final ongoing = ytTasks
+            .where((t) =>
+                t.status == NamiYtDlStatus.downloading ||
+                t.status == NamiYtDlStatus.queued ||
+                t.status == NamiYtDlStatus.failed)
+            .toList();
+        final finishedYt = ytTasks
+            .where((t) => t.status == NamiYtDlStatus.completed && t.savedPath != null)
+            .toList();
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
-          child: Row(
-            children: [
-              for (final f in const ['All', 'Ongoing', 'Finished']) ...[
-                GestureDetector(
-                  onTap: () {
-                    NamiUxPrefs.hapticLight();
-                    setState(() => _dlFilter = f);
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _dlFilter == f ? Colors.white.withValues(alpha: 0.16) : const Color(0xFF101016),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _dlFilter == f ? Colors.white38 : Colors.white.withValues(alpha: 0.08),
+        final showOngoing = _dlFilter == 'All' || _dlFilter == 'Ongoing';
+        final showFinished = _dlFilter == 'All' || _dlFilter == 'Finished';
+
+        final isEmpty = (!showOngoing || ongoing.isEmpty) &&
+            (!showFinished || (finishedYt.isEmpty && localDownloaded.isEmpty));
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+              child: Row(
+                children: [
+                  for (final f in const ['All', 'Ongoing', 'Finished']) ...[
+                    GestureDetector(
+                      onTap: () {
+                        NamiUxPrefs.hapticLight();
+                        setState(() => _dlFilter = f);
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _dlFilter == f
+                              ? Colors.white.withValues(alpha: 0.16)
+                              : const Color(0xFF101016),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _dlFilter == f
+                                ? Colors.white38
+                                : Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Text(
+                          f == 'Ongoing' && ongoing.isNotEmpty
+                              ? 'Ongoing (${ongoing.length})'
+                              : f,
+                          style: TextStyle(
+                            color: _dlFilter == f ? Colors.white : Colors.white60,
+                            fontSize: 12,
+                            fontWeight: _dlFilter == f ? FontWeight.w800 : FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
-                    child: Text(
-                      f,
-                      style: TextStyle(
-                        color: _dlFilter == f ? Colors.white : Colors.white60,
-                        fontSize: 12,
-                        fontWeight: _dlFilter == f ? FontWeight.w800 : FontWeight.w600,
+                  ],
+                ],
+              ),
+            ),
+            Expanded(
+              child: isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.download_done_rounded, color: Colors.white30, size: 42),
+                          const SizedBox(height: 10),
+                          Text(
+                            _dlFilter == 'Ongoing'
+                                ? 'No active downloads right now'
+                                : 'Tap Download on any YouTube track or Mornye FLAC to save offline',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          ),
+                        ],
                       ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.only(bottom: 160),
+                      children: [
+                        if (showOngoing && ongoing.isNotEmpty) ...[
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                            child: Text(
+                              'ONGOING',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                          for (final task in ongoing)
+                            Container(
+                              margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0E0E15),
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: SizedBox(
+                                          width: 44,
+                                          height: 44,
+                                          child: Image.network(
+                                            task.track.thumbnailUrl,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Container(
+                                              color: const Color(0xFF181822),
+                                              child: const Icon(Icons.music_note_rounded, color: Colors.white38, size: 18),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              task.track.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              task.status == NamiYtDlStatus.failed
+                                                  ? (task.errorMessage ?? 'Failed')
+                                                  : '${(task.progress * 100).round()}% • ${(task.receivedBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+                                              style: TextStyle(
+                                                color: task.status == NamiYtDlStatus.failed
+                                                    ? const Color(0xFFF87171)
+                                                    : Colors.white54,
+                                                fontSize: 11.2,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (task.status == NamiYtDlStatus.failed)
+                                        IconButton(
+                                          icon: Icon(Icons.refresh_rounded, color: accent, size: 20),
+                                          onPressed: () => NamiYtDownloadManager.instance.enqueueDownload(task.track),
+                                        )
+                                      else
+                                        IconButton(
+                                          icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
+                                          onPressed: () => NamiYtDownloadManager.instance.cancelDownload(task.track.videoId),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: task.status == NamiYtDlStatus.failed
+                                          ? 0.0
+                                          : task.progress.clamp(0.02, 1.0),
+                                      minHeight: 4.5,
+                                      backgroundColor: Colors.white10,
+                                      valueColor: AlwaysStoppedAnimation<Color>(accent),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                        if (showFinished && finishedYt.isNotEmpty) ...[
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 8, 16, 6),
+                            child: Text(
+                              'YOUTUBE OFFLINE',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                          for (final task in finishedYt)
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: SizedBox(
+                                  width: 46,
+                                  height: 46,
+                                  child: Image.network(
+                                    task.track.thumbnailUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: const Color(0xFF161620),
+                                      child: const Icon(Icons.music_note_rounded, color: Colors.white38),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                task.track.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white, fontSize: 13.6, fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                '${task.track.artist} • ${(task.totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB Offline',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white54, fontSize: 11.4),
+                              ),
+                              trailing: const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF10B981), size: 19),
+                              onTap: () {
+                                final p = task.savedPath;
+                                if (p != null && File(p).existsSync() && shell != null) {
+                                  final track = NamiYoutubePlaybackBridge.toAudioTrack(
+                                    task.track,
+                                    streamUrl: p,
+                                    localThumbPath: task.track.cachedThumbPath,
+                                  );
+                                  shell._playV30YoutubeAudioTrack(track);
+                                } else {
+                                  NamiYoutubePlaybackBridge.playTrack(task.track);
+                                }
+                              },
+                            ),
+                        ],
+                        if (showFinished && localDownloaded.isNotEmpty) ...[
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 10, 16, 6),
+                            child: Text(
+                              'MORNYE & LOCAL DOWNLOADS',
+                              style: TextStyle(
+                                color: Colors.white54,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                          for (final s in localDownloaded)
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                              leading: shell != null
+                                  ? shell._buildCoverArt(s, 46, 10)
+                                  : const Icon(Icons.music_note_rounded, color: Colors.white54),
+                              title: Text(
+                                s.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white, fontSize: 13.6, fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                '${cleanArtistStr(s.artist)} • ${s.album}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white54, fontSize: 11.4),
+                              ),
+                              trailing: const Icon(Icons.check_circle_outline_rounded, color: Colors.white38, size: 19),
+                              onTap: () => shell?._playSong(s),
+                            ),
+                        ],
+                      ],
                     ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        Expanded(
-          child: visible.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.download_done_rounded, color: Colors.white30, size: 42),
-                      const SizedBox(height: 10),
-                      Text(
-                        _dlFilter == 'Ongoing'
-                            ? 'No ongoing downloads right now'
-                            : 'Mornye FLAC & offline downloads appear here',
-                        style: const TextStyle(color: Colors.white54, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 160),
-                  itemCount: visible.length,
-                  itemBuilder: (_, i) {
-                    final s = visible[i];
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                      leading: shell != null
-                          ? shell._buildCoverArt(s, 46, 10)
-                          : const Icon(Icons.music_note_rounded, color: Colors.white54),
-                      title: Text(
-                        s.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 13.6, fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text(
-                        '${cleanArtistStr(s.artist)} • ${s.album}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white54, fontSize: 11.4),
-                      ),
-                      trailing: const Icon(Icons.check_circle_outline_rounded, color: Colors.white38, size: 19),
-                      onTap: () => shell?._playV30YoutubeAudioTrack(s),
-                    );
-                  },
-                ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2033,9 +2227,14 @@ class _NamiYtWatchModalState extends State<_NamiYtWatchModal> {
                             },
                           ),
                           _watchAction(
-                            Icons.refresh_rounded,
-                            'Refresh',
-                            () => NamiYoutubePlaybackBridge.playTrack(widget.track),
+                            Icons.playlist_play_rounded,
+                            'Play Next',
+                            () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(widget.track),
+                          ),
+                          _watchAction(
+                            Icons.download_rounded,
+                            'Download',
+                            () => NamiYtDownloadManager.instance.enqueueDownload(widget.track),
                           ),
                           _watchAction(
                             Icons.playlist_add_rounded,

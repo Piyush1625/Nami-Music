@@ -931,7 +931,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v3.0.3 Stable • Releases & Library Statistics',
+                subtitle: 'v3.1.0 Stable • Releases & Library Statistics',
                 index: 6,
               ),
             ],
@@ -1510,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.0.3 Stable (v40)',
+                    'v3.1.0 (v41)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1663,27 +1663,37 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.bar_chart_rounded, color: Colors.white54, size: 22),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Statistics',
-                          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Live overview of your music library',
-                          style: TextStyle(color: Colors.white54, fontSize: 11.5),
-                        ),
-                      ],
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  NamiUxPrefs.hapticLight();
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const NamiStatsChartsScreen()),
+                  );
+                },
+                child: const Row(
+                  children: [
+                    Icon(Icons.bar_chart_rounded, color: Colors.white54, size: 22),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Statistics & Charts',
+                            style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Tap to open 7-Day Activity, Format & Top Artist Charts',
+                            style: TextStyle(color: Colors.white54, fontSize: 11.5),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 22),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
               Wrap(
@@ -1721,7 +1731,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.0.3 Stable Engine',
+                          'Nami v3.1.0 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),
@@ -2084,6 +2094,18 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             trailingText: 'Request',
             onTap: w.onRequestUsbDac,
           ),
+          _actionRow(
+            icon: Icons.memory_rounded,
+            title: 'Audio Engine, 16 KiB & UAC2 Diagnostics',
+            subtitle: 'Inspect USB DAC path, 16 KiB alignment & YT local cache',
+            showChevron: true,
+            onTap: () => showNamiAudioHardwareDiagnosticsSheet(
+              context,
+              outputDevice: outName,
+              usbDacExclusive: _usbDac,
+              onRequestUsbDac: w.onRequestUsbDac,
+            ),
+          ),
           _divider(),
           _pillChoiceRow(
             icon: Icons.graphic_eq_rounded,
@@ -2429,6 +2451,19 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             subtitle: 'Used: $ytThumbMb MB',
             trailingText: 'Clear',
             onTap: _clearYtThumbCache,
+          ),
+          _actionRow(
+            icon: Icons.audio_file_outlined,
+            title: 'Clear YouTube Cached Audio Files',
+            subtitle: 'Frees local offline YouTube stream cache (nami_yt_cache)',
+            trailingText: 'Clear',
+            onTap: () async {
+              await NamiYtAudioCache.instance.clearAll();
+              NamiLiveToastController.showMessage(
+                'Cleared YouTube audio cache',
+                icon: Icons.cleaning_services_rounded,
+              );
+            },
           ),
         ];
     }

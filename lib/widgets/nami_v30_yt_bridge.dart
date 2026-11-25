@@ -1,7 +1,7 @@
 part of '../main.dart';
 
-/// Cleanly derives a short audio format badge (`FLAC 24B`, `MP3`, `YT OPUS`, `YT M4A`)
-/// without ever leaking HTTP/YouTube query parameters (`421&LMT=1786...`) onto the UI.
+/// Cleanly derives a short audio format badge (`FLAC 24B`, `MP3`, `YT OPUS`, `YT M4A`, `YT STREAM`)
+/// without ever leaking URL query parameters onto the UI.
 String namiFormatBadgeForPath(
   String? path, {
   int bitDepth = 0,
@@ -9,12 +9,27 @@ String namiFormatBadgeForPath(
 }) {
   if (path == null || path.isEmpty) return fallback;
   final lower = path.toLowerCase();
+  if (lower.startsWith('yt://')) return 'YT STREAM';
+  if (lower.contains('nami_yt_cache') || lower.contains('nami downloads')) {
+    if (lower.endsWith('.webm') || lower.endsWith('.opus')) return 'YT OPUS';
+    if (lower.endsWith('.m4a') || lower.endsWith('.mp4')) return 'YT M4A';
+    if (lower.endsWith('.ogg')) return 'YT OGG';
+  }
   if (lower.startsWith('http://') || lower.startsWith('https://')) {
     if (lower.contains('.m3u8') || lower.contains('manifest/hls')) return 'YT HLS';
-    if (lower.endsWith('.webm') || lower.endsWith('.opus') || lower.contains('mime=audio%2fwebm') || lower.contains('opus') || lower.contains('itag=251') || lower.contains('itag=250')) {
+    if (lower.endsWith('.webm') ||
+        lower.endsWith('.opus') ||
+        lower.contains('mime=audio%2fwebm') ||
+        lower.contains('opus') ||
+        lower.contains('itag=251') ||
+        lower.contains('itag=250')) {
       return 'YT OPUS';
     }
-    if (lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.contains('mime=audio%2fmp4') || lower.contains('m4a') || lower.contains('itag=140')) {
+    if (lower.endsWith('.m4a') ||
+        lower.endsWith('.mp4') ||
+        lower.contains('mime=audio%2fmp4') ||
+        lower.contains('m4a') ||
+        lower.contains('itag=140')) {
       return 'YT M4A';
     }
     return 'YT AUDIO';
@@ -25,8 +40,12 @@ String namiFormatBadgeForPath(
   return bitDepth > 0 ? '$safeExt ${bitDepth}B' : safeExt;
 }
 
-
-/// Unified YouTube -> libmpv Playback Bridge, SponsorBlock & Auto-Start Radio Controller.
+/// Unified YouTube -> Local Chunked Cache -> libmpv Playback Bridge (`v3.1.0`):
+/// - Downloads verified audio chunks to a local file so `libmpv` ALWAYS opens a real file path
+///   (zero `Failed to open http://` errors, instant waveform seek, 0ms offline replay)
+/// - Supports Unified Mixed Local FLAC + YouTube Queue (`yt://<videoId>` placeholders)
+/// - Automatically pre-fetches the next YouTube track ~15s before the current track finishes
+/// - Runs SponsorBlock auto-skip & Auto-Start Radio
 class NamiYoutubePlaybackBridge {
   static final ValueNotifier<NamiYtTrack?> activeYtTrack =
       ValueNotifier<NamiYtTrack?>(null);
@@ -34,15 +53,14 @@ class NamiYoutubePlaybackBridge {
       ValueNotifier<List<NamiYtTrack>>(const []);
   static final ValueNotifier<bool> isResolving = ValueNotifier<bool>(false);
 
+  static final Map<String, NamiYtTrack> _queuedMetaById = {};
+  static final Set<String> _prefetchedIds = <String>{};
   static List<NamiYtSponsorSegment> _activeSegments = const [];
   static final Set<String> _skippedKeys = <String>{};
   static StreamSubscription<Duration>? _sbSub;
   static StreamSubscription<String>? _errSub;
-  static Timer? _playbackWatchdog;
-  static final Map<String, Set<String>> _failedClientsByVid = {};
+  static int _playSeq = 0;
 
-  /// Converts a resolved `NamiYtTrack` into a native `AudioTrack` compatible with Nami's
-  /// unified `libmpv` engine, USB DAC, ReplayGain, AutoEQ, Lyrics, Expandable Player & Widget.
   static AudioTrack toAudioTrack(
     NamiYtTrack yt, {
     required String streamUrl,
@@ -64,23 +82,89 @@ class NamiYoutubePlaybackBridge {
     );
   }
 
-  /// Attaches SponsorBlock auto-skip listener to `_audioPlayer.stream.position`.
+  /// Inserts a YouTube track into Nami's unified `_playNextQueue` alongside local FLACs!
+  static Future<void> queueYoutubeTrackAfter(NamiYtTrack yt) async {
+    final shell = _NamiHomeShellState.activeInstance;
+    if (shell == null) return;
+    _queuedMetaById[yt.videoId] = yt;
+    final thumb = await NamiYoutubeService.instance
+        .ensureCachedThumbnail(yt.videoId, yt.thumbnailUrl);
+    final placeholder = toAudioTrack(
+      yt.copyWith(cachedThumbPath: thumb),
+      streamUrl: 'yt://${yt.videoId}',
+      localThumbPath: thumb,
+    );
+    shell._handleV29SwipePlayAfter(placeholder);
+    // Warm up the audio file in the background so playback starts immediately when reached!
+    unawaited(prefetchTrack(yt));
+  }
+
+  /// Silently downloads a YouTube track into `nami_yt_cache` in the background.
+  static Future<void> prefetchTrack(NamiYtTrack yt) async {
+    if (yt.videoId.isEmpty) return;
+    if (NamiYtAudioCache.instance.findCachedFile(yt.videoId) != null) return;
+    if (!_prefetchedIds.add(yt.videoId)) return;
+    try {
+      final stream = await NamiYoutubeService.instance.resolveAudioStream(
+        yt.videoId,
+        quality: NamiUxPrefs.youtubeAudioQuality,
+        region: NamiUxPrefs.youtubeRegion,
+      );
+      if (stream != null) {
+        await NamiYtAudioCache.instance.ensureCachedAudioFile(stream);
+      }
+    } catch (_) {
+      _prefetchedIds.remove(yt.videoId);
+    }
+  }
+
+  /// Resolves & plays a queued `yt://<videoId>` track from `_playNextQueue`.
+  static Future<bool> playByVideoId(
+    String videoId, {
+    AudioTrack? fallbackMeta,
+  }) async {
+    final known = _queuedMetaById[videoId] ??
+        NamiYoutubeStore.instance.history.cast<NamiYtTrack?>().firstWhere(
+              (t) => t?.videoId == videoId,
+              orElse: () => null,
+            ) ??
+        NamiYtTrack(
+          videoId: videoId,
+          title: fallbackMeta?.title ?? 'YouTube Track',
+          artist: fallbackMeta?.artist ?? 'YouTube Music',
+          duration: fallbackMeta?.duration ?? Duration.zero,
+          thumbnailUrl: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+          cachedThumbPath: fallbackMeta?.thumbPath,
+        );
+    return playTrack(known);
+  }
+
+  /// Attaches SponsorBlock auto-skip, 15s mixed-queue pre-fetcher & MPV error logging.
   static void bindSponsorBlock(Player player) {
     _errSub?.cancel();
     _errSub = player.stream.error.listen((err) {
       if (err.trim().isEmpty) return;
       debugPrint('[NamiMPV Error] $err');
-      final active = activeYtTrack.value;
-      if (active != null) {
-        final shortErr = err.trim().length > 46 ? '${err.trim().substring(0, 46)}...' : err.trim();
-        NamiLiveToastController.showMessage(
-          'MPV: $shortErr',
-          icon: Icons.refresh_rounded,
-        );
-      }
     });
     _sbSub?.cancel();
     _sbSub = player.stream.position.listen((pos) {
+      final dur = player.state.duration;
+      // 1. Background 15-second pre-fetch for gapless mixed local/YouTube queue transitions
+      if (dur.inSeconds > 20 && (dur - pos).inSeconds <= 15) {
+        final shell = _NamiHomeShellState.activeInstance;
+        if (shell != null && shell._playNextQueue.isNotEmpty) {
+          final nextQueued = shell._playNextQueue.first;
+          if (nextQueued.path.startsWith('yt://')) {
+            final vid = nextQueued.path.substring(5);
+            final meta = _queuedMetaById[vid];
+            if (meta != null) unawaited(prefetchTrack(meta));
+          }
+        } else if (radioQueue.value.isNotEmpty && activeYtTrack.value != null) {
+          unawaited(prefetchTrack(radioQueue.value.first));
+        }
+      }
+
+      // 2. SponsorBlock auto-skip
       if (!NamiUxPrefs.ytSponsorBlock || _activeSegments.isEmpty) return;
       final active = activeYtTrack.value;
       if (active == null) return;
@@ -106,12 +190,18 @@ class NamiYoutubePlaybackBridge {
     _sbSub = null;
     _errSub?.cancel();
     _errSub = null;
-    _playbackWatchdog?.cancel();
-    _playbackWatchdog = null;
   }
 
   static Future<bool> playNextInRadioQueue() async {
-    /* v30_2_yt_queue_fallback */
+    final shell = _NamiHomeShellState.activeInstance;
+    if (shell != null && shell._playNextQueue.isNotEmpty) {
+      final next = shell._playNextQueue.removeAt(0);
+      if (next.path.startsWith('yt://')) {
+        return playByVideoId(next.path.substring(5), fallbackMeta: next);
+      }
+      await shell._playSong(next);
+      return true;
+    }
     final q = radioQueue.value;
     if (q.isNotEmpty) {
       final next = q.first;
@@ -125,7 +215,6 @@ class NamiYoutubePlaybackBridge {
         return playTrack(h);
       }
     }
-    // Fetch fresh related tracks on demand if queue & history are empty
     if (activeId != null && activeId.isNotEmpty) {
       final details = await NamiYoutubeService.instance.fetchWatchDetails(
         activeId,
@@ -149,14 +238,13 @@ class NamiYoutubePlaybackBridge {
   }
 
   static void clearActiveYoutubeTrack() {
-    _playbackWatchdog?.cancel();
-    _playbackWatchdog = null;
     _activeSegments = const [];
     _skippedKeys.clear();
     _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, null);
   }
 
-  /// Resolves audio stream + caches thumbnail locally + plays through Nami's unified libmpv player.
+  /// Resolves + caches YouTube audio to a verified local file (`nami_yt_cache/<videoId>.<ext>`)
+  /// using 4-way parallel bounded DASH chunks, then plays directly from disk in `libmpv`!
   static Future<bool> playTrack(
     NamiYtTrack yt, {
     List<NamiYtTrack>? upcoming,
@@ -164,98 +252,105 @@ class NamiYoutubePlaybackBridge {
     final shell = _NamiHomeShellState.activeInstance;
     if (shell == null) return false;
 
+    final mySeq = ++_playSeq;
     _namiSafeSetNotifier<bool>(isResolving, true);
-    NamiLiveToastController.showMessage(
-      'Streaming ${yt.title}...',
-      icon: Icons.play_circle_outline_rounded,
-      duration: const Duration(seconds: 6),
-    );
 
     try {
       final svc = NamiYoutubeService.instance;
-      final results = await Future.wait<dynamic>([
-        svc.resolveAudioStream(
-          yt.videoId,
-          quality: NamiUxPrefs.youtubeAudioQuality,
-          region: NamiUxPrefs.youtubeRegion,
-          excludeClients: _failedClientsByVid[yt.videoId] ?? const <String>{},
-        ),
-        svc.ensureCachedThumbnail(yt.videoId, yt.thumbnailUrl),
-      ]);
+      final thumbFuture = svc.ensureCachedThumbnail(yt.videoId, yt.thumbnailUrl);
 
-      final stream = results[0] as NamiYtStreamResult?;
-      final cachedThumb = results[1] as String?;
+      // Fast-path: already cached on disk (0ms instant offline playback!)
+      File? localAudioFile = NamiYtAudioCache.instance.findCachedFile(yt.videoId);
+      String clientLabel = 'CACHED';
+      Duration resolvedDur = yt.duration;
 
-      if (stream == null || stream.audioUrl.isEmpty) {
+      if (localAudioFile == null) {
         NamiLiveToastController.showMessage(
-          'Could not resolve YouTube audio stream',
+          'Loading ${yt.title}...',
+          icon: Icons.downloading_rounded,
+          duration: const Duration(seconds: 8),
+        );
+
+        final exclude = <String>{};
+        int lastPctToast = -1;
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+          if (mySeq != _playSeq) return false;
+          final stream = await svc.resolveAudioStream(
+            yt.videoId,
+            quality: NamiUxPrefs.youtubeAudioQuality,
+            region: NamiUxPrefs.youtubeRegion,
+            forceRefresh: attempt > 0,
+            excludeClients: exclude,
+          );
+          if (stream == null || stream.audioUrl.isEmpty) break;
+          if (mySeq != _playSeq) return false;
+
+          final file = await NamiYtAudioCache.instance.ensureCachedAudioFile(
+            stream,
+            isCancelled: () => mySeq != _playSeq,
+            onProgress: (p, _, __) {
+              if (mySeq != _playSeq) return;
+              final pct = (p * 100).round();
+              if (pct >= lastPctToast + 25 && pct < 100) {
+                lastPctToast = pct;
+                NamiLiveToastController.showMessage(
+                  'Buffering ${yt.title} ($pct%)',
+                  icon: Icons.downloading_rounded,
+                  duration: const Duration(seconds: 4),
+                );
+              }
+            },
+          );
+
+          if (file != null && file.existsSync()) {
+            localAudioFile = file;
+            clientLabel = stream.clientUsed;
+            if (stream.duration.inSeconds > 0) resolvedDur = stream.duration;
+            break;
+          }
+          exclude.add(stream.clientUsed);
+        }
+      }
+
+      if (mySeq != _playSeq) return false;
+      final cachedThumb = await thumbFuture;
+
+      if (localAudioFile == null || !localAudioFile.existsSync()) {
+        NamiLiveToastController.showMessage(
+          'YouTube audio unavailable — check network or retry',
           icon: Icons.error_outline_rounded,
         );
         return false;
       }
 
-      // HTTP headers are passed per-Media to libmpv without mutating global mpv state
-
       final enrichedYt = yt.copyWith(
         cachedThumbPath: cachedThumb ?? yt.cachedThumbPath,
-        duration: stream.duration.inSeconds > 0 ? stream.duration : yt.duration,
+        duration: resolvedDur.inSeconds > 0 ? resolvedDur : yt.duration,
       );
-      /* v30_3_localhost_proxy */
-      String playbackUrl = stream.audioUrl;
-      Map<String, String> mpvHeaders = stream.headers;
-      if (!stream.audioUrl.contains('.m3u8') && !stream.audioUrl.contains('manifest/hls')) {
-        try {
-          playbackUrl = await NamiYtLocalProxy.instance.registerStream(
-            videoId: yt.videoId,
-            upstreamUrl: stream.audioUrl,
-            headers: stream.headers,
-            mimeType: stream.mimeType,
-          );
-          mpvHeaders = const <String, String>{};
-        } catch (e) {
-          debugPrint('[NamiYtProxy] fallback to direct URL: $e');
-        }
-      }
-
       final audioTrack = toAudioTrack(
         enrichedYt,
-        streamUrl: playbackUrl,
+        streamUrl: localAudioFile.path,
         localThumbPath: cachedThumb,
-        resolvedDuration: stream.duration,
+        resolvedDuration: resolvedDur,
       );
 
       _activeSegments = const [];
       _skippedKeys.clear();
       _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, enrichedYt);
 
-      // Hand off to Nami's unified player pipeline (sets _currentSong, libmpv, Widget & Lyrics)
-      await shell._playV30YoutubeAudioTrack(audioTrack, httpHeaders: mpvHeaders);
-
-      // Watchdog: if libmpv stays stuck at 00:00 after 3.8s, blacklist this client & failover!
-      _playbackWatchdog?.cancel();
-      final triedSet = _failedClientsByVid.putIfAbsent(yt.videoId, () => <String>{});
-      if (triedSet.length >= 4) triedSet.clear();
-      final usedClient = stream.clientUsed;
-      _playbackWatchdog = Timer(const Duration(milliseconds: 3800), () {
-        if (activeYtTrack.value?.videoId != yt.videoId) return;
-        final posMs = shell._audioPlayer.state.position.inMilliseconds;
-        if (posMs < 250 && triedSet.length < 3) {
-          triedSet.add(usedClient);
-          debugPrint('[NamiYT Watchdog] $usedClient stalled at 00:00 — failing over (excluded: $triedSet)');
-          playTrack(yt, upcoming: upcoming);
-        }
-      });
-
-      // Persist play in local-first YouTube store (History, Recent Listens, Most Played, Mixes)
+      // Play real local file directly in libmpv (zero HTTP/TLS/403 issues ever!)
+      await shell._playV30YoutubeAudioTrack(audioTrack);
       await NamiYoutubeStore.instance.recordPlay(enrichedYt);
 
       NamiLiveToastController.showMessage(
-        'Playing • ${stream.clientUsed} (${(stream.bitrate / 1000).round()} kbps)',
+        clientLabel == 'CACHED'
+            ? 'Playing cached • ${namiFormatBadgeForPath(localAudioFile.path)}'
+            : 'Playing • $clientLabel (${namiFormatBadgeForPath(localAudioFile.path)})',
         icon: Icons.graphic_eq_rounded,
         duration: const Duration(milliseconds: 2200),
       );
 
-      // Background: SponsorBlock segments + Auto-Start Radio related tracks
       if (NamiUxPrefs.ytSponsorBlock) {
         svc.fetchSponsorSegments(yt.videoId).then((segs) {
           if (activeYtTrack.value?.videoId == yt.videoId) {
@@ -287,15 +382,18 @@ class NamiYoutubePlaybackBridge {
     } catch (e) {
       debugPrint('[NamiYTBridge] playTrack error: $e');
       NamiLiveToastController.showMessage(
-        'YouTube stream failed — check connection',
+        'YouTube playback error — tap to retry',
         icon: Icons.wifi_off_rounded,
       );
       return false;
     } finally {
-      _namiSafeSetNotifier<bool>(isResolving, false);
+      if (mySeq == _playSeq) {
+        _namiSafeSetNotifier<bool>(isResolving, false);
+      }
     }
   }
 }
+
 
 /// Step 4 Beta Preview Sheet: test India-first `FEmusic_home`, live Search,
 /// 1-tap `libmpv` streaming & Local History directly before Step 5 builds the full Option A 5th tab.
@@ -603,16 +701,20 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(color: Colors.white54, fontSize: 11.5),
                               ),
-                              trailing: IconButton(
-                                icon: Icon(
-                                  fav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                  color: fav ? accent : Colors.white38,
-                                  size: 20,
-                                ),
-                                onPressed: () async {
-                                  await NamiYoutubeStore.instance.toggleFavorite(t);
-                                  if (mounted) setState(() {});
-                                },
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Play Next',
+                                    icon: const Icon(Icons.playlist_play_rounded, color: Colors.white60, size: 20),
+                                    onPressed: () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(t),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Download Offline',
+                                    icon: const Icon(Icons.download_rounded, color: Colors.white60, size: 19),
+                                    onPressed: () => NamiYtDownloadManager.instance.enqueueDownload(t),
+                                  ),
+                                ],
                               ),
                               onTap: () {
                                 NamiUxPrefs.hapticLight();

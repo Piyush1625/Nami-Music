@@ -746,6 +746,38 @@ Future<void> showNamiFloatingTrackInfoCard(
                         },
                         child: metaRow('Folder', folderName),
                       ),
+                      const SizedBox(height: 10),
+                      NamiSpringTap(
+                        pressedScale: 0.96,
+                        onTap: () {
+                          Navigator.of(dialogCtx).pop();
+                          showNamiLosslessInspectorDialog(context, track);
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14141E),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.verified_outlined, color: accent, size: 17),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Verify Lossless / FLAC Integrity',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.2,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       const Divider(height: 1, color: Colors.white10),
                       const SizedBox(height: 10),

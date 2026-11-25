@@ -307,6 +307,7 @@ class NamiExpandablePlayerController {
   static final ValueNotifier<double> progress = ValueNotifier<double>(0.0);
   static final ValueNotifier<double> curvedProgress = ValueNotifier<double>(0.0);
   static final ValueNotifier<bool> hasSong = ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> isLyricsOpen = ValueNotifier<bool>(false);
   static _NamiExpandablePlayerHostState? _host;
 
   static bool get hasHost => _host != null && _host!.mounted;
@@ -652,9 +653,12 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
 
                 // Flying art stays at 1.0 until t=0.96, then dissolves cleanly on [0.96 .. 0.996]
                 // while NamiFullArtRectReporter is ALREADY at 1.0 from t=0.94 -> ZERO blank flash!
+                final bool lyricsActive = NamiExpandablePlayerController.isLyricsOpen.value;
                 final flyingArtOpacity = !active || t >= 0.996
                     ? 0.0
-                    : (t <= 0.96 ? 1.0 : ((0.996 - t) / 0.036).clamp(0.0, 1.0));
+                    : (lyricsActive
+                        ? (t <= 0.32 ? (1.0 - (t / 0.32)).clamp(0.0, 1.0) : 0.0)
+                        : (t <= 0.96 ? 1.0 : ((0.996 - t) / 0.036).clamp(0.0, 1.0)));
 
                 return IgnorePointer(
                   ignoring: !active,
