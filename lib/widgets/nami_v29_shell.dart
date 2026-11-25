@@ -407,6 +407,10 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     )..addListener(_syncProgress);
     NamiExpandablePlayerController._host = this;
     _namiSafeSetNotifier<bool>(NamiExpandablePlayerController.hasSong, widget.hasSong);
+    /* v31_1_prewarm */
+    if (widget.hasSong && widget.trackKey.isNotEmpty && widget.trackKey != _cachedCoverKey) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted && widget.hasSong) _getCachedCover(widget.trackKey); });
+    }
   }
 
   void _syncProgress() {
@@ -649,16 +653,14 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                 // NowPlayingModal fades cleanly on [0.22 .. 0.72] -> ZERO overlap with mini-bar!
                 final fullChildOpacity = !active
                     ? 0.0
-                    : ((t - 0.22) / 0.50).clamp(0.0, 1.0);
+                    : ((t - 0.56) / 0.34).clamp(0.0, 1.0);
 
                 // Flying art stays at 1.0 until t=0.96, then dissolves cleanly on [0.96 .. 0.996]
                 // while NamiFullArtRectReporter is ALREADY at 1.0 from t=0.94 -> ZERO blank flash!
                 final bool lyricsActive = NamiExpandablePlayerController.isLyricsOpen.value;
-                final flyingArtOpacity = !active || t >= 0.996
+                final flyingArtOpacity = !active || t >= 0.985
                     ? 0.0
-                    : (lyricsActive
-                        ? (t <= 0.32 ? (1.0 - (t / 0.32)).clamp(0.0, 1.0) : 0.0)
-                        : (t <= 0.96 ? 1.0 : ((0.996 - t) / 0.036).clamp(0.0, 1.0)));
+                    : (lyricsActive ? (t <= 0.28 ? (1.0 - (t / 0.28)).clamp(0.0, 1.0) : 0.0) : 1.0);
 
                 return IgnorePointer(
                   ignoring: !active,
@@ -705,10 +707,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                         ignoring: t < 0.94,
                                         child: Opacity(
                                           opacity: fullChildOpacity,
-                                          child: Transform.translate(
-                                            offset: Offset(0, active ? (1.0 - t) * 28.0 : 0.0),
-                                            child: fullChild ?? const SizedBox.shrink(),
-                                          ),
+                                          child: fullChild ?? const SizedBox.shrink(),
                                         ),
                                       ),
                                     ),

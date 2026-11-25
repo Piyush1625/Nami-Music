@@ -223,9 +223,9 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
         Widget artWidget;
         if (song?.albumArt != null && song!.albumArt!.isNotEmpty) {
-          artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
+          artWidget = Image.memory(song.albumArt!, fit: BoxFit.cover, width: double.infinity, height: double.infinity, gaplessPlayback: true);
         } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
-          artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover, width: double.infinity, height: double.infinity);
+          artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover, width: double.infinity, height: double.infinity, gaplessPlayback: true);
         } else {
           artWidget = Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24));
         }
@@ -261,7 +261,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                     opacity: 0.24,
                     child: ImageFiltered(
                       imageFilter: ui.ImageFilter.blur(sigmaX: 46, sigmaY: 46),
-                      child: Image.memory(song.albumArt!, fit: BoxFit.cover),
+                      child: Image.memory(song.albumArt!, fit: BoxFit.cover, gaplessPlayback: true),
                     ),
                   ),
                 ),

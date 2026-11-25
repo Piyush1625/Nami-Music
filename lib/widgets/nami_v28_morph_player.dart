@@ -62,7 +62,7 @@ class _NamiFullArtRectReporterState extends State<NamiFullArtRectReporter> {
   void _scheduleMeasure() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (NamiMorphPlayerController.progress.value < 0.98) return;
+      if (NamiExpandablePlayerController.curvedProgress.value < 0.998) return;
       final ro = _key.currentContext?.findRenderObject();
       if (ro is RenderBox && ro.hasSize) {
         final topLeft = ro.localToGlobal(Offset.zero);
@@ -92,7 +92,7 @@ class _NamiFullArtRectReporterState extends State<NamiFullArtRectReporter> {
         valueListenable: NamiExpandablePlayerController.curvedProgress,
         child: widget.child,
         builder: (_, t, c) => Opacity(
-          opacity: (t >= 0.94 || t <= 0.001) ? 1.0 : 0.0,
+          opacity: (t >= 0.985 || t <= 0.001) ? 1.0 : 0.0,
           child: c,
         ),
       ),
@@ -844,76 +844,72 @@ class NamiSpringCoverSwipe extends StatefulWidget {
 
 class _NamiSpringCoverSwipeState extends State<NamiSpringCoverSwipe>
     with SingleTickerProviderStateMixin {
+  /* v31_1_swipe */
   late final AnimationController _ctrl;
   double _dx = 0.0;
-
-  static const SpringDescription _coverSpring = SpringDescription(
-    mass: 1.0,
-    stiffness: 320.0,
-    damping: 25.0,
-  );
-
+  bool _committing = false;
+  static const SpringDescription _coverSpring = SpringDescription(mass: 1.0, stiffness: 340.0, damping: 28.0);
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController.unbounded(vsync: this)
-      ..addListener(() {
-        if (mounted) setState(() => _dx = _ctrl.value);
-      });
+    _ctrl = AnimationController.unbounded(vsync: this)..addListener(() { if (mounted) setState(() => _dx = _ctrl.value); });
   }
-
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void _shift(bool next, double w) {
+    if (_committing) return;
+    _committing = true;
+    NamiUxPrefs.hapticLight();
+    _ctrl.animateTo(next ? -w * 0.34 : w * 0.34, duration: const Duration(milliseconds: 78), curve: Curves.easeOutCubic).whenComplete(() {
+      if (!mounted) return;
+      if (next) { widget.onNext(); } else { widget.onPrev(); }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _committing = false;
+        _ctrl.animateWith(SpringSimulation(_coverSpring, next ? 36.0 : -36.0, 0.0, 0.0));
+      });
+    });
   }
-
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.sizeOf(context).width;
     final norm = (_dx.abs() / (w * 0.45)).clamp(0.0, 1.0);
-    final scale = 1.0 - (norm * 0.045);
-
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragUpdate: (d) {
-        _ctrl.stop();
-        final resist = _dx.abs() > w * 0.35 ? 0.35 : 0.92;
-        setState(() {
-          _dx = (_dx + d.delta.dx * resist).clamp(-w * 0.55, w * 0.55);
-        });
-      },
-      onHorizontalDragEnd: (d) {
-        final vx = d.primaryVelocity ?? 0.0;
-        if (_dx < -w * 0.22 || vx < -460.0) {
-          NamiUxPrefs.hapticLight();
-          widget.onNext();
-          _ctrl.animateWith(SpringSimulation(_coverSpring, 56.0, 0.0, 0.0));
-          return;
-        }
-        if (_dx > w * 0.22 || vx > 460.0) {
-          NamiUxPrefs.hapticLight();
-          widget.onPrev();
-          _ctrl.animateWith(SpringSimulation(_coverSpring, -56.0, 0.0, 0.0));
-          return;
-        }
-        _ctrl.animateWith(SpringSimulation(_coverSpring, _dx, 0.0, vx / 1200.0));
-      },
-      onHorizontalDragCancel: () {
-        if (_dx != 0.0) {
-          _ctrl.animateWith(SpringSimulation(_coverSpring, _dx, 0.0, 0.0));
-        }
-      },
-      child: Transform.translate(
-        offset: Offset(_dx, 0),
-        child: Transform.scale(
-          scale: scale,
-          child: Opacity(
-            opacity: (1.0 - norm * 0.18).clamp(0.75, 1.0),
-            child: widget.child,
-          ),
-        ),
+    return RepaintBoundary(
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragUpdate: (d) {
+          if (_committing) return;
+          _ctrl.stop();
+          setState(() => _dx = (_dx + d.delta.dx * (_dx.abs() > w * 0.32 ? 0.35 : 0.92)).clamp(-w * 0.50, w * 0.50));
+        },
+        onHorizontalDragEnd: (d) {
+          if (_committing) return;
+          final vx = d.primaryVelocity ?? 0.0;
+          if (_dx < -w * 0.20 || vx < -420.0) { _shift(true, w); return; }
+          if (_dx > w * 0.20 || vx > 420.0) { _shift(false, w); return; }
+          _ctrl.animateWith(SpringSimulation(_coverSpring, _dx, 0.0, vx / 1200.0));
+        },
+        onHorizontalDragCancel: () { if (!_committing && _dx != 0.0) _ctrl.animateWith(SpringSimulation(_coverSpring, _dx, 0.0, 0.0)); },
+        child: Transform.translate(offset: Offset(_dx, 0), child: Transform.scale(scale: 1.0 - norm * 0.042, child: Opacity(opacity: (1.0 - norm * 0.22).clamp(0.72, 1.0), child: widget.child))),
       ),
     );
+  }
+}
+
+
+class NamiCoverPrecacher {
+  static final Set<String> _warm = <String>{};
+  static void warmAdjacent(BuildContext? ctx, List<AudioTrack> list, AudioTrack? cur) {
+    if (ctx == null || cur == null || list.isEmpty) return;
+    final i = list.indexWhere((t) => t.path == cur.path);
+    final targets = <AudioTrack>[cur, if (i > 0) list[i - 1], if (i >= 0 && i + 1 < list.length) list[i + 1]];
+    for (final t in targets) {
+      final tp = t.thumbPath;
+      if (tp != null && tp.isNotEmpty && _warm.add(tp)) {
+        if (_warm.length > 60) _warm.remove(_warm.first);
+        final f = File(tp);
+        if (f.existsSync()) unawaited(precacheImage(ResizeImage.resizeIfNeeded(720, null, FileImage(f)), ctx).catchError((_) {}));
+      }
+    }
   }
 }

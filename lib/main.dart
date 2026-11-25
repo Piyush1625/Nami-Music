@@ -1048,6 +1048,7 @@ Future<void> _playSong(AudioTrack song) async {
       return;
     }
     /* v30_2_clear_yt_on_local */
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) NamiCoverPrecacher.warmAdjacent(context, _filteredSongs, song); });
     if (!song.path.startsWith('http')) {
       NamiYoutubePlaybackBridge.clearActiveYoutubeTrack();
     }
@@ -5600,7 +5601,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                     opacity: 0.25,
                                     child: ImageFiltered(
                                       imageFilter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                                      child: Image.memory(resumeTrack.albumArt!, fit: BoxFit.cover),
+                                      child: Image.memory(resumeTrack.albumArt!, fit: BoxFit.cover, gaplessPlayback: true),
                                     ),
                                   ),
                                 ),
@@ -9106,7 +9107,7 @@ List<String> _getSmartMornyeQuickSearches() {
                             onTap: () => Navigator.of(ctx).pop(img.path),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: Image.file(img, fit: BoxFit.cover),
+                              child: Image.file(img, fit: BoxFit.cover, gaplessPlayback: true),
                             ),
                           );
                         },
@@ -10773,7 +10774,7 @@ Widget _buildPlaylistCollageArt(CustomPlaylist playlist, double size, double rad
           height: size,
           fit: BoxFit.cover,
           cacheWidth: (size * 2.5).round().clamp(64, 256),
-        ),
+         gaplessPlayback: true),
       );
     }
     final uniqueAlbumTracks = <AudioTrack>[];

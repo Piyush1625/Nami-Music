@@ -14,6 +14,7 @@ String namiFormatBadgeForPath(
     if (lower.endsWith('.webm') || lower.endsWith('.opus')) return 'YT OPUS';
     if (lower.endsWith('.m4a') || lower.endsWith('.mp4')) return 'YT M4A';
     if (lower.endsWith('.ogg')) return 'YT OGG';
+    if (lower.endsWith('.ts')) return 'YT HLS';
   }
   if (lower.startsWith('http://') || lower.startsWith('https://')) {
     if (lower.contains('.m3u8') || lower.contains('manifest/hls')) return 'YT HLS';
@@ -282,6 +283,8 @@ class NamiYoutubePlaybackBridge {
             region: NamiUxPrefs.youtubeRegion,
             forceRefresh: attempt > 0,
             excludeClients: exclude,
+            fallbackTitle: yt.title,
+            fallbackArtist: yt.artist,
           );
           if (stream == null || stream.audioUrl.isEmpty) break;
           if (mySeq != _playSeq) return false;
@@ -318,7 +321,7 @@ class NamiYoutubePlaybackBridge {
 
       if (localAudioFile == null || !localAudioFile.existsSync()) {
         NamiLiveToastController.showMessage(
-          'YouTube audio unavailable — check network or retry',
+          (NamiYoutubeService.lastResolveDiagnostic.isNotEmpty ? 'YT: ${NamiYoutubeService.lastResolveDiagnostic}' : 'YouTube audio unavailable — check network or retry'),
           icon: Icons.error_outline_rounded,
         );
         return false;
