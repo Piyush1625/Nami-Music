@@ -1385,6 +1385,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         name: channelName,
                         avatarUrl: channelAvatar,
                         subscriberText: subText,
+                        subscribedAtMs: DateTime.now().millisecondsSinceEpoch,
                       ),
                     );
                     if (mounted) setState(() {});
@@ -2370,6 +2371,7 @@ class _NamiYoutubeChannelScreenState extends State<NamiYoutubeChannelScreen>
                         name: name,
                         avatarUrl: avatar,
                         subscriberText: subs,
+                        subscribedAtMs: DateTime.now().millisecondsSinceEpoch,
                       ),
                     );
                     if (mounted) setState(() {});

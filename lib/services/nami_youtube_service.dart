@@ -2434,7 +2434,7 @@ static String _preferredFastClient = '';
             final stitle = _readText(sr['title']);
             final items = <NamiYtTrack>[];
             final seen = <String>{};
-            _extractVideoRenderers(sr['content'], items, seen);
+            _extractVideoRenderers(sr['content'], items, seen, 20);
             if (items.isNotEmpty) {
               homeShelves.add(NamiYtChannelShelf(
                 title: stitle.isNotEmpty ? stitle : 'Featured',
@@ -2496,7 +2496,7 @@ static String _preferredFastClient = '';
           .timeout(const Duration(seconds: 8));
       if (resp.statusCode == 200) {
         final root = jsonDecode(resp.body);
-        _extractVideoRenderers(root, out, seen);
+        _extractVideoRenderers(root, out, seen, 60);
         // Also pick up richItemRenderer / gridVideoRenderer / lockupViewModel items
         _walkJson(root, (node) {
           if (node is! Map) return;
