@@ -442,3 +442,33 @@ def _apply_v31_16kb_android_hardening():
 
 if __name__ == "__main__":
     _apply_v31_16kb_android_hardening()
+
+# v31_2_lock_120hz_display_mode
+def _apply_v31_2_120hz_main_activity():
+    import glob as _glob
+    for _kt in _glob.glob("android/app/src/main/kotlin/**/MainActivity.kt", recursive=True):
+        _s = open(_kt, encoding="utf-8").read()
+        if "preferredDisplayModeId" in _s:
+            continue
+        _hook = (
+            "\n    override fun onResume() {\n"
+            "        super.onResume()\n"
+            "        try {\n"
+            "            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {\n"
+            "                val modes = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) display?.supportedModes else windowManager.defaultDisplay.supportedModes\n"
+            "                val best = modes?.maxByOrNull { it.refreshRate }\n"
+            "                if (best != null) {\n"
+            "                    val lp = window.attributes\n"
+            "                    lp.preferredDisplayModeId = best.modeId\n"
+            "                    window.attributes = lp\n"
+            "                }\n"
+            "            }\n"
+            "        } catch (_: Throwable) {}\n"
+            "    }\n"
+        )
+        _last_b = _s.rfind("}")
+        if _last_b != -1:
+            open(_kt, "w", encoding="utf-8").write(_s[:_last_b] + _hook + _s[_last_b:])
+
+if __name__ == "__main__":
+    _apply_v31_2_120hz_main_activity()

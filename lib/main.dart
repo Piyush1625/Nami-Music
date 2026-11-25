@@ -11800,6 +11800,7 @@ Future<void> _exportUnifiedNamiBackup() async {
     NamiUxPrefs.ensureLoaded().then((_) {
       NamiAudiophileEngine.applyMpvProperties(_audioPlayer);
       NamiYoutubeStore.instance.ensureLoaded();
+      NamiYoutubeService.loadCustomCookie();
       NamiYtDownloadManager.instance.ensureLoaded();
       NamiYoutubePlaybackBridge.bindSponsorBlock(_audioPlayer);
     });

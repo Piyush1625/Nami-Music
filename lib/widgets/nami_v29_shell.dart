@@ -646,9 +646,10 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                 final curArtRadius = ui.lerpDouble(10.0, 16.0, t)!;
 
                 // Mini-bar interior stays visible on [0.0 .. 0.28] -> ZERO empty dark box!
+                /* v31_2_no_collapse_overlap */
                 final miniInteriorOpacity = !active
                     ? 0.0
-                    : (1.0 - (t / 0.28)).clamp(0.0, 1.0);
+                    : (1.0 - (t / 0.16)).clamp(0.0, 1.0);
 
                 // NowPlayingModal fades cleanly on [0.22 .. 0.72] -> ZERO overlap with mini-bar!
                 final fullChildOpacity = !active
@@ -716,7 +717,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                   // Seamless Mini-Bar interior for low t (0.0 -> 0.28): ZERO blank box!
                                   if (miniInteriorOpacity > 0.01)
                                     Positioned(
-                                      left: miniArtSize + 20,
+                                      left: ((curArtRect.right - cardRect.left) + 12.0).clamp(miniArtSize + 20.0, size.width - 130.0),
                                       right: 10,
                                       top: 0,
                                       height: startRect.height,

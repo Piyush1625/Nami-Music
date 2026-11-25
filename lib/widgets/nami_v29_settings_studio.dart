@@ -931,7 +931,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v3.1.1 Stable • Releases & Library Statistics',
+                subtitle: 'v3.1.2 Stable • Releases & Library Statistics',
                 index: 6,
               ),
             ],
@@ -1510,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.1.1 (v42)',
+                    'v3.1.2 (v43)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1731,7 +1731,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.1.1 Stable Engine',
+                          'Nami v3.1.2 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),
@@ -2357,6 +2357,16 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             value: NamiUxPrefs.ytSearchCleanup,
             onChanged: (v) => NamiUxPrefs.ytSearchCleanup = v,
           ),
+          _divider(),
+          _actionRow(
+            icon: Icons.cookie_outlined,
+            title: 'YouTube Session Cookies (Optional)',
+            subtitle: NamiYoutubeService.customYoutubeCookie.isEmpty
+                ? 'Paste cookies only if YouTube asks to sign in on your network'
+                : 'Active local cookie session saved on-device',
+            trailingText: NamiYoutubeService.customYoutubeCookie.isEmpty ? 'Add' : 'Saved',
+            onTap: _showYoutubeCookieDialog,
+          ),
           if (w.onOpenExtensionRepo != null) ...[
             _divider(),
             _actionRow(
@@ -2614,6 +2624,50 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  void _showYoutubeCookieDialog() {
+    final ctrl = TextEditingController(text: NamiYoutubeService.customYoutubeCookie);
+    showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF101018),
+        title: const Text(
+          'YouTube Session Cookies',
+          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 4,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+          decoration: const InputDecoration(
+            hintText: 'Optional: paste Cookie header (SAPISID=...; __Secure-3PAPISID=...)',
+            hintStyle: TextStyle(color: Colors.white38, fontSize: 11.5),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await NamiYoutubeService.saveCustomCookie('');
+              if (mounted) setState(() {});
+              if (dCtx.mounted) Navigator.of(dCtx).pop();
+              NamiLiveToastController.showMessage('Cleared YouTube cookies');
+            },
+            child: const Text('Clear', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () async {
+              await NamiYoutubeService.saveCustomCookie(ctrl.text);
+              if (mounted) setState(() {});
+              if (dCtx.mounted) Navigator.of(dCtx).pop();
+              NamiLiveToastController.showMessage('Saved YouTube session locally');
+            },
+            child: const Text('Save', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
         ],
       ),
     );
