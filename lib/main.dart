@@ -28,6 +28,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 
 
+import 'package:flutter/gestures.dart';
 part 'models/nami_models.dart';
 part 'widgets/nami_widgets.dart';
 part 'screens/settings_screen.dart';
@@ -48,6 +49,7 @@ part 'widgets/nami_v27_audiophile.dart';
 part 'widgets/nami_v28_morph_player.dart';
 part 'widgets/nami_v29_shell.dart';
 part 'widgets/nami_v29_settings_studio.dart';
+part 'widgets/nami_v29_8_gestures.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -6396,12 +6398,26 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         child: RefreshIndicator(
           color: Theme.of(context).colorScheme.primary,
           backgroundColor: const Color(0xFF14141E),
-          onRefresh: () async { await Future.delayed(const Duration(milliseconds: 600)); setState(() {}); },
+          onRefresh: _handleV29TracksPullRefresh,
           child: ListView.builder(
             controller: _trackListScrollController,
             padding: const EdgeInsets.only(bottom: 95, right: 8),
             itemCount: _filteredSongs.length + 1,
-            itemBuilder: (context, index) => index == 0 ? tracksHeaderBar : _buildNamiTrackTile(_filteredSongs[index - 1]),
+            itemBuilder: (context, index) {
+                            if (index == 0) return tracksHeaderBar;
+                            final track = _filteredSongs[index - 1];
+                            return NamiSwipeableTrackRow(
+                              onPlayAfter: () => _handleV29SwipePlayAfter(track),
+                              onShowInfo: () => showNamiFloatingTrackInfoCard(
+                                context,
+                                track: track,
+                                coverArt: _buildCoverArt(track, 62, 14),
+                                onPlayNow: () => _playSong(track),
+                                onPlayNext: () => _handleV29SwipePlayAfter(track),
+                              ),
+                              child: _buildNamiTrackTile(track),
+                            );
+                          },
           ),
         ),
       ),
@@ -11225,8 +11241,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                   Navigator.of(pageContext).popUntil((route) => route.isFirst);
                 },
                 child: ClipOval(
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: NamiOptionalBlur(sigmaX: 16, sigmaY: 16,
                     child: Container(
                       width: 52,
                       height: 52,
@@ -11269,8 +11284,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                       onPrev: () => _playPrevTrack(),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(30),
-                        child: BackdropFilter(
-                          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: NamiOptionalBlur(sigmaX: 16, sigmaY: 16,
                           child: Container(
                             height: 54,
                             decoration: BoxDecoration(
@@ -11387,8 +11401,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                   _showScopedTracksSearchSheet(scopeTitle: scopeTitle, scopeTracks: scopeTracks);
                 },
                 child: ClipOval(
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: NamiOptionalBlur(sigmaX: 16, sigmaY: 16,
                     child: Container(
                       width: 52,
                       height: 52,
@@ -11862,6 +11875,43 @@ Future<void> _exportUnifiedNamiBackup() async {
         ),
       ),
     );
+  }
+
+  void _handleV29SwipePlayAfter(AudioTrack song) {
+    final burstIdx = NamiLiveToastController.activeQueueBurstCount;
+    _playNextQueue.removeWhere((s) => s.path == song.path);
+    final insertAt = burstIdx.clamp(0, _playNextQueue.length);
+    setState(() {
+      _playNextQueue.insert(insertAt, song);
+    });
+    NamiLiveToastController.showQueueAdded();
+  }
+
+  Future<void> _handleV29TracksPullRefresh() async {
+    final beforeCount = _songs.length;
+    final missingPaths = <String>{};
+    for (final s in _songs) {
+      if (!s.path.startsWith('http') && !File(s.path).existsSync()) {
+        missingPaths.add(s.path);
+      }
+    }
+    final removed = missingPaths.length;
+    if (removed > 0) {
+      _songs.removeWhere((s) => missingPaths.contains(s.path));
+      _filteredSongs.removeWhere((s) => missingPaths.contains(s.path));
+      _playNextQueue.removeWhere((s) => missingPaths.contains(s.path));
+    }
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (mounted) {
+      setState(() {});
+      final added = (_songs.length - beforeCount + removed).clamp(0, 99999);
+      NamiTopBannerController.showLibraryUpdate(
+        total: _songs.length,
+        added: added,
+        changed: 0,
+        removed: removed,
+      );
+    }
   }
 }
 

@@ -93,8 +93,7 @@ class _NamiWaveformScrubOverlayState extends State<NamiWaveformScrubOverlay> {
                     curve: Curves.easeOutBack,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: BackdropFilter(
-                        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                      child: NamiOptionalBlur(sigmaX: 14, sigmaY: 14,
                         child: Container(
                           width: pillW,
                           padding: const EdgeInsets.symmetric(vertical: 5),
@@ -226,7 +225,7 @@ class NamiSettingsHeroCard extends StatelessWidget {
                           ),
                           SizedBox(width: 7),
                           Text(
-                            'v2.9.6',
+                            'v2.9.8',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,

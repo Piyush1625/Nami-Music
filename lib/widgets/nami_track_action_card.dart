@@ -165,8 +165,7 @@ void showNamiTrackActionCard({
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: NamiOptionalBlur(sigmaX: 18, sigmaY: 18,
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0xF00B0B12),
@@ -607,8 +606,7 @@ void showNamiFloatingActionSheet({
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: NamiOptionalBlur(sigmaX: 18, sigmaY: 18,
               child: Container(
                 decoration: BoxDecoration(
                   color: const Color(0xF00B0B12),
@@ -855,8 +853,7 @@ void showNamiMediaImagePickerSheet({
             padding: const EdgeInsets.fromLTRB(10, 48, 10, 12),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: NamiOptionalBlur(sigmaX: 18, sigmaY: 18,
                 child: Container(
                   height: MediaQuery.of(ctx).size.height * 0.80,
                   decoration: BoxDecoration(

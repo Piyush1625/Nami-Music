@@ -15,6 +15,7 @@ class NamiUxPrefs {
   static String replayGainMode = 'track'; // 'no' | 'track' | 'album'
   static bool persistSession = true;
   static bool enableBlurEffect = false;
+  static bool trackRowSwipeActions = true;
   static bool enableGlowEffect = true;
   static int fadeDurationMs = 250;
   static int seekDurationSec = 5;
@@ -53,6 +54,7 @@ class NamiUxPrefs {
       replayGainMode = prefs.getString('nami_v27_replaygain') ?? 'track';
       persistSession = prefs.getBool('nami_v27_persist_session') ?? true;
       enableBlurEffect = prefs.getBool('nami_v29_blur') ?? false;
+      trackRowSwipeActions = prefs.getBool('nami_v29_8_row_swipe') ?? true;
       enableGlowEffect = prefs.getBool('nami_v29_glow') ?? true;
       fadeDurationMs = prefs.getInt('nami_v29_fade_ms') ?? 250;
       seekDurationSec = prefs.getInt('nami_v29_seek_sec') ?? 5;
@@ -79,6 +81,7 @@ class NamiUxPrefs {
       await prefs.setString('nami_v27_replaygain', replayGainMode);
       await prefs.setBool('nami_v27_persist_session', persistSession);
       await prefs.setBool('nami_v29_blur', enableBlurEffect);
+      await prefs.setBool('nami_v29_8_row_swipe', trackRowSwipeActions);
       await prefs.setBool('nami_v29_glow', enableGlowEffect);
       await prefs.setInt('nami_v29_fade_ms', fadeDurationMs);
       await prefs.setInt('nami_v29_seek_sec', seekDurationSec);

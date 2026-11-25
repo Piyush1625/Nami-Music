@@ -576,6 +576,10 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         // 1. Main app shell (Tabs + Nested Navigator + Mini-Player + Bottom Nav)
         widget.child,
 
+        // 1b. Global Step 3 non-blocking top library banner & live mutating pill toast
+        const NamiTopLibraryBannerOverlay(),
+        const NamiLivePillToastOverlay(),
+
         // 2. Permanent In-Tree Expandable Now Playing Layer (Positioned.fill -> tight constraints!)
         if (mountedFullPlayer != null)
           Positioned.fill(

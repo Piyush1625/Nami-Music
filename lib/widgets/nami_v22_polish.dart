@@ -209,8 +209,7 @@ void showNamiSignalChainSheet({
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: NamiOptionalBlur(sigmaX: 18, sigmaY: 18,
             child: Container(
               decoration: BoxDecoration(
                 color: const Color(0xF00B0B12),

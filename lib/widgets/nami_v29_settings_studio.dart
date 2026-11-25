@@ -579,7 +579,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v2.9.6 (v34) • AMOLED Home Widget & engine info',
+                subtitle: 'v2.9.8 (v35) • AMOLED Home Widget & engine info',
                 index: 6,
               ),
             ],
@@ -683,6 +683,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
           NamiUxPrefs.lyricsBlurDepth = true;
           NamiUxPrefs.doubleTapArtLyrics = true;
           NamiUxPrefs.swipeDownDismiss = true;
+          NamiUxPrefs.trackRowSwipeActions = true;
           NamiUxPrefs.enableBlurEffect = false;
           NamiUxPrefs.enableGlowEffect = true;
           break;
@@ -1014,6 +1015,12 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             value: NamiUxPrefs.swipeDownDismiss,
             onChanged: (v) => NamiUxPrefs.swipeDownDismiss = v,
           ),
+          _switchItem(
+            title: 'Track Row Swipe Actions',
+            subtitle: 'Swipe left for Play After, swipe right for Track Info card',
+            value: NamiUxPrefs.trackRowSwipeActions,
+            onChanged: (v) => NamiUxPrefs.trackRowSwipeActions = v,
+          ),
           const Divider(height: 1, color: Colors.white10),
           _sectionLabel('120Hz GPU Performance Budget'),
           _switchItem(
@@ -1115,7 +1122,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 6),
             leading: Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 24),
             title: Text(
-              'Nami v2.9.6 (v34)',
+              'Nami v2.9.8 (v35)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
             ),
             subtitle: Text(
