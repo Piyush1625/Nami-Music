@@ -36,7 +36,7 @@ class NamiTabScrollController {
 
 class _NamiKeepAliveTabPage extends StatefulWidget {
   final Widget child;
-  const _NamiKeepAliveTabPage({required this.child});
+  const _NamiKeepAliveTabPage({super.key, required this.child});
 
   @override
   State<_NamiKeepAliveTabPage> createState() => _NamiKeepAliveTabPageState();
