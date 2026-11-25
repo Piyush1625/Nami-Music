@@ -37,6 +37,9 @@ class NamiYoutubePlaybackBridge {
   static List<NamiYtSponsorSegment> _activeSegments = const [];
   static final Set<String> _skippedKeys = <String>{};
   static StreamSubscription<Duration>? _sbSub;
+  static StreamSubscription<String>? _errSub;
+  static Timer? _playbackWatchdog;
+  static final Map<String, Set<String>> _failedClientsByVid = {};
 
   /// Converts a resolved `NamiYtTrack` into a native `AudioTrack` compatible with Nami's
   /// unified `libmpv` engine, USB DAC, ReplayGain, AutoEQ, Lyrics, Expandable Player & Widget.
@@ -63,6 +66,18 @@ class NamiYoutubePlaybackBridge {
 
   /// Attaches SponsorBlock auto-skip listener to `_audioPlayer.stream.position`.
   static void bindSponsorBlock(Player player) {
+    _errSub?.cancel();
+    _errSub = player.stream.error.listen((err) {
+      if (err.trim().isEmpty) return;
+      debugPrint('[NamiMPV Error] $err');
+      final active = activeYtTrack.value;
+      if (active != null) {
+        NamiLiveToastController.showMessage(
+          'Stream error — trying fallback source...',
+          icon: Icons.refresh_rounded,
+        );
+      }
+    });
     _sbSub?.cancel();
     _sbSub = player.stream.position.listen((pos) {
       if (!NamiUxPrefs.ytSponsorBlock || _activeSegments.isEmpty) return;
@@ -88,14 +103,42 @@ class NamiYoutubePlaybackBridge {
   static void dispose() {
     _sbSub?.cancel();
     _sbSub = null;
+    _errSub?.cancel();
+    _errSub = null;
+    _playbackWatchdog?.cancel();
+    _playbackWatchdog = null;
   }
 
   static Future<bool> playNextInRadioQueue() async {
+    /* v30_2_yt_queue_fallback */
     final q = radioQueue.value;
-    if (q.isEmpty) return false;
-    final next = q.first;
-    final rest = q.skip(1).toList();
-    return playTrack(next, upcoming: rest);
+    if (q.isNotEmpty) {
+      final next = q.first;
+      final rest = q.skip(1).toList();
+      return playTrack(next, upcoming: rest);
+    }
+    final activeId = activeYtTrack.value?.videoId;
+    final hist = NamiYoutubeStore.instance.history;
+    for (final h in hist) {
+      if (h.videoId != activeId) {
+        return playTrack(h);
+      }
+    }
+    // Fetch fresh related tracks on demand if queue & history are empty
+    if (activeId != null && activeId.isNotEmpty) {
+      final details = await NamiYoutubeService.instance.fetchWatchDetails(
+        activeId,
+        region: NamiUxPrefs.youtubeRegion,
+        fetchDislikes: false,
+      );
+      if (details.relatedTracks.isNotEmpty) {
+        return playTrack(
+          details.relatedTracks.first,
+          upcoming: details.relatedTracks.skip(1).toList(),
+        );
+      }
+    }
+    return false;
   }
 
   static Future<bool> playPrevInRadioQueue() async {
@@ -105,6 +148,8 @@ class NamiYoutubePlaybackBridge {
   }
 
   static void clearActiveYoutubeTrack() {
+    _playbackWatchdog?.cancel();
+    _playbackWatchdog = null;
     _activeSegments = const [];
     _skippedKeys.clear();
     _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, null);
@@ -132,6 +177,7 @@ class NamiYoutubePlaybackBridge {
           yt.videoId,
           quality: NamiUxPrefs.youtubeAudioQuality,
           region: NamiUxPrefs.youtubeRegion,
+          excludeClients: _failedClientsByVid[yt.videoId] ?? const <String>{},
         ),
         svc.ensureCachedThumbnail(yt.videoId, yt.thumbnailUrl),
       ]);
@@ -147,14 +193,7 @@ class NamiYoutubePlaybackBridge {
         return false;
       }
 
-      // Apply stream HTTP user-agent on libmpv if supported
-      try {
-        final ua = stream.headers['User-Agent'];
-        if (ua != null && ua.isNotEmpty) {
-          final dyn = shell._audioPlayer.platform as dynamic;
-          await dyn.setProperty('user-agent', ua);
-        }
-      } catch (_) {}
+      // HTTP headers are passed per-Media to libmpv without mutating global mpv state
 
       final enrichedYt = yt.copyWith(
         cachedThumbPath: cachedThumb ?? yt.cachedThumbPath,
@@ -173,6 +212,20 @@ class NamiYoutubePlaybackBridge {
 
       // Hand off to Nami's unified player pipeline (sets _currentSong, libmpv, Widget & Lyrics)
       await shell._playV30YoutubeAudioTrack(audioTrack, httpHeaders: stream.headers);
+
+      // Watchdog: if libmpv stays stuck at 00:00 after 3.8s, blacklist this client & failover!
+      _playbackWatchdog?.cancel();
+      final triedSet = _failedClientsByVid.putIfAbsent(yt.videoId, () => <String>{});
+      final usedClient = stream.clientUsed;
+      _playbackWatchdog = Timer(const Duration(milliseconds: 3800), () {
+        if (activeYtTrack.value?.videoId != yt.videoId) return;
+        final posMs = shell._audioPlayer.state.position.inMilliseconds;
+        if (posMs < 250 && triedSet.length < 3) {
+          triedSet.add(usedClient);
+          debugPrint('[NamiYT Watchdog] $usedClient stalled at 00:00 — failing over (excluded: $triedSet)');
+          playTrack(yt, upcoming: upcoming);
+        }
+      });
 
       // Persist play in local-first YouTube store (History, Recent Listens, Most Played, Mixes)
       await NamiYoutubeStore.instance.recordPlay(enrichedYt);

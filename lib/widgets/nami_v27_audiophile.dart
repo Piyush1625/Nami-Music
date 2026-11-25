@@ -10,28 +10,18 @@ class NamiAudiophileEngine {
   static bool _widgetBound = false;
 
   static Future<void> applyMpvProperties(Player player) async {
+    /* v30_2_safe_mpv_props */
     try {
       final dyn = player.platform as dynamic;
       await dyn.setProperty(
         'gapless-audio',
         NamiUxPrefs.gaplessPlayback ? 'yes' : 'no',
       );
-      await dyn.setProperty(
-        'audio-buffer',
-        NamiUxPrefs.gaplessPlayback ? '0.6' : '0.2',
-      );
       await dyn.setProperty('replaygain', NamiUxPrefs.replayGainMode);
       await dyn.setProperty('replaygain-preamp', '0');
       await dyn.setProperty('replaygain-clip', 'no');
-      /* v30_1_real_dsp */
-      await dyn.setProperty(
-        'af',
-        NamiUxPrefs.skipSilence
-            ? 'lavfi=[silenceremove=start_periods=1:start_threshold=-50dB:stop_periods=-1:stop_duration=0.4:stop_threshold=-50dB]'
-            : '',
-      );
-      final bufMb = (NamiUxPrefs.audioCacheLimitGb * 32).clamp(32, 256);
-      await dyn.setProperty('demuxer-max-bytes', '${bufMb}MiB');
+    } catch (_) {}
+    try {
       PaintingBinding.instance.imageCache.maximumSizeBytes =
           NamiUxPrefs.imageCacheLimitMb.clamp(64, 1024) * 1024 * 1024;
     } catch (_) {}

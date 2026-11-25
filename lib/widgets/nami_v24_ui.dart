@@ -225,7 +225,7 @@ class NamiSettingsHeroCard extends StatelessWidget {
                           ),
                           SizedBox(width: 7),
                           Text(
-                            'v3.0.1',
+                            'v3.0.2',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,

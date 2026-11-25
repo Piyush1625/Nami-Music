@@ -21,8 +21,6 @@ class NamiTabScrollController {
     _activeState?._animateToTarget(index);
   }
 
-  /// Allows nested PageViews (like Step 5's YouTube + Mornye Option A 5th tab)
-  /// to hand off left-boundary overscroll smoothly back to the previous main tab.
   static void handoffToPreviousMainTab() {
     final s = _activeState;
     if (s == null || !s.mounted) return;
@@ -54,7 +52,7 @@ class _NamiKeepAliveTabPageState extends State<_NamiKeepAliveTabPage>
   }
 }
 
-/// 120Hz Keep-Alive Swipeable Main Tabs (`PageView`) replacing tap-only `IndexedStack`.
+/// 120Hz Keep-Alive Swipeable Main Tabs (`PageView`).
 class NamiSwipeableTabsView extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onPageChanged;
@@ -172,9 +170,6 @@ class _NamiSwipeableTabsViewState extends State<NamiSwipeableTabsView> {
   }
 }
 
-/// Idiomatic InheritedWidget root scope for NamiShellNavigator:
-/// updates the nested Navigator's root page cleanly during normal build with ZERO
-/// `setState() or markNeedsBuild() called during build` exceptions!
 class _NamiShellRootScope extends InheritedWidget {
   final Widget rootChild;
 
@@ -226,9 +221,6 @@ class _NamiShellRouteObserver extends NavigatorObserver {
   }
 }
 
-/// Nested Shell Navigator mounted inside the main viewport ABOVE the persistent
-/// Mini-Player and Bottom Navigation Bar. Uses an instance GlobalKey and InheritedWidget
-/// scope so it can never throw build-phase or duplicate-GlobalKey exceptions.
 class NamiShellNavigator extends StatefulWidget {
   final Widget child;
   const NamiShellNavigator({super.key, required this.child});
@@ -311,7 +303,6 @@ class _NamiShellNavigatorState extends State<NamiShellNavigator> {
   }
 }
 
-/// Global controller for the permanent In-Tree Expandable Player Sheet (0.0 -> 1.0).
 class NamiExpandablePlayerController {
   static final ValueNotifier<double> progress = ValueNotifier<double>(0.0);
   static final ValueNotifier<bool> hasSong = ValueNotifier<bool>(false);
@@ -323,9 +314,6 @@ class NamiExpandablePlayerController {
   static void expand() => _host?._expand();
   static void collapse() => _host?._collapse();
 
-  /// Safe close helper for NowPlayingModal: collapses the in-tree host if expanded,
-  /// and ONLY pops a route if `canPop()` is true — guaranteeing MaterialApp's root
-  /// route (`NamiHomeShell`) can NEVER be popped into a black screen!
   static void safeClose(BuildContext context) {
     if (hasHost && progress.value > 0.01) {
       collapse();
@@ -353,9 +341,11 @@ class NamiExpandablePlayerController {
       );
 }
 
-/// Permanent In-Tree Expandable Player Host living in `_NamiHomeShellState`'s root Stack.
-/// Uses `Positioned.fill` + `Offstage` when collapsed so it has zero paint/clip overhead
-/// at rest while preserving Synced Lyrics mode & scroll offset across every collapse/re-open!
+/// Zero-Ghosting 120FPS Permanent In-Tree Expandable Player Host (`v3.0.2`).
+/// - Exactly ONE cover art flies 1:1 from `miniArtRect` to `fullArtRect` while
+///   `NamiFullArtRectReporter` hides `NowPlayingModal`'s static cover until `t >= 0.99`.
+/// - Zero duplicate title/artist or duplicate play/pause buttons!
+/// - Constant widget tree (no `Offstage` swap hitch at `t = 0.0`).
 class NamiExpandablePlayerHost extends StatefulWidget {
   final Widget child;
   final bool hasSong;
@@ -395,8 +385,8 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
   Widget? _cachedCoverWidget;
   String _cachedCoverKey = '';
 
-  static const Curve _expandCurve = _NamiSpringCurve(6.4);
-  static const Curve _collapseCurve = _NamiSpringCurve(6.2);
+  static const Curve _expandCurve = _NamiSpringCurve(6.6);
+  static const Curve _collapseCurve = _NamiSpringCurve(6.4);
 
   @override
   void initState() {
@@ -404,8 +394,8 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     _ctrl = AnimationController(
       vsync: this,
       value: 0.0,
-      duration: const Duration(milliseconds: 390),
-      reverseDuration: const Duration(milliseconds: 340),
+      duration: const Duration(milliseconds: 360),
+      reverseDuration: const Duration(milliseconds: 320),
     )..addListener(_syncProgress);
     NamiExpandablePlayerController._host = this;
     _namiSafeSetNotifier<bool>(NamiExpandablePlayerController.hasSong, widget.hasSong);
@@ -449,6 +439,9 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
 
   @override
   void dispose() {
+    if (_immersiveApplied) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     if (NamiExpandablePlayerController._host == this) {
       NamiExpandablePlayerController._host = null;
       _namiSafeSetNotifier<double>(NamiExpandablePlayerController.progress, 0.0);
@@ -485,7 +478,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     _useCurve = true;
     _isReversing = false;
     final rem = (1.0 - _ctrl.value).clamp(0.15, 1.0);
-    final ms = (390 * rem * NamiUxPrefs.motionScale).round().clamp(180, 520);
+    final ms = (360 * rem * NamiUxPrefs.motionScale).round().clamp(180, 480);
     _ctrl.animateTo(
       1.0,
       duration: Duration(milliseconds: ms),
@@ -499,7 +492,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     _useCurve = true;
     _isReversing = true;
     final rem = _ctrl.value.clamp(0.15, 1.0);
-    final ms = (340 * rem * NamiUxPrefs.motionScale).round().clamp(160, 460);
+    final ms = (320 * rem * NamiUxPrefs.motionScale).round().clamp(160, 420);
     _ctrl.animateBack(
       0.0,
       duration: Duration(milliseconds: ms),
@@ -543,7 +536,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     if (shouldOpen) {
       _isReversing = false;
       final rem = (1.0 - cur).clamp(0.08, 1.0);
-      final ms = (340 * rem * NamiUxPrefs.motionScale).round().clamp(140, 400);
+      final ms = (320 * rem * NamiUxPrefs.motionScale).round().clamp(140, 380);
       _ctrl
           .animateTo(
             1.0,
@@ -556,7 +549,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
     } else {
       _isReversing = true;
       final rem = cur.clamp(0.08, 1.0);
-      final ms = (300 * rem * NamiUxPrefs.motionScale).round().clamp(130, 360);
+      final ms = (280 * rem * NamiUxPrefs.motionScale).round().clamp(130, 340);
       _ctrl
           .animateBack(
             0.0,
@@ -590,11 +583,11 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         // 1. Main app shell (Tabs + Nested Navigator + Mini-Player + Bottom Nav)
         widget.child,
 
-        // 1b. Global Step 3 non-blocking top library banner & live mutating pill toast
+        // 1b. Global non-blocking top library banner & live mutating pill toast
         const NamiTopLibraryBannerOverlay(),
         const NamiLivePillToastOverlay(),
 
-        // 2. Permanent In-Tree Expandable Now Playing Layer (Positioned.fill -> tight constraints!)
+        // 2. Permanent Zero-Ghosting 120FPS Expandable Now Playing Layer
         if (mountedFullPlayer != null)
           Positioned.fill(
             child: AnimatedBuilder(
@@ -612,20 +605,6 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                 }
 
                 final active = t > 0.0015;
-                if (!active) {
-                  // Zero paint/clip/hit-test overhead at rest while keeping NowPlayingModal
-                  // state (Lyrics mode, scroll offset) 100% alive in memory!
-                  return IgnorePointer(
-                    child: Offstage(
-                      offstage: true,
-                      child: TickerMode(
-                        enabled: false,
-                        child: fullChild ?? const SizedBox.shrink(),
-                      ),
-                    ),
-                  );
-                }
-
                 final startRect = NamiMorphPlayerController.lastMiniRect ??
                     Rect.fromLTWH(10, size.height - pad.bottom - 140, size.width - 20, 64);
 
@@ -646,27 +625,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                   miniArtSize,
                 );
 
-                final miniInfoWidth = (startRect.width - 178).clamp(80.0, size.width - 160);
-                final miniInfoRect = Rect.fromLTWH(
-                  startRect.left + miniArtSize + 20,
-                  startRect.top + (startRect.height - 38) / 2,
-                  miniInfoWidth,
-                  40,
-                );
-                final fullInfoRect = Rect.fromLTWH(
-                  24,
-                  fullArtRect.bottom + 14,
-                  size.width - 96,
-                  56,
-                );
-
-                final miniCtrlCenter = Offset(startRect.right - 64, startRect.center.dy);
-                final fullCtrlCenter = Offset(
-                  size.width / 2,
-                  (size.height * 0.864).clamp(fullArtRect.bottom + 150, size.height - pad.bottom - 78),
-                );
-
-                final scrimOpacity = (t * 0.94).clamp(0.0, 0.94);
+                final scrimOpacity = (t * 0.92).clamp(0.0, 0.92);
                 final cardRect = Rect.lerp(startRect, fullRect, t)!;
                 final cardRadius = ui.lerpDouble(18.0, 0.0, t)!;
                 final cardColor = Color.lerp(
@@ -677,167 +636,64 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
 
                 final curArtRect = Rect.lerp(miniArtRect, fullArtRect, t)!;
                 final curArtRadius = ui.lerpDouble(10.0, 16.0, t)!;
-                final curInfoRect = Rect.lerp(miniInfoRect, fullInfoRect, t)!;
-                final titleSize = ui.lerpDouble(13.8, 20.5, t)!;
-                final artistSize = ui.lerpDouble(11.5, 13.5, t)!;
 
-                final curCtrlCenter = Offset.lerp(miniCtrlCenter, fullCtrlCenter, t)!;
-                final playBtnSize = ui.lerpDouble(36.0, 58.0, t)!;
-                final skipIconSize = ui.lerpDouble(20.0, 30.0, t)!;
-                final ctrlGap = ui.lerpDouble(2.0, 24.0, t)!;
-
-                final fullChildOpacity = t >= 0.985
-                    ? 1.0
-                    : ((t - 0.66) / 0.28).clamp(0.0, 1.0);
-                final sharedOverlayOpacity = t >= 0.985
+                // Single-element fade: NowPlayingModal chrome glides smoothly UP with the sheet
+                // while its static cover art stays hidden (via NamiFullArtRectReporter) until t >= 0.99!
+                final fullChildOpacity = !active
                     ? 0.0
-                    : (1.0 - ((t - 0.84) / 0.14).clamp(0.0, 1.0));
+                    : ((t - 0.16) / 0.56).clamp(0.0, 1.0);
+                final showFlyingArt = active && t < 0.99;
 
-                return Material(
-                  type: MaterialType.transparency,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: ColoredBox(
-                          color: Colors.black.withValues(alpha: scrimOpacity),
-                        ),
-                      ),
-                      Positioned.fromRect(
-                        rect: cardRect,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(cardRadius),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: cardColor,
-                              border: t < 0.94
-                                  ? Border.all(
-                                      color: Colors.white.withValues(alpha: 0.10 * (1.0 - t)),
-                                      width: 0.9,
-                                    )
-                                  : null,
-                            ),
-                            child: Stack(
-                              clipBehavior: Clip.hardEdge,
-                              children: [
-                                Positioned(
-                                  left: -cardRect.left,
-                                  top: -cardRect.top,
-                                  width: size.width,
-                                  height: size.height,
-                                  child: TickerMode(
-                                    enabled: true,
-                                    child: IgnorePointer(
-                                      ignoring: t < 0.95,
-                                      child: Opacity(
-                                        opacity: fullChildOpacity,
-                                        child: fullChild,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                return IgnorePointer(
+                  ignoring: !active,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: Stack(
+                      children: [
+                        if (active)
+                          Positioned.fill(
+                            child: ColoredBox(
+                              color: Colors.black.withValues(alpha: scrimOpacity),
                             ),
                           ),
-                        ),
-                      ),
-                      if (sharedOverlayOpacity > 0.005)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: Opacity(
-                              opacity: sharedOverlayOpacity,
+
+                        // Expanding AMOLED sheet containing ONE NowPlayingModal (zero duplicate text/controls!)
+                        Positioned.fromRect(
+                          rect: active ? cardRect : fullRect,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(active ? cardRadius : 0.0),
+                            child: DecoratedBox(
+                              decoration: active
+                                  ? BoxDecoration(
+                                      color: cardColor,
+                                      border: t < 0.94
+                                          ? Border.all(
+                                              color: Colors.white.withValues(alpha: 0.10 * (1.0 - t)),
+                                              width: 0.9,
+                                            )
+                                          : null,
+                                    )
+                                  : const BoxDecoration(),
                               child: Stack(
+                                clipBehavior: Clip.hardEdge,
                                 children: [
-                                  Positioned.fromRect(
-                                    rect: curArtRect,
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(curArtRadius),
-                                      child: _getCachedCover(widget.trackKey),
-                                    ),
-                                  ),
-                                  Positioned.fromRect(
-                                    rect: curInfoRect,
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          widget.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: titleSize,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: -0.2 * t,
-                                            color: Colors.white,
-                                            height: 1.15,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          widget.artist,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: artistSize,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.white60,
-                                            height: 1.15,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                                   Positioned(
-                                    left: curCtrlCenter.dx - (playBtnSize / 2 + skipIconSize + ctrlGap + 14),
-                                    top: curCtrlCenter.dy - (playBtnSize / 2 + 4),
-                                    child: StreamBuilder<bool>(
-                                      stream: widget.isPlayingStream,
-                                      initialData: widget.initialPlaying,
-                                      builder: (_, snap) {
-                                        final playing = snap.data ?? widget.initialPlaying;
-                                        return Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              width: skipIconSize + 10,
-                                              height: playBtnSize + 8,
-                                              child: Icon(
-                                                Icons.skip_previous_rounded,
-                                                color: Colors.white.withValues(alpha: 0.85),
-                                                size: skipIconSize,
-                                              ),
-                                            ),
-                                            SizedBox(width: ctrlGap),
-                                            Container(
-                                              width: playBtnSize,
-                                              height: playBtnSize,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.08 + 0.05 * t),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(
-                                                  color: Colors.white.withValues(alpha: 0.16 + 0.12 * t),
-                                                  width: 1.0 + 0.3 * t,
-                                                ),
-                                              ),
-                                              child: Icon(
-                                                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                                color: Colors.white,
-                                                size: playBtnSize * 0.56,
-                                              ),
-                                            ),
-                                            SizedBox(width: ctrlGap),
-                                            SizedBox(
-                                              width: skipIconSize + 10,
-                                              height: playBtnSize + 8,
-                                              child: Icon(
-                                                Icons.skip_next_rounded,
-                                                color: Colors.white.withValues(alpha: 0.85),
-                                                size: skipIconSize,
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      },
+                                    left: active ? -cardRect.left : 0.0,
+                                    top: active ? -cardRect.top : 0.0,
+                                    width: size.width,
+                                    height: size.height,
+                                    child: TickerMode(
+                                      enabled: active,
+                                      child: IgnorePointer(
+                                        ignoring: t < 0.94,
+                                        child: Opacity(
+                                          opacity: fullChildOpacity,
+                                          child: Transform.translate(
+                                            offset: Offset(0, active ? (1.0 - t) * 34.0 : 0.0),
+                                            child: fullChild ?? const SizedBox.shrink(),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -845,7 +701,20 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                             ),
                           ),
                         ),
-                    ],
+
+                        // SINGLE GPU-scaled flying album art (zero double cover, zero text collision!)
+                        if (showFlyingArt)
+                          Positioned.fromRect(
+                            rect: curArtRect,
+                            child: IgnorePointer(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(curArtRadius),
+                                child: _getCachedCover(widget.trackKey),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },

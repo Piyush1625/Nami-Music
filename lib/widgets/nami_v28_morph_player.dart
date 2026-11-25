@@ -85,7 +85,18 @@ class _NamiFullArtRectReporterState extends State<NamiFullArtRectReporter> {
 
   @override
   Widget build(BuildContext context) {
-    return KeyedSubtree(key: _key, child: widget.child);
+    /* v30_2_single_art */
+    return KeyedSubtree(
+      key: _key,
+      child: ValueListenableBuilder<double>(
+        valueListenable: NamiExpandablePlayerController.progress,
+        child: widget.child,
+        builder: (_, p, c) => Opacity(
+          opacity: (p >= 0.988 || p <= 0.001) ? 1.0 : 0.0,
+          child: c,
+        ),
+      ),
+    );
   }
 }
 

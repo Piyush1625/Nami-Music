@@ -1038,6 +1038,10 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
 }
 
 Future<void> _playSong(AudioTrack song) async {
+    /* v30_2_clear_yt_on_local */
+    if (!song.path.startsWith('http')) {
+      NamiYoutubePlaybackBridge.clearActiveYoutubeTrack();
+    }
     if (song.path.isEmpty) return;
     final prevPath = _audioPlayer.state.playing ? _currentSong?.path : null;
     final prevPos = _audioPlayer.state.position;
@@ -11749,30 +11753,35 @@ Future<void> _exportUnifiedNamiBackup() async {
   }
 
     String _v28LastWidgetSig = '';
+  Timer? _v30WidgetDebounce;
   StreamSubscription<bool>? _v28PlaySub;
   StreamSubscription<dynamic>? _v28PlSub;
 
   void _syncV27WidgetAndSession({bool force = false}) {
-    /* v28_2_dedup_sync */
-    try {
-      final song = _currentSong;
-      final playing = _audioPlayer.state.playing;
-      final sig = '${song?.path ?? ''}|$playing';
-      if (!force && sig == _v28LastWidgetSig) return;
-      _v28LastWidgetSig = sig;
-      NamiAudiophileEngine.updateHomeWidget(
-        title: song?.title ?? 'Nami Music',
-        artist: song != null ? cleanArtistStr(song.artist) : 'Tap to open player',
-        isPlaying: playing,
-        coverPath: song?.thumbPath,
-      );
-      if (song != null) {
-        NamiAudiophileEngine.saveSession(
-          currentSong: song,
-          position: _audioPlayer.state.position,
+    /* v30_2_debounced_widget_sync */
+    _v30WidgetDebounce?.cancel();
+    _v30WidgetDebounce = Timer(const Duration(milliseconds: 240), () {
+      if (!mounted) return;
+      try {
+        final song = _currentSong;
+        final playing = _audioPlayer.state.playing;
+        final sig = '${song?.path ?? ''}|$playing';
+        if (!force && sig == _v28LastWidgetSig) return;
+        _v28LastWidgetSig = sig;
+        NamiAudiophileEngine.updateHomeWidget(
+          title: song?.title ?? 'Nami Music',
+          artist: song != null ? cleanArtistStr(song.artist) : 'Tap to open player',
+          isPlaying: playing,
+          coverPath: song?.thumbPath,
         );
-      }
-    } catch (_) {}
+        if (song != null) {
+          NamiAudiophileEngine.saveSession(
+            currentSong: song,
+            position: _audioPlayer.state.position,
+          );
+        }
+      } catch (_) {}
+    });
   }
 
   void _initV27AudiophileBridge() {
@@ -11946,6 +11955,7 @@ Future<void> _exportUnifiedNamiBackup() async {
       _currentSong = track;
     });
     try {
+      await _audioPlayer.stop();
       await _audioPlayer.open(
         Media(
           track.path,
@@ -11953,7 +11963,6 @@ Future<void> _exportUnifiedNamiBackup() async {
         ),
         play: true,
       );
-      await _audioPlayer.play();
     } catch (e) {
       debugPrint('[NamiYT] libmpv open failed: $e');
       NamiLiveToastController.showMessage(
