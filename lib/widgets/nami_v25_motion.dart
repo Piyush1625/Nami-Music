@@ -193,9 +193,11 @@ class NamiInteractiveDragDismiss extends StatefulWidget {
 
 class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
     with SingleTickerProviderStateMixin {
+  /* v28_morph_drag_delegate */
   late final AnimationController _springCtrl;
   double _dragY = 0.0;
   bool _dismissing = false;
+  bool _drivingMorphRoute = false;
 
   @override
   void initState() {
@@ -212,8 +214,29 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
     super.dispose();
   }
 
+  void _onDragStart(DragStartDetails d) {
+    if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
+    final morphRoute = NamiMorphPlayerController.activeRoute;
+    if (morphRoute != null) {
+      _drivingMorphRoute = true;
+      morphRoute.beginInteractiveDismiss();
+    } else {
+      _drivingMorphRoute = false;
+    }
+  }
+
   void _onDragUpdate(DragUpdateDetails d) {
     if (_dismissing || !NamiUxPrefs.swipeDownDismiss) return;
+    if (_drivingMorphRoute) {
+      final morphRoute = NamiMorphPlayerController.activeRoute;
+      if (morphRoute != null) {
+        final h = MediaQuery.sizeOf(context).height;
+        final dragRange = (h * 0.78).clamp(320.0, 760.0);
+        morphRoute.updateInteractiveDrag(-d.delta.dy / dragRange);
+        return;
+      }
+      _drivingMorphRoute = false;
+    }
     _springCtrl.stop();
     final next = (_dragY + d.delta.dy).clamp(0.0, 420.0);
     if ((next - _dragY).abs() > 0.2) {
@@ -223,10 +246,21 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
 
   void _onDragEnd(DragEndDetails d) {
     if (_dismissing) return;
+    if (_drivingMorphRoute) {
+      _drivingMorphRoute = false;
+      final morphRoute = NamiMorphPlayerController.activeRoute;
+      if (morphRoute != null) {
+        final h = MediaQuery.sizeOf(context).height;
+        final dragRange = (h * 0.78).clamp(320.0, 760.0);
+        final vel = -(d.primaryVelocity ?? 0.0) / dragRange;
+        morphRoute.endInteractiveDrag(velocityPerSec: vel, isOpeningDrag: false);
+        return;
+      }
+    }
     final vy = d.primaryVelocity ?? 0.0;
     if (_dragY > 115.0 || vy > 460.0) {
       _dismissing = true;
-      HapticFeedback.selectionClick();
+      NamiUxPrefs.hapticLight();
       widget.onDismiss();
       return;
     }
@@ -243,9 +277,18 @@ class _NamiInteractiveDragDismissState extends State<NamiInteractiveDragDismiss>
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: _onDragStart,
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       onVerticalDragCancel: () {
+        if (_drivingMorphRoute) {
+          _drivingMorphRoute = false;
+          NamiMorphPlayerController.activeRoute?.endInteractiveDrag(
+            velocityPerSec: 0.5,
+            isOpeningDrag: false,
+          );
+          return;
+        }
         if (!_dismissing && _dragY > 0) {
           const spring = SpringDescription(mass: 1.0, stiffness: 320.0, damping: 28.0);
           _springCtrl.animateWith(SpringSimulation(spring, _dragY, 0.0, 0.0));

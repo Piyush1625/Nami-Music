@@ -45,6 +45,7 @@ part 'widgets/nami_v24_ui.dart';
 part 'widgets/nami_v25_motion.dart';
 part 'widgets/nami_v26_settings.dart';
 part 'widgets/nami_v27_audiophile.dart';
+part 'widgets/nami_v28_morph_player.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -7040,16 +7041,14 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
     return ValueListenableBuilder<AudioTrack?>(
       valueListenable: _currentSongNotifier,
       builder: (context, activeSong, _) {
-        return GestureDetector(
-          onHorizontalDragEnd: (details) {
-            if (details.primaryVelocity != null) {
-              if (details.primaryVelocity! < 0) {
-                _playNextTrack();
-              } else if (details.primaryVelocity! > 0) {
-                _playPrevTrack();
-              }
-            }
-          },
+        return NamiSpringMiniPlayerWrap(/* v28_main_mini_spring */
+            trackKey: _currentSong?.path,
+            onOpenTap: () => _openMorphNowPlaying(),
+            onStartDragOpen: (rect) => _openMorphNowPlaying(miniRect: rect, startFromDrag: true),
+            onNext: () => _playNextTrack(),
+            onPrev: () => _playPrevTrack(),
+            child: GestureDetector(
+          
           onVerticalDragEnd: (d) {
             if ((d.primaryVelocity ?? 0) < -150) _showNowPlayingScreen();
           },
@@ -7182,7 +7181,8 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
       ),
     ]),
   ),
-        );
+        ),
+          );
       },
     );
   }
@@ -7242,66 +7242,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
     } else if (_currentSong != null) {
       _fetchLyricsOnline(_currentSong!);
     }
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: true,
-        barrierColor: const Color(0xFF07070B),
-        transitionDuration: const Duration(milliseconds: 260),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (context, animation, secondaryAnimation) => NowPlayingModal(
-        onGoToArtist: (artist) => _openArtistByName(artist),
-          audioPlayer: _audioPlayer,
-          currentSongNotifier: _currentSongNotifier,
-          allSongs: _songs,
-          playNextQueue: _playNextQueue,
-          ambientGlow: _ambientGlow,
-          blurredBackdrop: _blurredBackdrop,
-          doubleTapSeekSec: _doubleTapSeekSec,
-          syllableLyricsEnabled: _syllableLyricsEnabled,
-          shuffleEnabled: _shuffleEnabled,
-          repeatMode: _repeatMode,
-          onToggleShuffle: () {
-            setState(() => _shuffleEnabled = !_shuffleEnabled);
-            _saveStateCache();
-          },
-          onCycleRepeat: () {
-            setState(() => _repeatMode = (_repeatMode + 1) % 3);
-            _audioPlayer.setPlaylistMode(_repeatMode == 2 ? PlaylistMode.single : PlaylistMode.none);
-            _saveStateCache();
-          },
-          onShowPath: () {
-            if (_currentSong != null) _showAudioPathDetails(_currentSong!);
-          },
-          onShowEqualizer: _showEqualizerSheet,
-          onShowSleepTimer: _showSleepTimerDialog,
-          onOpenLyricsManager: () {
-            if (_currentSong != null) _showNamiLyricsManagerSheet(_currentSong!);
-          },
-          onToggleFavorite: () {
-            if (_currentSong != null) {
-              setState(() => _currentSong!.isFavorite = !_currentSong!.isFavorite);
-              _saveStateCache();
-            }
-          },
-          onRefreshLyrics: () {
-            if (_currentSong != null) {
-              _currentSong!.isLyricsFetched = false;
-              _fetchLyricsOnline(_currentSong!);
-            }
-          },
-          onNext: _playNextTrack,
-          onPrevious: _playPrevTrack,
-          onOpenQueue: () => _showQueueBottomSheet(context),
-          onOpenMoreMenu: () {
-            if (_currentSong != null) _showTrackOptionsMenu(_currentSong!);
-          },
-        ),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final tween = Tween(begin: const Offset(0.0, 1.0), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic));
-          return SlideTransition(position: animation.drive(tween), child: child);
-        },
-      ),
-    );
+    _openMorphNowPlaying();
   }
 
 void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
@@ -11148,21 +11089,24 @@ Future<void> _exportUnifiedNamiBackup() async {
                   builder: (_, playSnap) {
                     final song = _currentSong;
                     final isPlaying = playSnap.data ?? _audioPlayer.state.playing;
-                    return GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        if (song != null) _showNowPlayingScreen();
-                      },
-                      onHorizontalDragEnd: (details) {
-                        final vx = details.primaryVelocity ?? 0;
-                        if (vx < -250) {
-                          HapticFeedback.selectionClick();
-                          _playNextTrack();
-                        } else if (vx > 250) {
-                          HapticFeedback.selectionClick();
-                          _playPrevTrack();
+                    return NamiSpringMiniPlayerWrap(
+                      trackKey: song?.path,
+                      onOpenTap: () {
+                        if (song != null) {
+                          _openMorphNowPlaying(navContext: pageContext);
                         }
                       },
+                      onStartDragOpen: (rect) {
+                        if (song != null) {
+                          _openMorphNowPlaying(
+                            miniRect: rect,
+                            startFromDrag: true,
+                            navContext: pageContext,
+                          );
+                        }
+                      },
+                      onNext: () => _playNextTrack(),
+                      onPrev: () => _playPrevTrack(),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(30),
                         child: BackdropFilter(
@@ -11650,6 +11594,84 @@ Future<void> _exportUnifiedNamiBackup() async {
     _audioPlayer.stream.playing.listen((_) {
       if (mounted) _syncV27WidgetAndSession();
     });
+  }
+
+  void _openMorphNowPlaying({
+    Rect? miniRect,
+    bool startFromDrag = false,
+    BuildContext? navContext,
+  }) {
+    final song = _currentSong;
+    if (song == null || NamiMorphPlayerController.isMorphActive) return;
+    final targetCtx = navContext ?? context;
+    Navigator.of(targetCtx).push(
+      NamiMorphNowPlayingRoute<void>(
+        miniRect: miniRect ?? NamiMorphPlayerController.lastMiniRect,
+        startFromDrag: startFromDrag,
+        title: song.title,
+        artist: cleanArtistStr(song.artist),
+        coverBuilder: (sz, rad) => _buildCoverArt(song, sz, rad),
+        isPlayingStream: _audioPlayer.stream.playing,
+        initialPlaying: _audioPlayer.state.playing,
+        onPlayPause: () {
+          if (_audioPlayer.state.playing) {
+            _audioPlayer.pause();
+          } else {
+            _audioPlayer.play();
+          }
+        },
+        onNext: () => _playNextTrack(),
+        onPrev: () => _playPrevTrack(),
+        fullPageBuilder: (_) => NowPlayingModal(
+        onGoToArtist: (artist) => _openArtistByName(artist),
+          audioPlayer: _audioPlayer,
+          currentSongNotifier: _currentSongNotifier,
+          allSongs: _songs,
+          playNextQueue: _playNextQueue,
+          ambientGlow: _ambientGlow,
+          blurredBackdrop: _blurredBackdrop,
+          doubleTapSeekSec: _doubleTapSeekSec,
+          syllableLyricsEnabled: _syllableLyricsEnabled,
+          shuffleEnabled: _shuffleEnabled,
+          repeatMode: _repeatMode,
+          onToggleShuffle: () {
+            setState(() => _shuffleEnabled = !_shuffleEnabled);
+            _saveStateCache();
+          },
+          onCycleRepeat: () {
+            setState(() => _repeatMode = (_repeatMode + 1) % 3);
+            _audioPlayer.setPlaylistMode(_repeatMode == 2 ? PlaylistMode.single : PlaylistMode.none);
+            _saveStateCache();
+          },
+          onShowPath: () {
+            if (_currentSong != null) _showAudioPathDetails(_currentSong!);
+          },
+          onShowEqualizer: _showEqualizerSheet,
+          onShowSleepTimer: _showSleepTimerDialog,
+          onOpenLyricsManager: () {
+            if (_currentSong != null) _showNamiLyricsManagerSheet(_currentSong!);
+          },
+          onToggleFavorite: () {
+            if (_currentSong != null) {
+              setState(() => _currentSong!.isFavorite = !_currentSong!.isFavorite);
+              _saveStateCache();
+            }
+          },
+          onRefreshLyrics: () {
+            if (_currentSong != null) {
+              _currentSong!.isLyricsFetched = false;
+              _fetchLyricsOnline(_currentSong!);
+            }
+          },
+          onNext: _playNextTrack,
+          onPrevious: _playPrevTrack,
+          onOpenQueue: () => _showQueueBottomSheet(context),
+          onOpenMoreMenu: () {
+            if (_currentSong != null) _showTrackOptionsMenu(_currentSong!);
+          },
+        ),
+      ),
+    );
   }
 }
 

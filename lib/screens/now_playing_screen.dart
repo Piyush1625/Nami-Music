@@ -378,7 +378,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                         ),
                                       ],
                                     ),
-                                    child: StreamBuilder<bool>(/* v22_art_breathe */
+                                    child: NamiSpringCoverSwipe(
+                                  onNext: () => _NamiHomeShellState.activeInstance?._playNextTrack(),
+                                  onPrev: () => _NamiHomeShellState.activeInstance?._playPrevTrack(),
+                                  child: StreamBuilder<bool>(/* v22_art_breathe */
                                   stream: widget.audioPlayer.stream.playing,
                                   builder: (_, playSnap) {
                                     final playingNow = playSnap.data ?? widget.audioPlayer.state.playing;
@@ -406,6 +409,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 ),
                                     );
                                   },
+                                ),
                                 ),
                                   ),
                                 );
