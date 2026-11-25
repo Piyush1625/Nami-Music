@@ -770,7 +770,8 @@ class NamiYoutubeService {
           continue;
         }
         final json = jsonDecode(resp.body) as Map<String, dynamic>;
-        final playStatus = (json['playabilityStatus']?['status'] ?? '').toString();
+        final psMap = json['playabilityStatus'];
+        final playStatus = (psMap is Map ? (psMap['status'] ?? '') : '').toString();
         final sd = json['streamingData'];
         if (sd is! Map<String, dynamic>) {
           diag.add('$cname:${playStatus.isNotEmpty ? playStatus : 'noSD'}');
@@ -778,7 +779,7 @@ class NamiYoutubeService {
         }
 
         final durSec = int.tryParse(
-              (json['videoDetails']?['lengthSeconds'] ?? '0').toString(),
+              (json['videoDetails'] is Map ? (json['videoDetails']['lengthSeconds'] ?? '0') : '0').toString(),
             ) ??
             0;
         final streamHeaders = <String, String>{'User-Agent': ua};
@@ -1061,7 +1062,8 @@ class NamiYoutubeService {
               .timeout(const Duration(seconds: 7));
           if (resp.statusCode != 200) continue;
           final data = jsonDecode(resp.body);
-          final results = data is Map ? data['data']?['results'] : null;
+          final rawData = data is Map ? data['data'] : null;
+          final results = rawData is Map ? rawData['results'] : null;
           if (results is! List || results.isEmpty) continue;
 
           for (final item in results) {
