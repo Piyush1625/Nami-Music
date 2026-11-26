@@ -25,11 +25,10 @@ class NamiUxPrefs {
   static bool youtubeLocalOnly = true;
   static bool ytSponsorBlock = true;
   static bool ytReturnDislike = true;
-  static bool ytAudioOnlyMode = true;
+  static bool ytAudioOnlyMode = false; // OFF by default (v3.5.0)
   static bool ytAutoStartRadio = true;
   static bool ytPersonalizedFeeds = true;
   static bool ytSearchCleanup = true;
-  static bool ytAudioOnlyMode = false; // OFF by default (v3.5.0)
   static String ytDefaultMode = 'Video 480p'; // Default 480p video quality!
   static String ytDataSaver = 'Off'; // 'Off' | 'Medium' | 'High'
   static double ytPlaybackSpeed = 1.0;
