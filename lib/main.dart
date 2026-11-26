@@ -2421,7 +2421,7 @@ const SizedBox(height: 10),
                                               }
                                             } catch (_) {}
                                           },
-                                          child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(onlineUrls[i], fit: BoxFit.cover)),
+                                          child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(onlineUrls[i], fit: BoxFit.cover, gaplessPlayback: true)),
                                         ),
                                       ),
                               ),
@@ -8388,7 +8388,7 @@ void _showCreatePlaylistDialog() {
                       leading: item.artworkUrl != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(9),
-                              child: Image.network(item.artworkUrl!, width: 48, height: 48, fit: BoxFit.cover),
+                              child: Image.network(item.artworkUrl!, width: 48, height: 48, fit: BoxFit.cover, gaplessPlayback: true),
                             )
                           : Container(
                               width: 48,
@@ -8996,7 +8996,7 @@ List<String> _getSmartMornyeQuickSearches() {
                                               child: Image.network(
                                                 item['url']!,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+                                                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38), gaplessPlayback: true,
                                               ),
                                             ),
                                           ),
@@ -10926,7 +10926,7 @@ Widget _buildPlaylistCollageArt(CustomPlaylist playlist, double size, double rad
                                 if (headerItem.artworkUrl != null)
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(12),
-                                    child: Image.network(headerItem.artworkUrl!, width: 76, height: 76, fit: BoxFit.cover),
+                                    child: Image.network(headerItem.artworkUrl!, width: 76, height: 76, fit: BoxFit.cover, gaplessPlayback: true),
                                   )
                                 else
                                   Container(
