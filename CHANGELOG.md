@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.6.2 (Step 3 Final) — 2026-11-26
+
+### Video-First Watch Screen, Bigger 5-Tab Merged Header, Unified Library & History-Powered Feeds
+- **Video-First Watch Screen (Removed Top-Bar `Audio Only` Pill):** Removed the top-bar `Audio Only` pill from `NamiYoutubeWatchScreen` and defaulted YouTube to Video Mode automatically on every open, track skip, and cached replay (with saved resume timestamp seeking and post-buffer ExoPlayer A/V re-sync).
+- **Bigger 5-Tab Merged YouTube Header (`NamiYoutubeMergedAppBar`):** Upgraded the single-row header to `62px` height with larger `21.5px` `YouTube` typography, `40px` nav pills (`Home | Music | Mornye | Channels | Library`), `20px` icons, and a `24.5px` Settings gear.
+- **Merged Playlists & Downloads Into Unified `Library` Tab (`NamiYoutubeUnifiedLibraryTab`):** Combined Downloads (`All | Ongoing | Finished` + Mornye local downloads), History (with Pause Watch History & red resume progress bars), Most Played (`All time | 7d | 30d`), Favourites, and Playlists (`+ Add`) into one cohesive screen.
+- **History-Powered YouTube Home & Music Feeds (`NamiYtTasteEngine` + `NamiYoutubeSmartMusicTab`):** Dynamically personalizes Home and Music from your recently watched videos, recent searches, and top offline FLAC artists — adding Latest From Your Channels, 2-row Quick Picks, Listen Again, Personal Artist Mixes (`Play All`), Mood chips, Audio vs. Video Download Picker (`Opus/M4A` or `480p/720p MP4`), persistent Like/Dislike, and `Not Interested` filtering.
+
 ## v3.6.1 (Step 2) — 2026-11-26
 
 ### Merged Single-Row YouTube Header & Clean Top Chrome

@@ -56,6 +56,7 @@ part 'widgets/nami_v30_discover_tab.dart';
 part 'widgets/nami_v31_suite.dart';
 part 'widgets/nami_v33_youtube_watch.dart';
 part 'widgets/nami_v35_youtube_search.dart';
+part 'widgets/nami_v36_youtube_step3.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -11808,6 +11809,7 @@ Future<void> _exportUnifiedNamiBackup() async {
     NamiUxPrefs.ensureLoaded().then((_) {
       NamiAudiophileEngine.applyMpvProperties(_audioPlayer);
       NamiYoutubeStore.instance.ensureLoaded();
+      NamiYtTasteEngine.ensureLoaded();
       NamiYoutubeService.warmUpNativeEngine();
       NamiYtDownloadManager.instance.ensureLoaded();
       NamiAudioArbitrator.bindLocalPlayer(_audioPlayer);

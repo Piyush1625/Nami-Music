@@ -381,7 +381,7 @@ class _NamiYoutubeSearchScreenState extends State<NamiYoutubeSearchScreen> {
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   tooltip: 'Download',
                   icon: const Icon(Icons.download_outlined, color: Colors.white54, size: 18),
-                  onPressed: () => NamiYtDownloadManager.instance.enqueueDownload(t),
+                  onPressed: () => showNamiYtDownloadPickerSheet(context, t),
                 ),
               ],
             ),
@@ -686,16 +686,21 @@ class _NamiYoutubeConnectedHomeFeedState extends State<NamiYoutubeConnectedHomeF
     if (!silent && mounted) setState(() => _loading = true);
     final hist = NamiYoutubeStore.instance.history;
     if (hist.isNotEmpty) _lastSeedId = hist.first.videoId;
+    await NamiYtTasteEngine.ensureLoaded();
+    final recentQ = await NamiYtTasteEngine.recentSearchTerms(limit: 4);
+    final tasteA = NamiYtTasteEngine.topTasteArtists(limit: 5);
     final res = await NamiYoutubeService.instance.fetchYoutubeHomeFeed(
       category: _activeCat,
       region: NamiUxPrefs.youtubeRegion,
-      recentHistory: hist,
+      recentHistory: hist.where((t) => !NamiYtTasteEngine.isHidden(t.videoId)).toList(),
+      recentSearches: recentQ,
+      tasteArtists: tasteA,
     );
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _becauseWatched = res['becauseWatched'] ?? const [];
-      _feedVideos = res['feed'] ?? const [];
+      _becauseWatched = (res['becauseWatched'] ?? const []).where((t) => !NamiYtTasteEngine.isHidden(t.videoId)).toList();
+      _feedVideos = (res['feed'] ?? const []).where((t) => !NamiYtTasteEngine.isHidden(t.videoId)).toList();
     });
   }
 
@@ -960,6 +965,57 @@ class _NamiYoutubeConnectedHomeFeedState extends State<NamiYoutubeConnectedHomeF
             else
               for (final h in history) _buildFull16x9FeedCard(h, history),
           ] else ...[
+            /* v36_2_channels_strip */
+            if (store.subscribedChannels.isNotEmpty) ...[
+              SizedBox(
+                height: 82,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  itemCount: store.subscribedChannels.length,
+                  itemBuilder: (_, i) {
+                    final ch = store.subscribedChannels[i];
+                    return GestureDetector(
+                      onTap: () => openNamiYoutubeChannelScreen(
+                        context,
+                        channelId: ch.channelId,
+                        channelName: ch.name,
+                        channelAvatarUrl: ch.avatarUrl,
+                        subscriberText: ch.subscriberText,
+                      ),
+                      child: Container(
+                        width: 66,
+                        margin: const EdgeInsets.only(right: 10),
+                        child: Column(
+                          children: [
+                            CircleAvatar(
+                              radius: 25,
+                              backgroundColor: const Color(0xFF181822),
+                              backgroundImage:
+                                  ch.avatarUrl.isNotEmpty ? NetworkImage(ch.avatarUrl) : null,
+                              child: ch.avatarUrl.isEmpty
+                                  ? Text(
+                                      ch.name.isNotEmpty ? ch.name[0].toUpperCase() : 'C',
+                                      style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w800),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              ch.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white70, fontSize: 10.4, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             // 2. Continue Watching / Recently Watched Strip (Connected to watch history!)
             if (history.isNotEmpty) ...[
               Padding(
@@ -1075,13 +1131,13 @@ class _NamiYoutubeConnectedHomeFeedState extends State<NamiYoutubeConnectedHomeF
 }
 
 /// Shared reactive navigation controller linking Nami's merged single-row YouTube top bar
-/// (`NamiYoutubeMergedAppBar`) directly to `NamiDiscoverHubTab`'s 6 sub-tabs (`v3.6.1`).
+/// (`NamiYoutubeMergedAppBar`) directly to `NamiDiscoverHubTab`'s 5 unified sub-tabs (`v3.6.2`).
 class NamiYoutubeNavController {
   static final ValueNotifier<int> activeSubTab = ValueNotifier<int>(0);
   static void Function(int index)? onSelectSubTab;
 
   static void select(int index) {
-    final safe = index.clamp(0, 5);
+    final safe = index.clamp(0, 4);
     _namiSafeSetNotifier<int>(activeSubTab, safe);
     onSelectSubTab?.call(safe);
   }
@@ -1094,12 +1150,11 @@ class _NamiYtTopNavDef {
   const _NamiYtTopNavDef(this.icon, this.activeIcon, this.label);
 }
 
-/// Merged Single-Row AMOLED YouTube Header (`v3.6.1`):
-/// Exact layout: `[ YouTube ] (left) -> [ Nav Icons ] (center) -> [ Settings ] (right)`
-/// - Zero Search or Queue icons in the top bar
-/// - Active nav pill smoothly expands to reveal its label; inactive tabs stay compact icons
-/// - Live download dot indicator on the Downloads icon
-/// - Tapping `YouTube` opens the Logged-Out BotGuard / Signed-In Account sheet (with subtle status dot)
+/// Bigger, Roomier 5-Tab Merged Single-Row AMOLED YouTube Header (`v3.6.2`):
+/// Exact layout: `[ YouTube (21.5px) ] (left) -> [ 5 Nav Pills (40px) ] (center) -> [ Settings (24.5px) ] (right)`
+/// - Merges Playlists & Downloads into one unified `Library` pill (`index 4`) with live download dot
+/// - Zero top Search or Queue icons
+/// - Tapping `YouTube` opens the Logged-Out BotGuard / Signed-In Account sheet
 class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onOpenSettings;
 
@@ -1113,12 +1168,11 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
     _NamiYtTopNavDef(Icons.music_note_outlined, Icons.music_note_rounded, 'Music'),
     _NamiYtTopNavDef(Icons.extension_outlined, Icons.extension_rounded, 'Mornye'),
     _NamiYtTopNavDef(Icons.people_outline_rounded, Icons.people_rounded, 'Channels'),
-    _NamiYtTopNavDef(Icons.playlist_play_rounded, Icons.playlist_play_rounded, 'Playlists'),
-    _NamiYtTopNavDef(Icons.download_outlined, Icons.download_done_rounded, 'Downloads'),
+    _NamiYtTopNavDef(Icons.video_library_outlined, Icons.video_library_rounded, 'Library'),
   ];
 
   @override
-  Size get preferredSize => const Size.fromHeight(54.0);
+  Size get preferredSize => const Size.fromHeight(62.0);
 
   @override
   Widget build(BuildContext context) {
@@ -1128,20 +1182,20 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
         color: const Color(0xFF000000),
         border: Border(
           bottom: BorderSide(
-            color: Colors.white.withValues(alpha: 0.06),
-            width: 0.6,
+            color: Colors.white.withValues(alpha: 0.07),
+            width: 0.7,
           ),
         ),
       ),
       child: SafeArea(
         bottom: false,
         child: SizedBox(
-          height: 54.0,
+          height: 62.0,
           child: Row(
             children: [
-              // 1. LEFT: Compact `YouTube` Title (tap -> Account / BotGuard status sheet)
+              // 1. LEFT: Bigger `YouTube` Brand Title (tap -> Account / BotGuard sheet)
               Padding(
-                padding: const EdgeInsets.only(left: 14, right: 8),
+                padding: const EdgeInsets.only(left: 16, right: 10),
                 child: ValueListenableBuilder<bool>(
                   valueListenable: NamiYoutubeService.isSignedIn,
                   builder: (_, signedIn, __) => GestureDetector(
@@ -1157,16 +1211,16 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
                           'YouTube',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 18.0,
+                            fontSize: 21.5,
                             fontWeight: FontWeight.w900,
-                            letterSpacing: -0.35,
+                            letterSpacing: -0.45,
                           ),
                         ),
                         if (signedIn) ...[
-                          const SizedBox(width: 5),
+                          const SizedBox(width: 6),
                           Container(
-                            width: 6.5,
-                            height: 6.5,
+                            width: 7.5,
+                            height: 7.5,
                             decoration: const BoxDecoration(
                               color: Color(0xFF10B981),
                               shape: BoxShape.circle,
@@ -1179,7 +1233,7 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
                 ),
               ),
 
-              // 2. CENTER: Scrollable Compact YouTube Nav Icons Strip (merged directly into top bar!)
+              // 2. CENTER: Bigger 5-Tab YouTube Nav Pill Strip (Home | Music | Mornye | Channels | Library)
               Expanded(
                 child: ValueListenableBuilder<int>(
                   valueListenable: NamiYoutubeNavController.activeSubTab,
@@ -1199,13 +1253,13 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             for (int i = 0; i < _items.length; i++) ...[
-                              if (i > 0) const SizedBox(width: 4),
+                              if (i > 0) const SizedBox(width: 5.5),
                               _buildNavChip(
                                 index: i,
                                 def: _items[i],
                                 selected: activeIdx == i,
                                 accent: accent,
-                                showBadgeDot: i == 5 && hasActiveDl,
+                                showBadgeDot: i == 4 && hasActiveDl,
                               ),
                             ],
                           ],
@@ -1216,15 +1270,15 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
                 ),
               ),
 
-              // 3. RIGHT: Single Clean Settings Gear Button (Zero Search / Zero Queue!)
+              // 3. RIGHT: Bigger Clean Settings Gear Button
               IconButton(
                 tooltip: 'Settings',
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
                 icon: const Icon(
                   Icons.settings_outlined,
                   color: Colors.white,
-                  size: 22,
+                  size: 24.5,
                 ),
                 onPressed: () {
                   NamiUxPrefs.hapticLight();
@@ -1254,18 +1308,18 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 190),
         curve: Curves.easeOutCubic,
-        height: 34,
-        padding: EdgeInsets.symmetric(horizontal: selected ? 11 : 8),
+        height: 40,
+        padding: EdgeInsets.symmetric(horizontal: selected ? 13 : 10),
         decoration: BoxDecoration(
           color: selected
-              ? accent.withValues(alpha: 0.18)
-              : const Color(0xFF101016),
-          borderRadius: BorderRadius.circular(17),
+              ? accent.withValues(alpha: 0.20)
+              : const Color(0xFF111118),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected
-                ? accent.withValues(alpha: 0.55)
-                : Colors.white.withValues(alpha: 0.08),
-            width: 0.9,
+                ? accent.withValues(alpha: 0.60)
+                : Colors.white.withValues(alpha: 0.09),
+            width: 1.0,
           ),
         ),
         child: Row(
@@ -1277,15 +1331,15 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
                 Icon(
                   selected ? def.activeIcon : def.icon,
                   color: selected ? accent : Colors.white70,
-                  size: 17.5,
+                  size: 20.0,
                 ),
                 if (showBadgeDot)
                   Positioned(
                     right: -2,
                     top: -2,
                     child: Container(
-                      width: 6,
-                      height: 6,
+                      width: 6.5,
+                      height: 6.5,
                       decoration: BoxDecoration(
                         color: accent,
                         shape: BoxShape.circle,
@@ -1295,12 +1349,12 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
               ],
             ),
             if (selected) ...[
-              const SizedBox(width: 5),
+              const SizedBox(width: 6),
               Text(
                 def.label,
                 style: TextStyle(
                   color: accent,
-                  fontSize: 11.6,
+                  fontSize: 12.8,
                   fontWeight: FontWeight.w800,
                 ),
               ),

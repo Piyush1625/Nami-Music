@@ -931,7 +931,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v3.6.1 Stable • Releases & Library Statistics',
+                subtitle: 'v3.6.2 Stable • Releases & Library Statistics',
                 index: 6,
               ),
             ],
@@ -1510,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.6.1 (v50)',
+                    'v3.6.2 (v51)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1731,7 +1731,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.6.1 Stable Engine',
+                          'Nami v3.6.2 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),

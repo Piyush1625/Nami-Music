@@ -1578,13 +1578,13 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                     }
                   },
                   children: [
-                    _NamiKeepAliveSubTab(key: const ValueKey<int>(0), child: _buildHomeLocalTab(accent)),
-                    _NamiKeepAliveSubTab(key: const ValueKey<int>(1), child: _buildMusicBrowseTab(accent)),
-                    _NamiKeepAliveSubTab(key: const ValueKey<int>(2), child: widget.mornyeTab),
-                    _NamiKeepAliveSubTab(key: const ValueKey<int>(3), child: _buildChannelsLocalTab(accent)),
-                    _NamiKeepAliveSubTab(key: const ValueKey<int>(4), child: _buildPlaylistsLocalTab(accent)),
-                    _NamiKeepAliveSubTab(key: const ValueKey<int>(5), child: _buildDownloadsTab(accent)),
-                  ],
+                  /* v36_2_merged_5_tabs */
+                  const _NamiKeepAliveSubTab(child: NamiYoutubeConnectedHomeFeed()),
+                  const _NamiKeepAliveSubTab(child: NamiYoutubeSmartMusicTab()),
+                  _NamiKeepAliveSubTab(child: widget.mornyeTab),
+                  _NamiKeepAliveSubTab(child: _buildChannelsLocalTab(accent)),
+                  const _NamiKeepAliveSubTab(child: NamiYoutubeUnifiedLibraryTab()),
+                ],
                 ),
               ),
             ),

@@ -501,7 +501,9 @@ class NamiYoutubePlaybackBridge {
       _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, enrichedYt);
 
       await shell._playV30YoutubeAudioTrack(audioTrack);
-      await NamiYoutubeStore.instance.recordPlay(enrichedYt);
+      if (!NamiYtTasteEngine.pauseWatchHistory) {
+        await NamiYoutubeStore.instance.recordPlay(enrichedYt);
+      }
 
       NamiLiveToastController.showMessage(
         clientLabel == 'CACHED'
@@ -823,7 +825,6 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
                           itemCount: _tracks.length,
                           itemBuilder: (_, i) {
                             final t = _tracks[i];
-                            final fav = NamiYoutubeStore.instance.isFavorite(t.videoId);
                             return ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                               leading: ClipRRect(

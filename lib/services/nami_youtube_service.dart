@@ -2932,75 +2932,103 @@ static String _preferredFastClient = '';
     };
   }
 
-  /// Connected YouTube Home Feed (`v3.5.0`):
-  /// Returns BOTH personalized recommendations based on recently watched videos AND rich live YouTube home videos!
+  /// History-Powered Connected YouTube Home Feed (`v3.6.2`):
+  /// Builds a dynamic "For You" feed from the user's top recently watched videos, recent search
+  /// queries, and cross-library artist taste — zero static generic feed!
   Future<Map<String, List<NamiYtTrack>>> fetchYoutubeHomeFeed({
     String category = 'All',
     String region = 'IN',
     List<NamiYtTrack> recentHistory = const [],
+    List<String> recentSearches = const [],
+    List<String> tasteArtists = const [],
   }) async {
     final becauseWatched = <NamiYtTrack>[];
     final feedVideos = <NamiYtTrack>[];
     final seen = <String>{};
 
-    // 1. Personalized "Because You Watched" recommendations from latest watched video
-    if (recentHistory.isNotEmpty) {
-      final seed = recentHistory.first;
-      seen.add(seed.videoId);
-      try {
-        final wd = await fetchWatchDetails(
-          seed.videoId,
-          region: region,
-          fetchDislikes: false,
-        );
-        for (final r in wd.relatedTracks) {
+    // 1. Pull real InnerTube `/next` related clusters from up to 3 recently watched videos in parallel!
+    final seedTracks = recentHistory.take(3).toList();
+    if (seedTracks.isNotEmpty) {
+      for (final s in seedTracks) {
+        seen.add(s.videoId);
+      }
+      final seedBatches = await Future.wait<List<NamiYtTrack>>(
+        seedTracks.map(
+          (seed) => fetchWatchDetails(seed.videoId, region: region, fetchDislikes: false)
+              .then((wd) => wd.relatedTracks)
+              .catchError((_) => const <NamiYtTrack>[]),
+        ),
+      );
+      if (seedBatches.isNotEmpty) {
+        for (final r in seedBatches.first) {
           if (seen.add(r.videoId)) becauseWatched.add(r);
         }
-      } catch (_) {}
-      if (becauseWatched.length < 6) {
-        final extra = await searchMusic(
-          '${seed.title} ${seed.artist}',
-          region: region,
-          limit: 12,
-        );
-        for (final r in extra) {
-          if (seen.add(r.videoId)) becauseWatched.add(r);
+        // Interleave related videos from recent history #2 & #3 straight into main "For You" feed!
+        for (int b = 1; b < seedBatches.length; b++) {
+          for (final r in seedBatches[b]) {
+            if (seen.add(r.videoId)) feedVideos.add(r);
+          }
         }
       }
     }
 
-    // 2. Category / Live YouTube Home Feed (`FEwhat_to_watch` or targeted category search)
+    // 2. Category or Taste-Seeded Video Feed
     if (category == 'All') {
-      try {
-        final resp = await http
-            .post(
-              Uri.parse('$_ytApiBase/browse?prettyPrint=false'),
-              headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': _webUserAgent,
-                if (_effectiveCookie.isNotEmpty) 'Cookie': _effectiveCookie,
-              },
-              body: jsonEncode({
-                'browseId': 'FEwhat_to_watch',
-                'context': _webContext(region),
-              }),
-            )
-            .timeout(const Duration(seconds: 7));
-        if (resp.statusCode == 200) {
-          final root = jsonDecode(resp.body);
-          _extractVideoRenderers(root, feedVideos, seen, 24);
+      final queries = <String>[];
+      if (recentSearches.isNotEmpty) {
+        queries.add(recentSearches.first);
+      }
+      if (tasteArtists.isNotEmpty) {
+        queries.add('${tasteArtists.take(2).join(' ')} official video');
+      }
+      if (queries.isNotEmpty) {
+        final qBatches = await Future.wait(
+          queries.take(2).map((q) => searchYoutubeFull(q, filter: 'Videos', region: region)),
+        );
+        for (final res in qBatches) {
+          final list = (res['tracks'] as List?)?.cast<NamiYtTrack>() ?? const <NamiYtTrack>[];
+          for (final t in list) {
+            if (seen.add(t.videoId)) feedVideos.add(t);
+          }
         }
-      } catch (_) {}
+      }
+      // Supplement with live YouTube FEwhat_to_watch browse if still under 14 items
+      if (feedVideos.length < 14) {
+        try {
+          final resp = await http
+              .post(
+                Uri.parse('$_ytApiBase/browse?prettyPrint=false'),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'User-Agent': _webUserAgent,
+                  if (_effectiveCookie.isNotEmpty) 'Cookie': _effectiveCookie,
+                },
+                body: jsonEncode({
+                  'browseId': 'FEwhat_to_watch',
+                  'context': _webContext(region),
+                }),
+              )
+              .timeout(const Duration(seconds: 6));
+          if (resp.statusCode == 200) {
+            final root = jsonDecode(resp.body);
+            _extractVideoRenderers(root, feedVideos, seen, 26);
+          }
+        } catch (_) {}
+      }
     }
 
-    // Ensure rich, fresh India-first YouTube video & music recommendations even on fresh logged-out sessions!
     if (feedVideos.length < 10) {
+      final tasteLead = tasteArtists.isNotEmpty ? tasteArtists.first : '';
       final query = switch (category) {
-        'Music' => region == 'IN' ? 'latest hindi punjabi music video 2026' : 'top music videos 2026',
-        'Trending' => region == 'IN' ? 'trending india music videos 2026' : 'trending videos 2026',
+        'Music' => tasteLead.isNotEmpty
+            ? '$tasteLead official music video'
+            : (region == 'IN' ? 'latest hindi punjabi dhh music video 2026' : 'top music videos 2026'),
+        'Trending' => region == 'IN' ? 'trending india videos 2026' : 'trending videos 2026',
         'Podcasts' => region == 'IN' ? 'indian podcast full episode 2026' : 'popular podcast full episode',
         'Gaming' => 'gaming highlights 2026',
-        _ => region == 'IN' ? 'trending bollywood punjabi dhh official music video 2026' : 'trending music videos 2026',
+        _ => tasteLead.isNotEmpty
+            ? '$tasteLead music video'
+            : (region == 'IN' ? 'trending bollywood punjabi dhh official music video 2026' : 'trending music videos 2026'),
       };
       final fallback = await searchYoutubeFull(query, filter: 'Videos', region: region);
       final list = (fallback['tracks'] as List?)?.cast<NamiYtTrack>() ?? const <NamiYtTrack>[];
@@ -3242,6 +3270,9 @@ class NamiYoutubeStore {
       .map((id) => _catalog[id])
       .whereType<NamiYtTrack>()
       .toList();
+
+  List<NamiYtChannel> get subscribedChannels =>
+      List<NamiYtChannel>.unmodifiable(_channels);
 }
 
 class _NamiYtProxyTarget {

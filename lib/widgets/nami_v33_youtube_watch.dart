@@ -145,7 +145,7 @@ Future<void> openNamiYoutubeWatchScreen(
   BuildContext context,
   NamiYtTrack track, {
   List<NamiYtTrack>? queue,
-  bool startVideoMode = false,
+  bool startVideoMode = true,
 }) {
   return Navigator.of(context, rootNavigator: true).push(
     PageRouteBuilder<void>(
@@ -199,7 +199,7 @@ class NamiYoutubeWatchScreen extends StatefulWidget {
     super.key,
     required this.initialTrack,
     this.initialQueue,
-    this.startVideoMode = false,
+    this.startVideoMode = true,
   });
 
   @override
@@ -236,7 +236,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
 
   // Local engagement toggles
   bool _liked = false;
-  bool _disliked = false;
+  bool _disliked = NamiYtTasteEngine.isDisliked(vid);
 
   // Real YouTube Comments state
   List<NamiYtComment> _comments = const [];
@@ -303,6 +303,10 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
             positionMs: p.inMilliseconds,
             playing: _isPlaying,
           );
+          /* v36_2_save_resume_pos */
+          if (p.inSeconds > 4 && p.inSeconds % 3 == 0) {
+            unawaited(NamiYtTasteEngine.saveResumePosition(_track.videoId, p, _curDur));
+          }
         }
       }
     });
@@ -343,7 +347,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       _loadingDetails = true;
       _descExpanded = false;
       _liked = NamiYoutubeStore.instance.isFavorite(vid);
-      _disliked = false;
+      _disliked = NamiYtTasteEngine.isDisliked(vid);
       _comments = const [];
       _commentsNextCont = null;
       _topSortToken = null;
@@ -364,13 +368,21 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
           _isVideoActive = false;
           _qualityLabel = 'Audio Only';
         });
+        /* v36_2_always_start_video_default */
+        final wantVideo = widget.startVideoMode && !NamiUxPrefs.ytAudioOnlyMode;
         unawaited(
           NamiYoutubePlaybackBridge.playTrack(
             target,
             upcoming: widget.initialQueue,
           ).then((ok) {
-            if (ok && mounted && _track.videoId == vid && (widget.startVideoMode || !NamiUxPrefs.ytAudioOnlyMode)) {
-              _activateDefaultVideoQuality();
+            if (ok && mounted && _track.videoId == vid) {
+              final savedMs = NamiYtTasteEngine.resumePositionMs(vid);
+              if (savedMs > 4000 && !forceRefresh) {
+                NamiYoutubePlaybackBridge.ytPlayer.seek(Duration(milliseconds: savedMs));
+              }
+              if (wantVideo) {
+                _activateDefaultVideoQuality();
+              }
             }
           }),
         );
@@ -576,8 +588,6 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         ? NamiYtVideoBridge.activeVideoFormats.value
         : NamiYoutubeService.instance.cachedVideoFormatsFor(_track.videoId);
     final dur = _curDur.inSeconds > 0 ? _curDur : _track.duration;
-    final shell = _NamiHomeShellState.activeInstance;
-
     showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
@@ -835,7 +845,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         // 4. Live Half-Screen YouTube Settings Toggles
                         SwitchListTile(
                           dense: true,
-                          activeColor: accent,
+                          activeThumbColor: accent,
                           secondary: const Icon(Icons.repeat_one_rounded, color: Colors.white70, size: 20),
                           title: const Text('Loop Current Video / Track', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
                           value: NamiUxPrefs.ytLoopEnabled,
@@ -849,7 +859,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         ),
                         SwitchListTile(
                           dense: true,
-                          activeColor: accent,
+                          activeThumbColor: accent,
                           secondary: const Icon(Icons.block_rounded, color: Colors.white70, size: 20),
                           title: const Text('SponsorBlock Auto-Skip', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
                           value: NamiUxPrefs.ytSponsorBlock,
@@ -861,7 +871,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         ),
                         SwitchListTile(
                           dense: true,
-                          activeColor: accent,
+                          activeThumbColor: accent,
                           secondary: const Icon(Icons.podcasts_rounded, color: Colors.white70, size: 20),
                           title: const Text('Auto-Play Next / Radio', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
                           value: NamiUxPrefs.ytAutoStartRadio,
@@ -873,7 +883,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         ),
                         SwitchListTile(
                           dense: true,
-                          activeColor: accent,
+                          activeThumbColor: accent,
                           secondary: const Icon(Icons.thumb_down_outlined, color: Colors.white70, size: 20),
                           title: const Text('Return YouTube Dislike', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
                           value: NamiUxPrefs.ytReturnDislike,
@@ -1087,7 +1097,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                 title: const Text('Download Offline', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  NamiYtDownloadManager.instance.enqueueDownload(t);
+                  showNamiYtDownloadPickerSheet(context, t);
                 },
               ),
               ListTile(
@@ -1145,6 +1155,16 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
 
   void _onVideoBridgeStateChanged() {
     if (!mounted || !_isVideoActive) return;
+    /* v36_2_ready_resync */
+    if (NamiYtVideoBridge.videoState.value == 'ready') {
+      final p = NamiYoutubePlaybackBridge.ytPlayer;
+      NamiYtVideoBridge.setSpeed(NamiUxPrefs.ytPlaybackSpeed);
+      NamiYtVideoBridge.syncState(
+        positionMs: p.state.position.inMilliseconds,
+        playing: p.state.playing,
+      );
+      return;
+    }
     if (NamiYtVideoBridge.videoState.value == 'error') {
       final list = NamiYtVideoBridge.activeVideoFormats.value;
       final fallback = list.cast<NamiYtVideoFormat?>().firstWhere(
@@ -1366,51 +1386,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               },
                             ),
                             const Spacer(),
-                            // Quick 1-Tap Audio <-> Video Switch Pill
-                            GestureDetector(
-                              onTap: () {
-                                NamiUxPrefs.hapticLight();
-                                if (_isVideoActive) {
-                                  _selectAudioOnly();
-                                } else {
-                                  _activateDefaultVideoQuality();
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: _isVideoActive
-                                      ? accent.withValues(alpha: 0.28)
-                                      : Colors.black.withValues(alpha: 0.55),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: _isVideoActive ? accent : Colors.white30,
-                                    width: 0.9,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _isVideoActive
-                                          ? Icons.ondemand_video_rounded
-                                          : Icons.headphones_rounded,
-                                      color: Colors.white,
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      _qualityLabel,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11.2,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+
                             IconButton(
                               tooltip: 'Quality Settings',
                               icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
@@ -1453,6 +1429,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 final cur = NamiYoutubePlaybackBridge.activeYtTrack.value;
                                 if (ok && cur != null && mounted) {
                                   _loadWatchData(cur, autoStartPlay: false);
+                                  /* v36_2_skip_auto_video */
+                                  if (!NamiUxPrefs.ytAudioOnlyMode) _activateDefaultVideoQuality();
                                 }
                               });
                             },
@@ -1501,6 +1479,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 final cur = NamiYoutubePlaybackBridge.activeYtTrack.value;
                                 if (ok && cur != null && mounted) {
                                   _loadWatchData(cur, autoStartPlay: false);
+                                  /* v36_2_skip_auto_video */
+                                  if (!NamiUxPrefs.ytAudioOnlyMode) _activateDefaultVideoQuality();
                                 }
                               });
                             },
@@ -1754,7 +1734,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                     if (mounted) {
                       setState(() {
                         _liked = next;
-                        if (next) _disliked = false;
+                        if (next) _disliked = NamiYtTasteEngine.isDisliked(vid);
                       });
                     }
                   },
@@ -1763,10 +1743,18 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                   icon: _disliked ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
                   label: dislikesCount > 0 ? _fmtCount(dislikesCount) : 'Dislike',
                   active: _disliked,
-                  onTap: () => setState(() {
-                    _disliked = !_disliked;
-                    if (_disliked) _liked = false;
-                  }),
+                  onTap: () async {
+                    final nextD = await NamiYtTasteEngine.toggleDislike(_track.videoId);
+                    if (nextD && store.isFavorite(_track.videoId)) {
+                      await store.toggleFavorite(_track);
+                    }
+                    if (mounted) {
+                      setState(() {
+                        _disliked = nextD;
+                        if (nextD) _liked = false;
+                      });
+                    }
+                  },
                 ),
                 actionBtn(
                   icon: Icons.share_outlined,
@@ -1790,7 +1778,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                       : Icons.download_outlined,
                   label: dlLabel,
                   active: dl?.status == NamiYtDlStatus.completed,
-                  onTap: () => NamiYtDownloadManager.instance.enqueueDownload(_track),
+                  onTap: () => showNamiYtDownloadPickerSheet(context, _track),
                 ),
                 actionBtn(
                   icon: Icons.library_add_outlined,
