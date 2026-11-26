@@ -1,4 +1,3 @@
-import 'dart:async';
 part of '../main.dart';
 
 class NowPlayingModal extends StatefulWidget {
