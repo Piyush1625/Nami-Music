@@ -1073,3 +1073,242 @@ class _NamiYoutubeConnectedHomeFeedState extends State<NamiYoutubeConnectedHomeF
     );
   }
 }
+
+/// Shared reactive navigation controller linking Nami's merged single-row YouTube top bar
+/// (`NamiYoutubeMergedAppBar`) directly to `NamiDiscoverHubTab`'s 6 sub-tabs (`v3.6.1`).
+class NamiYoutubeNavController {
+  static final ValueNotifier<int> activeSubTab = ValueNotifier<int>(0);
+  static void Function(int index)? onSelectSubTab;
+
+  static void select(int index) {
+    final safe = index.clamp(0, 5);
+    _namiSafeSetNotifier<int>(activeSubTab, safe);
+    onSelectSubTab?.call(safe);
+  }
+}
+
+class _NamiYtTopNavDef {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  const _NamiYtTopNavDef(this.icon, this.activeIcon, this.label);
+}
+
+/// Merged Single-Row AMOLED YouTube Header (`v3.6.1`):
+/// Exact layout: `[ YouTube ] (left) -> [ Nav Icons ] (center) -> [ Settings ] (right)`
+/// - Zero Search or Queue icons in the top bar
+/// - Active nav pill smoothly expands to reveal its label; inactive tabs stay compact icons
+/// - Live download dot indicator on the Downloads icon
+/// - Tapping `YouTube` opens the Logged-Out BotGuard / Signed-In Account sheet (with subtle status dot)
+class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final VoidCallback onOpenSettings;
+
+  const NamiYoutubeMergedAppBar({
+    super.key,
+    required this.onOpenSettings,
+  });
+
+  static const List<_NamiYtTopNavDef> _items = [
+    _NamiYtTopNavDef(Icons.home_outlined, Icons.home_rounded, 'Home'),
+    _NamiYtTopNavDef(Icons.music_note_outlined, Icons.music_note_rounded, 'Music'),
+    _NamiYtTopNavDef(Icons.extension_outlined, Icons.extension_rounded, 'Mornye'),
+    _NamiYtTopNavDef(Icons.people_outline_rounded, Icons.people_rounded, 'Channels'),
+    _NamiYtTopNavDef(Icons.playlist_play_rounded, Icons.playlist_play_rounded, 'Playlists'),
+    _NamiYtTopNavDef(Icons.download_outlined, Icons.download_done_rounded, 'Downloads'),
+  ];
+
+  @override
+  Size get preferredSize => const Size.fromHeight(54.0);
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF000000),
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.white.withValues(alpha: 0.06),
+            width: 0.6,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 54.0,
+          child: Row(
+            children: [
+              // 1. LEFT: Compact `YouTube` Title (tap -> Account / BotGuard status sheet)
+              Padding(
+                padding: const EdgeInsets.only(left: 14, right: 8),
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: NamiYoutubeService.isSignedIn,
+                  builder: (_, signedIn, __) => GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      NamiUxPrefs.hapticLight();
+                      showNamiYoutubeAccountSheet(context);
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'YouTube',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18.0,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.35,
+                          ),
+                        ),
+                        if (signedIn) ...[
+                          const SizedBox(width: 5),
+                          Container(
+                            width: 6.5,
+                            height: 6.5,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // 2. CENTER: Scrollable Compact YouTube Nav Icons Strip (merged directly into top bar!)
+              Expanded(
+                child: ValueListenableBuilder<int>(
+                  valueListenable: NamiYoutubeNavController.activeSubTab,
+                  builder: (_, activeIdx, __) => ValueListenableBuilder<List<NamiYtDownloadTask>>(
+                    valueListenable: NamiYtDownloadManager.instance.tasks,
+                    builder: (_, dlTasks, __) {
+                      final hasActiveDl = dlTasks.any(
+                        (t) =>
+                            t.status == NamiYtDlStatus.downloading ||
+                            t.status == NamiYtDlStatus.queued,
+                      );
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (int i = 0; i < _items.length; i++) ...[
+                              if (i > 0) const SizedBox(width: 4),
+                              _buildNavChip(
+                                index: i,
+                                def: _items[i],
+                                selected: activeIdx == i,
+                                accent: accent,
+                                showBadgeDot: i == 5 && hasActiveDl,
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // 3. RIGHT: Single Clean Settings Gear Button (Zero Search / Zero Queue!)
+              IconButton(
+                tooltip: 'Settings',
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                onPressed: () {
+                  NamiUxPrefs.hapticLight();
+                  onOpenSettings();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavChip({
+    required int index,
+    required _NamiYtTopNavDef def,
+    required bool selected,
+    required Color accent,
+    bool showBadgeDot = false,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        NamiUxPrefs.hapticLight();
+        NamiYoutubeNavController.select(index);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 190),
+        curve: Curves.easeOutCubic,
+        height: 34,
+        padding: EdgeInsets.symmetric(horizontal: selected ? 11 : 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? accent.withValues(alpha: 0.18)
+              : const Color(0xFF101016),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: selected
+                ? accent.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.08),
+            width: 0.9,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  selected ? def.activeIcon : def.icon,
+                  color: selected ? accent : Colors.white70,
+                  size: 17.5,
+                ),
+                if (showBadgeDot)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (selected) ...[
+              const SizedBox(width: 5),
+              Text(
+                def.label,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 11.6,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+

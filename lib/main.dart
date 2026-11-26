@@ -8555,7 +8555,11 @@ void _showCreatePlaylistDialog() {
           NamiShellNavigator(
           child: Scaffold(
             backgroundColor: Colors.transparent,
-            appBar: _isSelectionMode
+            appBar: _selectedIndex == 4
+          ? NamiYoutubeMergedAppBar(
+              onOpenSettings: _openSettings,
+            )
+          : (_isSelectionMode
           ? AppBar(
               backgroundColor: const Color(0xFF12121C),
               leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: _exitSelectionMode),
@@ -8634,7 +8638,7 @@ void _showCreatePlaylistDialog() {
                 ),
                 IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
               ],
-            ),
+            )),
             body: NamiSwipeableTabsView(
               currentIndex: _selectedIndex,
               onPageChanged: (idx) {

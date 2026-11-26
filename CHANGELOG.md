@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.6.1 (Step 2) — 2026-11-26
+
+### Merged Single-Row YouTube Header & Clean Top Chrome
+- **Unified Single-Row YouTube Top Bar (`NamiYoutubeMergedAppBar`):** Merged the `YouTube` title, scrollable YouTube sub-tab navigation pills (`Home | Music | Mornye | Channels | Playlists | Downloads`), and Settings gear into one compact 54px AMOLED header: **`[ YouTube ] (left) → [ Nav Icons ] (center) → [ Settings ] (right)`**.
+- **Removed Redundant Top-Bar Clutter:** Removed the global Search and Queue buttons from the YouTube top bar and eliminated the duplicate second-row pill strip inside `NamiDiscoverHubTab`, reclaiming ~58px of vertical screen space for videos and music feeds.
+- **Two-Way 120Hz Nav Sync (`NamiYoutubeNavController`):** Tapping pills in the merged header smoothly animates the YouTube `PageView`, and swiping horizontally between sub-tabs updates the active pill and live Downloads indicator in real time. Tapping `YouTube` opens the Logged-Out BotGuard / Signed-In Account sheet.
+
 ## v3.6.0 (Step 1) — 2026-11-26
 
 ### Single-Audio Arbitration, GPU TextureRegistry Live Video & Massive YouTube Mini-Player v2

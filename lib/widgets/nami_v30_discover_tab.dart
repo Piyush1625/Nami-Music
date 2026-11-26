@@ -149,6 +149,8 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
 
   @override
   void initState() {
+    NamiYoutubeNavController.onSelectSubTab = _selectSubTab;
+    _namiSafeSetNotifier<int>(NamiYoutubeNavController.activeSubTab, _subTabIndex);
     super.initState();
     _subPageCtrl = PageController(initialPage: 0);
     NamiYoutubeStore.instance.ensureLoaded().then((_) {
@@ -160,11 +162,16 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
 
   @override
   void dispose() {
+    if (NamiYoutubeNavController.onSelectSubTab == _selectSubTab) {
+      NamiYoutubeNavController.onSelectSubTab = null;
+    }
     _subPageCtrl.dispose();
     super.dispose();
   }
 
   void _selectSubTab(int idx) {
+    /* v36_1_nav_sync */
+    _namiSafeSetNotifier<int>(NamiYoutubeNavController.activeSubTab, idx);
     if (idx == _subIdx) return;
     NamiUxPrefs.hapticLight();
     setState(() => _subIdx = idx);
@@ -1540,8 +1547,8 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
       children: [
         Column(
           children: [
-            _buildMorphingPillBar(),
-            Expanded(
+          /* v36_1_merged_top_nav_removed_old_row */
+          Expanded(
               child: NotificationListener<OverscrollNotification>(
                 onNotification: (n) {
                   // Boundary handoff: swiping right past sub-tab 0 (`Home Local`) glides back to local Playlists!
@@ -1562,6 +1569,8 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                     decelerationRate: ScrollDecelerationRate.fast,
                   ),
                   onPageChanged: (idx) {
+                  /* v36_1_page_sync */
+                  _namiSafeSetNotifier<int>(NamiYoutubeNavController.activeSubTab, idx);
                     _leftOverscrollAccum = 0.0;
                     if (idx != _subIdx) {
                       NamiUxPrefs.hapticLight();
@@ -1579,7 +1588,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                 ),
               ),
             ),
-          ],
+        ],
         ),
 
         // Floating Bottom-Right Square-Rounded YouTube Search FAB (127228-127233.png)
