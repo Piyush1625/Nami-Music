@@ -236,7 +236,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
 
   // Local engagement toggles
   bool _liked = false;
-  bool _disliked = NamiYtTasteEngine.isDisliked(vid);
+  bool _disliked = false;
 
   // Real YouTube Comments state
   List<NamiYtComment> _comments = const [];
@@ -1731,10 +1731,11 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                   active: _liked,
                   onTap: () async {
                     final next = await store.toggleFavorite(_track);
+                    if (next) await NamiYtTasteEngine.clearDislike(_track.videoId);
                     if (mounted) {
                       setState(() {
                         _liked = next;
-                        if (next) _disliked = NamiYtTasteEngine.isDisliked(vid);
+                        if (next) _disliked = false;
                       });
                     }
                   },
