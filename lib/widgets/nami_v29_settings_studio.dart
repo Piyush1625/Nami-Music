@@ -931,7 +931,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v3.3.0 Stable • Releases & Library Statistics',
+                subtitle: 'v3.3.1 Stable • Releases & Library Statistics',
                 index: 6,
               ),
             ],
@@ -1510,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.3.0 (v45)',
+                    'v3.3.1 (v46)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1731,7 +1731,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.3.0 Stable Engine',
+                          'Nami v3.3.1 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),
@@ -2332,7 +2332,23 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             subtitle: 'India-first charts, mixes & Bollywood/DHH feeds',
             options: const ['IN', 'US', 'Global'],
             selected: NamiUxPrefs.youtubeRegion,
-            onSelect: (opt) => NamiUxPrefs.youtubeRegion = opt,
+            onSelect: (opt) { NamiUxPrefs.youtubeRegion = opt; NamiYoutubeService.instance.clearAllCaches(); },
+          ),
+          _pillChoiceRow(
+            icon: Icons.ondemand_video_rounded,
+            title: 'Default Watch Mode',
+            subtitle: 'Choose Audio Only or auto-start Video when opening YouTube',
+            options: const ['Audio Only', 'Video 480p', 'Video 720p'],
+            selected: NamiUxPrefs.ytDefaultMode,
+            onSelect: (opt) => NamiUxPrefs.ytDefaultMode = opt,
+          ),
+          _pillChoiceRow(
+            icon: Icons.speed_rounded,
+            title: 'YouTube Data Saver',
+            subtitle: 'Caps auto video quality & bandwidth usage on mobile data',
+            options: const ['Off', 'Medium', 'High'],
+            selected: NamiUxPrefs.ytDataSaver,
+            onSelect: (opt) => NamiUxPrefs.ytDataSaver = opt,
           ),
           _pillChoiceRow(
             icon: Icons.high_quality_outlined,
@@ -2340,7 +2356,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             subtitle: 'Direct localhost-proxied libmpv stream selection',
             options: const ['High (Opus)', 'Balanced', 'Data Saver'],
             selected: NamiUxPrefs.youtubeAudioQuality,
-            onSelect: (opt) => NamiUxPrefs.youtubeAudioQuality = opt,
+            onSelect: (opt) { NamiUxPrefs.youtubeAudioQuality = opt; NamiYoutubeService.instance.clearAllCaches(); },
           ),
           _divider(),
           _switchRow(

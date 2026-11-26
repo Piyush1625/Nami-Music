@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-/// Dart bridge to Android's native hardware-accelerated TextureView Video Viewport
+/// Dart bridge to AndroidX Media3 ExoPlayer native Video Viewport
 /// (`com.piyush.nami/yt_video`) synced 1:1 to `libmpv` audio playback.
 class NamiYtVideoBridge {
   static const MethodChannel _ch = MethodChannel('com.piyush.nami/yt_video');
@@ -8,17 +8,43 @@ class NamiYtVideoBridge {
       ValueNotifier<List<NamiYtVideoFormat>>(const []);
   static final ValueNotifier<String> selectedQuality =
       ValueNotifier<String>('Audio Only');
+  static final ValueNotifier<String> videoState =
+      ValueNotifier<String>('idle'); // idle | buffering | ready | error | ended
+  static final ValueNotifier<String> lastVideoError =
+      ValueNotifier<String>('');
+  static bool _handlerBound = false;
+
+  static void ensureBound() {
+    if (_handlerBound) return;
+    _handlerBound = true;
+    _ch.setMethodCallHandler((call) async {
+      if (call.method == 'onVideoState' && call.arguments is Map) {
+        final args = call.arguments as Map;
+        final st = (args['state'] ?? 'idle').toString();
+        final det = (args['detail'] ?? '').toString();
+        _namiSafeSetNotifier<String>(videoState, st);
+        if (det.isNotEmpty) _namiSafeSetNotifier<String>(lastVideoError, det);
+      }
+    });
+  }
 
   static Future<void> loadVideo({
     required String url,
+    Map<String, String> headers = const {},
     int seekMs = 0,
     bool playing = true,
+    double speed = 1.0,
   }) async {
+    ensureBound();
+    _namiSafeSetNotifier<String>(videoState, 'buffering');
+    _namiSafeSetNotifier<String>(lastVideoError, '');
     try {
       await _ch.invokeMethod<void>('loadVideo', {
         'url': url,
+        'headers': headers,
         'seekMs': seekMs,
         'playing': playing,
+        'speed': speed,
       });
     } catch (_) {}
   }
@@ -35,7 +61,14 @@ class NamiYtVideoBridge {
     } catch (_) {}
   }
 
+  static Future<void> setSpeed(double speed) async {
+    try {
+      await _ch.invokeMethod<void>('setSpeed', {'speed': speed});
+    } catch (_) {}
+  }
+
   static Future<void> stopVideo() async {
+    _namiSafeSetNotifier<String>(videoState, 'idle');
     try {
       await _ch.invokeMethod<void>('stopVideo');
     } catch (_) {}
@@ -146,6 +179,9 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     WidgetsBinding.instance.addObserver(this);
     _track = widget.initialTrack;
     _liked = NamiYoutubeStore.instance.isFavorite(_track.videoId);
+    NamiYtVideoBridge.ensureBound();
+    NamiYtVideoBridge.videoState.addListener(_onVideoBridgeStateChanged);
+    NamiYoutubePlaybackBridge.activeYtTrack.addListener(_onExternalTrackChanged);
     _bindPlayerStreams();
     _loadWatchData(_track, autoStartPlay: true);
     _scheduleHideOverlay();
@@ -192,6 +228,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     });
 
     _playSub?.cancel();
+    NamiYtVideoBridge.videoState.removeListener(_onVideoBridgeStateChanged);
+    NamiYoutubePlaybackBridge.activeYtTrack.removeListener(_onExternalTrackChanged);
     _playSub = player.stream.playing.listen((playing) {
       if (!mounted) return;
       setState(() => _isPlaying = playing);
@@ -247,7 +285,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
             target,
             upcoming: widget.initialQueue,
           ).then((ok) {
-            if (ok && mounted && _track.videoId == vid && widget.startVideoMode) {
+            if (ok && mounted && _track.videoId == vid && (widget.startVideoMode || NamiUxPrefs.ytDefaultMode != 'Audio Only')) {
               _activateDefaultVideoQuality();
             }
           }),
@@ -342,10 +380,17 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       );
       return;
     }
-    // Prefer 720p or 480p for instant crisp playback
-    final pick = list.firstWhere(
-      (f) => f.height <= 720 && f.height >= 360,
-      orElse: () => list.last,
+    // Respect Data Saver & Default Mode cap; prefer hardware H.264 MP4 for instant Frame 1!
+    final maxH = NamiUxPrefs.ytDataSaver == 'High'
+        ? 240
+        : (NamiUxPrefs.ytDataSaver == 'Medium' || NamiUxPrefs.ytDefaultMode == 'Video 480p'
+            ? 480
+            : 720);
+    final mp4s = list.where((f) => f.mimeType.contains('mp4')).toList();
+    final pool = mp4s.isNotEmpty ? mp4s : list;
+    final pick = pool.firstWhere(
+      (f) => f.height <= maxH && f.height >= 240,
+      orElse: () => pool.last,
     );
     await _selectVideoFormat(pick);
   }
@@ -387,11 +432,16 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       clientUsed: 'VIDEO_${fmt.qualityLabel}',
     );
 
-    final localUrl =
-        await NamiYtProgressiveProxy.instance.prepareAndRegister(proxyStream);
+    final localUrl = await NamiYtProgressiveProxy.instance.prepareAndRegister(
+      proxyStream,
+      isVideo: true,
+    );
     if (!mounted) return;
 
     final targetUrl = (localUrl != null && localUrl.isNotEmpty) ? localUrl : fmt.url;
+    final useHdrs = (localUrl != null && localUrl.isNotEmpty)
+        ? const <String, String>{}
+        : fmt.headers;
     setState(() {
       _isVideoActive = true;
       _loadingVideoStream = false;
@@ -400,8 +450,10 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       NamiYtVideoBridge.loadVideo(
         url: targetUrl,
+        headers: useHdrs,
         seekMs: _curPos.inMilliseconds,
         playing: _isPlaying,
+        speed: NamiUxPrefs.ytPlaybackSpeed,
       );
     });
     NamiLiveToastController.showMessage(
@@ -431,120 +483,318 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         ? NamiYtVideoBridge.activeVideoFormats.value
         : NamiYoutubeService.instance.cachedVideoFormatsFor(_track.videoId);
     final dur = _curDur.inSeconds > 0 ? _curDur : _track.duration;
+    final shell = _NamiHomeShellState.activeInstance;
 
     showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       sheetAnimationStyle: namiSmoothSheetStyle,
       builder: (sheetCtx) {
         final accent = Theme.of(sheetCtx).colorScheme.primary;
-        return Container(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheetCtx).height * 0.65),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0C0C12),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(4),
+        return StatefulBuilder(
+          builder: (ctx, setS) => Container(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.78),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0B11),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Text(
-                    'Playback Quality',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                  const SizedBox(height: 12),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      'Video Quality & Player Settings',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      ListTile(
-                        dense: true,
-                        leading: Icon(
-                          Icons.headphones_rounded,
-                          color: !_isVideoActive ? accent : Colors.white60,
-                        ),
-                        title: Text(
-                          'Audio Only',
-                          style: TextStyle(
-                            color: !_isVideoActive ? accent : Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
+                  const SizedBox(height: 10),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        // 1. Data Saver Mode Row (Off | Medium | High)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.speed_rounded, color: Colors.white70, size: 18),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Data Saver',
+                                    style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  for (final preset in const ['Off', 'Medium', 'High']) ...[
+                                    if (preset != 'Off') const SizedBox(width: 8),
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          NamiUxPrefs.hapticLight();
+                                          NamiUxPrefs.ytDataSaver = preset;
+                                          NamiUxPrefs.save();
+                                          setS(() {});
+                                          if (mounted) setState(() {});
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: NamiUxPrefs.ytDataSaver == preset
+                                                ? accent.withValues(alpha: 0.22)
+                                                : const Color(0xFF151520),
+                                            borderRadius: BorderRadius.circular(11),
+                                            border: Border.all(
+                                              color: NamiUxPrefs.ytDataSaver == preset
+                                                  ? accent
+                                                  : Colors.white12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            preset,
+                                            style: TextStyle(
+                                              color: NamiUxPrefs.ytDataSaver == preset
+                                                  ? accent
+                                                  : Colors.white70,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        subtitle: const Text(
-                          'Audiophile libmpv stream • EQ, USB DAC & lowest data',
-                          style: TextStyle(color: Colors.white54, fontSize: 11.4),
-                        ),
-                        trailing: !_isVideoActive
-                            ? Icon(Icons.check_rounded, color: accent, size: 20)
-                            : null,
-                        onTap: () {
-                          Navigator.of(sheetCtx).pop();
-                          _selectAudioOnly();
-                        },
-                      ),
-                      if (formats.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 10, 16, 12),
-                          child: Text(
-                            'Loading video resolutions... tap Refresh if none appear.',
-                            style: TextStyle(color: Colors.white54, fontSize: 12),
-                          ),
-                        ),
-                      for (final fmt in formats)
+                        const Divider(color: Colors.white10),
+
+                        // 2. Audio Only + All Video Qualities (`144p..2160p`)
                         ListTile(
                           dense: true,
                           leading: Icon(
-                            Icons.ondemand_video_rounded,
-                            color: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
-                                ? accent
-                                : Colors.white54,
+                            Icons.headphones_rounded,
+                            color: !_isVideoActive ? accent : Colors.white60,
                           ),
                           title: Text(
-                            '${fmt.qualityLabel} • ${fmt.sizeLabelFor(dur)}',
+                            'Audio Only',
                             style: TextStyle(
-                              color: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
-                                  ? accent
-                                  : Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13.6,
+                              color: !_isVideoActive ? accent : Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
                             ),
                           ),
-                          subtitle: Text(
-                            '${fmt.bitrateLabel} • ${fmt.mimeType.contains('mp4') ? 'H.264 MP4' : 'VP9/AV1'}',
-                            style: const TextStyle(color: Colors.white54, fontSize: 11.2),
+                          subtitle: const Text(
+                            'Audiophile libmpv stream • EQ, USB DAC & lowest data',
+                            style: TextStyle(color: Colors.white54, fontSize: 11.2),
                           ),
-                          trailing: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
+                          trailing: !_isVideoActive
                               ? Icon(Icons.check_rounded, color: accent, size: 20)
                               : null,
                           onTap: () {
                             Navigator.of(sheetCtx).pop();
-                            _selectVideoFormat(fmt);
+                            _selectAudioOnly();
                           },
                         ),
-                    ],
+                        if (formats.isEmpty)
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.refresh_rounded, color: Colors.white54),
+                            title: const Text(
+                              'Fetch Video Resolutions',
+                              style: TextStyle(color: Colors.white70, fontSize: 13.2, fontWeight: FontWeight.w700),
+                            ),
+                            subtitle: const Text(
+                              'Tap to refresh 144p–1080p video tracks',
+                              style: TextStyle(color: Colors.white54, fontSize: 11.2),
+                            ),
+                            onTap: () {
+                              Navigator.of(sheetCtx).pop();
+                              _activateDefaultVideoQuality();
+                            },
+                          ),
+                        for (final fmt in formats)
+                          ListTile(
+                            dense: true,
+                            leading: Icon(
+                              Icons.ondemand_video_rounded,
+                              color: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
+                                  ? accent
+                                  : Colors.white54,
+                            ),
+                            title: Text(
+                              '${fmt.qualityLabel} • ${fmt.sizeLabelFor(dur)}',
+                              style: TextStyle(
+                                color: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
+                                    ? accent
+                                    : Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13.6,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${fmt.bitrateLabel} • ${fmt.mimeType.contains('mp4') ? 'H.264 MP4' : 'VP9'}',
+                              style: const TextStyle(color: Colors.white54, fontSize: 11.2),
+                            ),
+                            trailing: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
+                                ? Icon(Icons.check_rounded, color: accent, size: 20)
+                                : null,
+                            onTap: () {
+                              Navigator.of(sheetCtx).pop();
+                              _selectVideoFormat(fmt);
+                            },
+                          ),
+                        const Divider(color: Colors.white10),
+
+                        // 3. Playback Speed (0.5x .. 2.0x — synced to BOTH libmpv & ExoPlayer!)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(6, 8, 6, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.shutter_speed_rounded, color: Colors.white70, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Playback Speed (${NamiUxPrefs.ytPlaybackSpeed}x)',
+                                    style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  for (final spd in const [0.75, 1.0, 1.25, 1.5, 2.0]) ...[
+                                    if (spd != 0.75) const SizedBox(width: 6),
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          NamiUxPrefs.hapticLight();
+                                          NamiUxPrefs.ytPlaybackSpeed = spd;
+                                          shell?._audioPlayer.setRate(spd);
+                                          NamiYtVideoBridge.setSpeed(spd);
+                                          setS(() {});
+                                          if (mounted) setState(() {});
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 7),
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
+                                                ? accent.withValues(alpha: 0.22)
+                                                : const Color(0xFF151520),
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
+                                                  ? accent
+                                                  : Colors.white12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '${spd}x',
+                                            style: TextStyle(
+                                              color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
+                                                  ? accent
+                                                  : Colors.white70,
+                                              fontSize: 11.4,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(color: Colors.white10),
+
+                        // 4. Live Half-Screen YouTube Settings Toggles
+                        SwitchListTile(
+                          dense: true,
+                          activeColor: accent,
+                          secondary: const Icon(Icons.repeat_one_rounded, color: Colors.white70, size: 20),
+                          title: const Text('Loop Current Video / Track', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                          value: NamiUxPrefs.ytLoopEnabled,
+                          onChanged: (v) {
+                            NamiUxPrefs.ytLoopEnabled = v;
+                            shell?._audioPlayer.setPlaylistMode(
+                              v ? PlaylistMode.single : PlaylistMode.none,
+                            );
+                            setS(() {});
+                          },
+                        ),
+                        SwitchListTile(
+                          dense: true,
+                          activeColor: accent,
+                          secondary: const Icon(Icons.block_rounded, color: Colors.white70, size: 20),
+                          title: const Text('SponsorBlock Auto-Skip', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                          value: NamiUxPrefs.ytSponsorBlock,
+                          onChanged: (v) {
+                            NamiUxPrefs.ytSponsorBlock = v;
+                            NamiUxPrefs.save();
+                            setS(() {});
+                          },
+                        ),
+                        SwitchListTile(
+                          dense: true,
+                          activeColor: accent,
+                          secondary: const Icon(Icons.podcasts_rounded, color: Colors.white70, size: 20),
+                          title: const Text('Auto-Play Next / Radio', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                          value: NamiUxPrefs.ytAutoStartRadio,
+                          onChanged: (v) {
+                            NamiUxPrefs.ytAutoStartRadio = v;
+                            NamiUxPrefs.save();
+                            setS(() {});
+                          },
+                        ),
+                        SwitchListTile(
+                          dense: true,
+                          activeColor: accent,
+                          secondary: const Icon(Icons.thumb_down_outlined, color: Colors.white70, size: 20),
+                          title: const Text('Return YouTube Dislike', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                          value: NamiUxPrefs.ytReturnDislike,
+                          onChanged: (v) {
+                            NamiUxPrefs.ytReturnDislike = v;
+                            NamiUxPrefs.save();
+                            setS(() {});
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -793,6 +1043,33 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
   }
 
+
+  void _onExternalTrackChanged() {
+    final ext = NamiYoutubePlaybackBridge.activeYtTrack.value;
+    if (!mounted || ext == null || ext.videoId == _track.videoId) return;
+    _loadWatchData(ext, autoStartPlay: false);
+  }
+
+  void _onVideoBridgeStateChanged() {
+    if (!mounted || !_isVideoActive) return;
+    if (NamiYtVideoBridge.videoState.value == 'error') {
+      final list = NamiYtVideoBridge.activeVideoFormats.value;
+      final fallback = list.cast<NamiYtVideoFormat?>().firstWhere(
+            (f) => f != null && f.mimeType.contains('mp4') && f.height <= 480 && f.qualityLabel != _qualityLabel,
+            orElse: () => null,
+          );
+      if (fallback != null) {
+        _selectVideoFormat(fallback);
+      } else {
+        NamiLiveToastController.showMessage(
+          'Video decoder error (${NamiYtVideoBridge.lastVideoError.value}) — using Audio Only',
+          icon: Icons.headphones_rounded,
+        );
+        _selectAudioOnly();
+      }
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -844,15 +1121,22 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                 creationParamsCodec: StandardMessageCodec(),
               ),
 
-            // 3. Loading spinner while video stream initializes
-            if (_loadingVideoStream)
-              const Center(
-                child: SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white),
-                ),
-              ),
+            // 3. Live ExoPlayer buffering indicator (auto-hides on Frame 1 ready!)
+            ValueListenableBuilder<String>(
+              valueListenable: NamiYtVideoBridge.videoState,
+              builder: (_, vst, __) {
+                if (!_loadingVideoStream && !(_isVideoActive && vst == 'buffering')) {
+                  return const SizedBox.shrink();
+                }
+                return const Center(
+                  child: SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white),
+                  ),
+                );
+              },
+            ),
 
             // 4. Interactive YouTube Overlay Controls
             IgnorePointer(
@@ -1533,6 +1817,23 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         const SizedBox(height: 16),
 
         // 5. Related / Up Next Videos List
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            children: [
+              const Text(
+                'Up Next & Suggestions',
+                style: TextStyle(color: Colors.white, fontSize: 14.2, fontWeight: FontWeight.w800),
+              ),
+              const Spacer(),
+              if (related.isNotEmpty)
+                Text(
+                  '${related.length} videos',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11.4),
+                ),
+            ],
+          ),
+        ),
         if (_loadingDetails && related.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),

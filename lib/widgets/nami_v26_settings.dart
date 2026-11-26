@@ -29,6 +29,10 @@ class NamiUxPrefs {
   static bool ytAutoStartRadio = true;
   static bool ytPersonalizedFeeds = true;
   static bool ytSearchCleanup = true;
+  static String ytDefaultMode = 'Audio Only'; // 'Audio Only' | 'Video 480p' | 'Video 720p'
+  static String ytDataSaver = 'Off'; // 'Off' | 'Medium' | 'High'
+  static double ytPlaybackSpeed = 1.0;
+  static bool ytLoopEnabled = false;
   static bool ytDownloadMetadataTags = true;
   static int ytDimMiniAfterSec = 15;
   static int ytDimIntensityPct = 50;

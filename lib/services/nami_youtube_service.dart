@@ -476,6 +476,11 @@ class NamiYtChannelDetails {
 /// - Watch metadata, Related Radio tracks, Return YouTube Dislike & SponsorBlock
 /// - Disk-backed cover thumbnail cache for seamless native `Image.file` + Home Widget support
 class NamiYoutubeService {
+  void clearAllCaches() {
+    _streamCache.clear();
+    _bundleCache.clear();
+  }
+
   NamiYoutubeService._();
   static final NamiYoutubeService instance = NamiYoutubeService._();
 
@@ -1365,6 +1370,19 @@ class NamiYoutubeService {
       debugPrint('[NamiYT] fetchWatchDetails error: $e');
     }
 
+    /* v33_1_related_topup */
+    if (related.length < 6 && (title.isNotEmpty || channelName.isNotEmpty)) {
+      try {
+        final q = [if (title.isNotEmpty) title, if (channelName.isNotEmpty) channelName].join(' ');
+        final extra = await searchMusic(q, region: region, limit: 14);
+        for (final t in extra) {
+          if (t.videoId != videoId && seenIds.add(t.videoId)) {
+            related.add(t);
+          }
+        }
+      } catch (_) {}
+    }
+
     return NamiYtWatchDetails(
       videoId: videoId,
       title: title,
@@ -1668,33 +1686,129 @@ class NamiYoutubeService {
   ) {
     _walkJson(root, (node) {
       if (out.length >= limit) return;
-      if (node is! Map<String, dynamic>) return;
-      final vr = node['videoRenderer'] ?? node['compactVideoRenderer'];
-      if (vr is! Map<String, dynamic>) return;
-      final vid = (vr['videoId'] ?? '').toString();
-      if (vid.length < 8 || !seen.add(vid)) return;
-      final title = _readText(vr['title']).trim();
-      if (title.isEmpty) return;
-      final artist = _readText(
-        vr['ownerText'] ?? vr['longBylineText'] ?? vr['shortBylineText'],
-      ).trim();
-      final durText = _readText(vr['lengthText']);
-      final views = _readText(vr['shortViewCountText'] ?? vr['viewCountText']);
-      final pub = _readText(vr['publishedTimeText']);
-      final thumb = _bestThumb(vr['thumbnail']?['thumbnails']);
-      out.add(
-        NamiYtTrack(
-          videoId: vid,
-          title: title,
-          artist: artist.isNotEmpty ? artist : 'YouTube',
-          duration: _parseDuration(durText),
-          thumbnailUrl: thumb.isNotEmpty
-              ? thumb
-              : 'https://i.ytimg.com/vi/$vid/hqdefault.jpg',
-          viewsText: views,
-          publishedText: pub,
-        ),
-      );
+      if (node is! Map) return;
+
+      // 1. 2026 YouTube Watch & Channel `lockupViewModel` (replaced compactVideoRenderer in 2025/2026!)
+      final lvm = node['lockupViewModel'];
+      if (lvm is Map) {
+        final ctype = (lvm['contentType'] ?? '').toString();
+        final cid = (lvm['contentId'] ?? '').toString();
+        if (cid.length >= 8 &&
+            (ctype.isEmpty || ctype.contains('VIDEO')) &&
+            seen.add(cid)) {
+          String title = '';
+          String artist = '';
+          String views = '';
+          String durStr = '';
+          String thumb = '';
+          String chId = '';
+
+          final meta = lvm['metadata'];
+          if (meta is Map && meta['lockupMetadataViewModel'] is Map) {
+            final lm = meta['lockupMetadataViewModel'] as Map;
+            if (lm['title'] is Map) {
+              title = (lm['title']['content'] ?? '').toString().trim();
+            }
+            if (lm['metadata'] is Map &&
+                lm['metadata']['contentMetadataViewModel'] is Map) {
+              final cm = lm['metadata']['contentMetadataViewModel'] as Map;
+              final rows = cm['metadataRows'];
+              if (rows is List) {
+                final parts = <String>[];
+                for (final r in rows) {
+                  if (r is Map && r['metadataParts'] is List) {
+                    for (final mp in r['metadataParts'] as List) {
+                      if (mp is Map && mp['text'] is Map) {
+                        final t = (mp['text']['content'] ?? '').toString().trim();
+                        if (t.isNotEmpty) parts.add(t);
+                      }
+                    }
+                  }
+                }
+                if (parts.isNotEmpty) artist = parts.first;
+                if (parts.length > 1) views = parts.skip(1).join(' • ');
+              }
+            }
+            if (lm['image'] is Map) {
+              _walkJson(lm['image'], (sub) {
+                if (chId.isEmpty && sub is Map && sub['browseEndpoint'] is Map) {
+                  final bid = (sub['browseEndpoint']['browseId'] ?? '').toString();
+                  if (bid.startsWith('UC')) chId = bid;
+                }
+              });
+            }
+          }
+
+          if (lvm['contentImage'] is Map) {
+            thumb = _bestThumb(lvm['contentImage']);
+            _walkJson(lvm['contentImage'], (sub) {
+              if (durStr.isEmpty && sub is Map && sub['thumbnailOverlayBadgeViewModel'] is Map) {
+                _walkJson(sub, (b) {
+                  if (durStr.isEmpty && b is Map && b['text'] is String) {
+                    final s = b['text'].toString().trim();
+                    if (RegExp(r'^\d{1,2}:\d{2}(:\d{2})?$').hasMatch(s)) durStr = s;
+                  }
+                });
+              }
+            });
+          }
+
+          if (title.isNotEmpty) {
+            out.add(NamiYtTrack(
+              videoId: cid,
+              title: title,
+              artist: artist.isNotEmpty ? artist : 'YouTube',
+              channelId: chId,
+              duration: _parseDuration(durStr),
+              thumbnailUrl: thumb.isNotEmpty
+                  ? thumb
+                  : 'https://i.ytimg.com/vi/$cid/hqdefault.jpg',
+              viewsText: views,
+            ));
+          }
+        }
+      }
+
+      // 2. Classic `videoRenderer`, `compactVideoRenderer`, `playlistPanelVideoRenderer`
+      final vr = node['videoRenderer'] ??
+          node['compactVideoRenderer'] ??
+          node['playlistPanelVideoRenderer'];
+      if (vr is Map) {
+        final vid = (vr['videoId'] ?? '').toString();
+        if (vid.length >= 8 && seen.add(vid)) {
+          final title = _readText(vr['title']);
+          if (title.isNotEmpty) {
+            final artist = _readText(vr['longBylineText']).isNotEmpty
+                ? _readText(vr['longBylineText'])
+                : (_readText(vr['shortBylineText']).isNotEmpty
+                    ? _readText(vr['shortBylineText'])
+                    : _readText(vr['ownerText']));
+            final views = _readText(vr['shortViewCountText']).isNotEmpty
+                ? _readText(vr['shortViewCountText'])
+                : _readText(vr['viewCountText']);
+            final pub = _readText(vr['publishedTimeText']);
+            final durStr = _readText(vr['lengthText']);
+            String chId = '';
+            _walkJson(vr['longBylineText'] ?? vr['shortBylineText'], (sub) {
+              if (chId.isEmpty && sub is Map && sub['browseEndpoint'] is Map) {
+                final bid = (sub['browseEndpoint']['browseId'] ?? '').toString();
+                if (bid.startsWith('UC')) chId = bid;
+              }
+            });
+            out.add(NamiYtTrack(
+              videoId: vid,
+              title: title,
+              artist: artist.isNotEmpty ? artist : 'YouTube',
+              channelId: chId,
+              duration: _parseDuration(durStr),
+              thumbnailUrl: _bestThumb(vr['thumbnail']).isNotEmpty
+                  ? _bestThumb(vr['thumbnail'])
+                  : 'https://i.ytimg.com/vi/$vid/hqdefault.jpg',
+              viewsText: [if (views.isNotEmpty) views, if (pub.isNotEmpty) pub].join(' • '),
+            ));
+          }
+        }
+      }
     });
   }
 
@@ -3305,7 +3419,9 @@ class _NamiProgressiveSession {
   final int totalLength;
   final String ext;
   final String mimeType;
+  final bool isVideo;
   final Map<int, Uint8List> chunks = {};
+  final List<int> chunkLruOrder = [];
   final Map<int, Future<Uint8List?>> pendingChunks = {};
   bool bgStarted = false;
   bool disposed = false;
@@ -3316,25 +3432,41 @@ class _NamiProgressiveSession {
     required this.totalLength,
     required this.ext,
     required this.mimeType,
+    this.isVideo = false,
   });
 
   int get chunkCount =>
       (totalLength + NamiYtProgressiveProxy.chunkSize - 1) ~/ NamiYtProgressiveProxy.chunkSize;
+
+  void storeChunk(int idx, Uint8List data) {
+    chunks[idx] = data;
+    chunkLruOrder.remove(idx);
+    chunkLruOrder.add(idx);
+    // Keep video RAM bounded to 16 chunks (8 MB) while always keeping Chunk 0 (moov/init header!)
+    if (isVideo) {
+      while (chunks.length > 16 && chunkLruOrder.isNotEmpty) {
+        final oldest = chunkLruOrder.removeAt(0);
+        if (oldest != 0) {
+          chunks.remove(oldest);
+        }
+      }
+    }
+  }
 }
 
-/// Instant-Start Progressive Chunk-Cached Streaming Server (`v3.2.0`):
-/// - Fetches ONLY Chunk 0 (512KB, ~150ms) and validates real audio magic bytes before opening `libmpv`
-/// - Serves `libmpv` over `http://127.0.0.1:<port>/stream/<videoId>.<ext>` with exact `206 Partial Content`
-/// - Background 4-way parallel bounded `&range=start-end` pre-fetcher fills remaining chunks while playing
-/// - Supports instant random-access seeking and automatically saves the completed file to `nami_yt_cache`!
+/// Instant-Start Progressive Chunk-Cached Streaming Server (`v3.3.1`):
+/// - Separate Audio & Video session pools (switching video quality NEVER evicts active audio!)
+/// - Audio sessions pre-fill in 4-way parallel & save to `nami_yt_cache` for 0ms offline replay
+/// - Video sessions use an 8 MB sliding RAM window with proper `.mp4`/`.webm` extensions for ExoPlayer!
 class NamiYtProgressiveProxy {
   NamiYtProgressiveProxy._();
   static final NamiYtProgressiveProxy instance = NamiYtProgressiveProxy._();
 
-  static const int chunkSize = 512 * 1024; // 512 KB bounded DASH chunks
+  static const int chunkSize = 512 * 1024;
   HttpServer? _server;
   int _port = 0;
-  final Map<String, _NamiProgressiveSession> _sessions = {};
+  final Map<String, _NamiProgressiveSession> _audioSessions = {};
+  final Map<String, _NamiProgressiveSession> _videoSessions = {};
 
   Future<void> _ensureServer() async {
     if (_server != null) return;
@@ -3344,9 +3476,11 @@ class NamiYtProgressiveProxy {
     debugPrint('[NamiYtProgressive] Listening on http://127.0.0.1:$_port');
   }
 
-  /// Prepares Chunk 0 (~150ms) and returns an instant-playable `http://127.0.0.1:<port>/stream/<id>.<ext>` URL,
-  /// or returns `null` if Chunk 0 fails verification or totalLength is unknown.
-  Future<String?> prepareAndRegister(NamiYtStreamResult stream) async {
+  /// Prepares Chunk 0 (~150ms) and returns `http://127.0.0.1:<port>/stream/<id>.<ext>`.
+  Future<String?> prepareAndRegister(
+    NamiYtStreamResult stream, {
+    bool isVideo = false,
+  }) async {
     if (stream.audioUrl.contains('.m3u8') ||
         stream.audioUrl.contains('manifest/hls') ||
         stream.mimeType.toLowerCase().contains('mpegurl')) {
@@ -3364,7 +3498,6 @@ class NamiYtProgressiveProxy {
       totalLen = int.tryParse(mClen?.group(1) ?? '') ?? 0;
     }
 
-    // Fetch Chunk 0 right now (~150ms) to verify real audio bytes & discover exact total length!
     final firstEnd = (totalLen > 0 && totalLen < chunkSize) ? totalLen - 1 : chunkSize - 1;
     final chunk0 = await _fetchBoundedChunk(
       stream.audioUrl,
@@ -3384,18 +3517,22 @@ class NamiYtProgressiveProxy {
 
     await _ensureServer();
     final lowerMime = stream.mimeType.toLowerCase();
-    final ext = (lowerMime.contains('mp4') || lowerMime.contains('m4a') || lowerMime.contains('aac'))
-        ? 'm4a'
-        : (lowerMime.contains('ogg') ? 'ogg' : 'webm');
+    final isVid = isVideo || lowerMime.startsWith('video/');
+    final ext = isVid
+        ? (lowerMime.contains('webm') ? 'webm' : 'mp4')
+        : ((lowerMime.contains('mp4') || lowerMime.contains('m4a') || lowerMime.contains('aac'))
+            ? 'm4a'
+            : (lowerMime.contains('ogg') ? 'ogg' : 'webm'));
     final safeId = stream.videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-    final key = '$safeId.$ext';
+    final key = '${isVid ? 'v' : 'a'}_$safeId.$ext';
 
-    // Keep memory tight: dispose old sessions if more than 3 exist
-    if (_sessions.length >= 3) {
-      final oldestKey = _sessions.keys.first;
+    final pool = isVid ? _videoSessions : _audioSessions;
+    final maxKeep = isVid ? 2 : 3;
+    if (pool.length >= maxKeep) {
+      final oldestKey = pool.keys.first;
       if (oldestKey != key) {
-        _sessions[oldestKey]?.disposed = true;
-        _sessions.remove(oldestKey);
+        pool[oldestKey]?.disposed = true;
+        pool.remove(oldestKey);
       }
     }
 
@@ -3405,14 +3542,29 @@ class NamiYtProgressiveProxy {
       totalLength: totalLen,
       ext: ext,
       mimeType: stream.mimeType.split(';').first.trim(),
+      isVideo: isVid,
     );
-    sess.chunks[0] = chunk0;
-    _sessions[key] = sess;
+    sess.storeChunk(0, chunk0);
+    pool[key] = sess;
 
-    // Kick off 4-way background download into RAM + disk cache while libmpv plays Chunk 0 immediately!
-    unawaited(_backgroundFillAndPersist(sess));
+    if (!isVid) {
+      unawaited(_backgroundFillAndPersistAudio(sess));
+    } else {
+      // Pre-warm chunks 1 & 2 (1.5 MB ahead) so ExoPlayer starts Frame 1 with zero stall!
+      unawaited(_prewarmVideoHead(sess));
+    }
 
     return 'http://127.0.0.1:$_port/stream/$key';
+  }
+
+  Future<void> _prewarmVideoHead(_NamiProgressiveSession sess) async {
+    final totalChunks = sess.chunkCount;
+    final head = <int>[];
+    if (totalChunks > 1) head.add(1);
+    if (totalChunks > 2) head.add(2);
+    if (head.isNotEmpty) {
+      await Future.wait(head.map((i) => _getOrFetchChunk(sess, i)));
+    }
   }
 
   Future<Uint8List?> _getOrFetchChunk(_NamiProgressiveSession sess, int index) async {
@@ -3430,7 +3582,7 @@ class NamiYtProgressiveProxy {
     try {
       final data = await fut;
       if (data != null && data.isNotEmpty && !sess.disposed) {
-        sess.chunks[index] = data;
+        sess.storeChunk(index, data);
       }
       return data;
     } finally {
@@ -3438,8 +3590,8 @@ class NamiYtProgressiveProxy {
     }
   }
 
-  Future<void> _backgroundFillAndPersist(_NamiProgressiveSession sess) async {
-    if (sess.bgStarted) return;
+  Future<void> _backgroundFillAndPersistAudio(_NamiProgressiveSession sess) async {
+    if (sess.bgStarted || sess.isVideo) return;
     sess.bgStarted = true;
     final totalChunks = sess.chunkCount;
     for (int i = 1; i < totalChunks; i += 4) {
@@ -3454,7 +3606,6 @@ class NamiYtProgressiveProxy {
     }
     if (sess.disposed) return;
 
-    // All chunks present -> persist cleanly to `nami_yt_cache/<videoId>.<ext>` for 0ms future replay!
     if (sess.chunks.length >= totalChunks) {
       try {
         final safeId = sess.stream.videoId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
@@ -3485,7 +3636,8 @@ class NamiYtProgressiveProxy {
       await res.close();
       return;
     }
-    final sess = _sessions[segs[1]];
+    final key = segs[1];
+    final sess = _audioSessions[key] ?? _videoSessions[key];
     if (sess == null) {
       res.statusCode = HttpStatus.notFound;
       await res.close();
@@ -3543,6 +3695,10 @@ class NamiYtProgressiveProxy {
         final chunkOffset = cursor % chunkSize;
         final chunk = await _getOrFetchChunk(sess, chunkIdx);
         if (chunk == null || chunk.isEmpty) break;
+        // Look-ahead pre-fetch next 2 video chunks while streaming!
+        if (sess.isVideo && chunkIdx + 1 < sess.chunkCount && !sess.chunks.containsKey(chunkIdx + 1)) {
+          unawaited(_getOrFetchChunk(sess, chunkIdx + 1));
+        }
         final available = chunk.length - chunkOffset;
         if (available <= 0) break;
         final need = (end - cursor + 1).clamp(1, available);
@@ -3598,4 +3754,5 @@ class NamiYtProgressiveProxy {
     return null;
   }
 }
+
 

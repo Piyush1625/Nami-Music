@@ -60,6 +60,7 @@ class NamiYoutubePlaybackBridge {
   static final Set<String> _skippedKeys = <String>{};
   static StreamSubscription<Duration>? _sbSub;
   static StreamSubscription<String>? _errSub;
+  static StreamSubscription<bool>? _doneSub;
   static int _playSeq = 0;
 
   static AudioTrack toAudioTrack(
@@ -142,6 +143,19 @@ class NamiYoutubePlaybackBridge {
 
   /// Attaches SponsorBlock auto-skip, 15s mixed-queue pre-fetcher & MPV error logging.
   static void bindSponsorBlock(Player player) {
+    /* v33_1_yt_completed_auto */
+    _doneSub?.cancel();
+    _doneSub = player.stream.completed.listen((done) {
+      if (!done || activeYtTrack.value == null) return;
+      if (NamiUxPrefs.ytLoopEnabled) {
+        player.seek(Duration.zero);
+        player.play();
+        return;
+      }
+      if (NamiUxPrefs.ytAutoStartRadio) {
+        unawaited(playNextInRadioQueue());
+      }
+    });
     _errSub?.cancel();
     _errSub = player.stream.error.listen((err) {
       if (err.trim().isEmpty) return;
@@ -191,6 +205,8 @@ class NamiYoutubePlaybackBridge {
     _sbSub = null;
     _errSub?.cancel();
     _errSub = null;
+    _doneSub?.cancel();
+    _doneSub = null;
   }
 
   static Future<bool> playNextInRadioQueue() async {
