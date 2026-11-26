@@ -1,7 +1,7 @@
 part of '../main.dart';
 
-/// Dart bridge to AndroidX Media3 ExoPlayer native Video Viewport
-/// (`com.piyush.nami/yt_video`) synced 1:1 to `libmpv` audio playback.
+/// Dart bridge to AndroidX Media3 ExoPlayer GPU TextureRegistry (`com.piyush.nami/yt_video`)
+/// synced 1:1 to Nami's dedicated YouTube libmpv audio player (`v3.6.0`).
 class NamiYtVideoBridge {
   static const MethodChannel _ch = MethodChannel('com.piyush.nami/yt_video');
   static final ValueNotifier<List<NamiYtVideoFormat>> activeVideoFormats =
@@ -9,11 +9,13 @@ class NamiYtVideoBridge {
   static final ValueNotifier<String> selectedQuality =
       ValueNotifier<String>('Audio Only');
   static final ValueNotifier<bool> isVideoActive = ValueNotifier<bool>(false);
-  static String activeVideoTrackId = '';
+  static final ValueNotifier<bool> isPipMode = ValueNotifier<bool>(false);
+  static final ValueNotifier<int?> textureId = ValueNotifier<int?>(null);
+  static final ValueNotifier<double> videoAspectRatio = ValueNotifier<double>(16 / 9);
   static final ValueNotifier<String> videoState =
       ValueNotifier<String>('idle'); // idle | buffering | ready | error | ended
-  static final ValueNotifier<String> lastVideoError =
-      ValueNotifier<String>('');
+  static final ValueNotifier<String> lastVideoError = ValueNotifier<String>('');
+  static String activeVideoTrackId = '';
   static bool _handlerBound = false;
 
   static void ensureBound() {
@@ -26,6 +28,13 @@ class NamiYtVideoBridge {
         final det = (args['detail'] ?? '').toString();
         _namiSafeSetNotifier<String>(videoState, st);
         if (det.isNotEmpty) _namiSafeSetNotifier<String>(lastVideoError, det);
+      } else if (call.method == 'onVideoSize' && call.arguments is Map) {
+        final args = call.arguments as Map;
+        final w = (args['width'] as num?)?.toDouble() ?? 16.0;
+        final h = (args['height'] as num?)?.toDouble() ?? 9.0;
+        if (w > 0 && h > 0) {
+          _namiSafeSetNotifier<double>(videoAspectRatio, (w / h).clamp(0.4, 3.0));
+        }
       }
     });
   }
@@ -41,13 +50,24 @@ class NamiYtVideoBridge {
     _namiSafeSetNotifier<String>(videoState, 'buffering');
     _namiSafeSetNotifier<String>(lastVideoError, '');
     try {
-      await _ch.invokeMethod<void>('loadVideo', {
+      final res = await _ch.invokeMethod<dynamic>('loadVideo', {
         'url': url,
         'headers': headers,
         'seekMs': seekMs,
         'playing': playing,
         'speed': speed,
       });
+      if (res is Map) {
+        final tid = (res['textureId'] as num?)?.toInt();
+        if (tid != null && tid >= 0) {
+          _namiSafeSetNotifier<int?>(textureId, tid);
+        }
+        final w = (res['width'] as num?)?.toDouble() ?? 16.0;
+        final h = (res['height'] as num?)?.toDouble() ?? 9.0;
+        if (w > 0 && h > 0) {
+          _namiSafeSetNotifier<double>(videoAspectRatio, (w / h).clamp(0.4, 3.0));
+        }
+      }
     } catch (_) {}
   }
 
@@ -71,12 +91,52 @@ class NamiYtVideoBridge {
 
   static Future<void> stopVideo() async {
     _namiSafeSetNotifier<bool>(isVideoActive, false);
+    _namiSafeSetNotifier<bool>(isPipMode, false);
     _namiSafeSetNotifier<String>(selectedQuality, 'Audio Only');
     activeVideoTrackId = '';
     _namiSafeSetNotifier<String>(videoState, 'idle');
     try {
       await _ch.invokeMethod<void>('stopVideo');
     } catch (_) {}
+  }
+}
+
+/// Pure Flutter 120Hz GPU Texture widget backed by `TextureRegistry.SurfaceTextureEntry`.
+/// Zero AndroidView glitches, true `ClipRRect` rounded corners, and 0ms handoff between
+/// Watch Screen, Docked YouTube Mini-Player, and Draggable Floating PiP!
+class NamiYtGpuVideoSurface extends StatelessWidget {
+  final BoxFit fit;
+  const NamiYtGpuVideoSurface({super.key, this.fit = BoxFit.cover});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int?>(
+      valueListenable: NamiYtVideoBridge.textureId,
+      builder: (_, tid, __) {
+        if (tid == null || tid < 0) return const SizedBox.shrink();
+        return ValueListenableBuilder<double>(
+          valueListenable: NamiYtVideoBridge.videoAspectRatio,
+          builder: (_, ar, __) {
+            final safeAr = ar.clamp(0.4, 3.0);
+            return ClipRect(
+              child: SizedBox.expand(
+                child: FittedBox(
+                  fit: fit,
+                  child: SizedBox(
+                    width: 1000.0 * safeAr,
+                    height: 1000.0,
+                    child: Texture(
+                      textureId: tid,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
 
@@ -194,6 +254,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isPipMode, false);
     _track = widget.initialTrack;
     if (NamiYtVideoBridge.isVideoActive.value && NamiYtVideoBridge.activeVideoTrackId == _track.videoId) {
       _isVideoActive = true;
@@ -221,9 +282,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   }
 
   void _bindPlayerStreams() {
-    final shell = _NamiHomeShellState.activeInstance;
-    final player = shell?._audioPlayer;
-    if (player == null) return;
+    final player = NamiYoutubePlaybackBridge.ytPlayer;
     _curPos = player.state.position;
     _curDur = player.state.duration;
     _isPlaying = player.state.playing;
@@ -733,7 +792,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                         onTap: () {
                                           NamiUxPrefs.hapticLight();
                                           NamiUxPrefs.ytPlaybackSpeed = spd;
-                                          shell?._audioPlayer.setRate(spd);
+                                          NamiYoutubePlaybackBridge.ytPlayer.setRate(spd);
                                           NamiYtVideoBridge.setSpeed(spd);
                                           setS(() {});
                                           if (mounted) setState(() {});
@@ -782,7 +841,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                           value: NamiUxPrefs.ytLoopEnabled,
                           onChanged: (v) {
                             NamiUxPrefs.ytLoopEnabled = v;
-                            shell?._audioPlayer.setPlaylistMode(
+                            NamiYoutubePlaybackBridge.ytPlayer.setPlaylistMode(
                               v ? PlaylistMode.single : PlaylistMode.none,
                             );
                             setS(() {});
@@ -1120,8 +1179,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   }
 
   Widget _buildViewport(Color accent) {
-    final shell = _NamiHomeShellState.activeInstance;
-    final player = shell?._audioPlayer;
+    final Player player = NamiYoutubePlaybackBridge.ytPlayer;
     final totalMs = (_curDur.inMilliseconds > 0
             ? _curDur.inMilliseconds
             : _track.duration.inMilliseconds)
@@ -1135,7 +1193,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         if (_showOverlay) _scheduleHideOverlay();
       },
       onDoubleTapDown: (details) {
-        if (!NamiUxPrefs.ytVideoGestures || player == null) return;
+        if (!NamiUxPrefs.ytVideoGestures) return;
         final w = MediaQuery.sizeOf(context).width;
         final isForward = details.localPosition.dx >= w * 0.5;
         final delta = isForward ? const Duration(seconds: 10) : const Duration(seconds: -10);
@@ -1153,7 +1211,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         });
       },
       onLongPressStart: (_) {
-        if (!NamiUxPrefs.ytVideoGestures || player == null) return;
+        if (!NamiUxPrefs.ytVideoGestures) return;
         NamiUxPrefs.hapticLight();
         player.setRate(2.0);
         NamiYtVideoBridge.setSpeed(2.0);
@@ -1162,7 +1220,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       onLongPressEnd: (_) {
         if (!_isHold2x) return;
         final restore = NamiUxPrefs.ytPlaybackSpeed;
-        player?.setRate(restore);
+        player.setRate(restore);
         NamiYtVideoBridge.setSpeed(restore);
         setState(() => _isHold2x = false);
       },
@@ -1246,10 +1304,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
 
             // 2. Native Hardware-Accelerated Android TextureView Video Layer
             if (_isVideoActive)
-              const AndroidView(
-                viewType: 'com.piyush.nami/yt_video_view',
-                creationParamsCodec: StandardMessageCodec(),
-              ),
+              const NamiYtGpuVideoSurface(fit: BoxFit.contain),
 
             // 3. Live ExoPlayer buffering indicator (auto-hides on Frame 1 ready!)
             ValueListenableBuilder<String>(
@@ -1361,6 +1416,16 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
                               onPressed: _openQualityMenu,
                             ),
+                            if (!_isFullscreen)
+                              IconButton(
+                                tooltip: 'Floating PiP',
+                                icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white, size: 20),
+                                onPressed: () {
+                                  NamiUxPrefs.hapticLight();
+                                  _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isPipMode, true);
+                                  Navigator.of(context).maybePop();
+                                },
+                              ),
                             IconButton(
                               tooltip: 'Fullscreen',
                               icon: Icon(
@@ -1398,7 +1463,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                             builder: (_, resolving, __) => GestureDetector(
                               onTap: () {
                                 NamiUxPrefs.hapticLight();
-                                player?.playOrPause();
+                                if (player.state.playing) { player.pause(); } else { NamiAudioArbitrator.claimYoutube(); player.play(); }
                                 _scheduleHideOverlay();
                               },
                               child: Container(
@@ -1479,7 +1544,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 onChanged: (v) => setState(() => _scrubDragMs = v),
                                 onChangeEnd: (v) {
                                   final target = Duration(milliseconds: v.round());
-                                  player?.seek(target);
+                                  player.seek(target);
                                   if (_isVideoActive) {
                                     NamiYtVideoBridge.syncState(
                                       positionMs: target.inMilliseconds,

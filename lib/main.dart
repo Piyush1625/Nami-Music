@@ -668,6 +668,8 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void dispose() {
     /* v28_2_dispose_subs */
+    NamiAudioArbitrator.activeSource.removeListener(_onV36ArbitratorChanged);
+    NamiYtVideoBridge.isPipMode.removeListener(_onV36ArbitratorChanged);
     NamiYoutubePlaybackBridge.dispose();
     _v28PlaySub?.cancel();
     _v28PlSub?.cancel();
@@ -1052,7 +1054,7 @@ Future<void> _playSong(AudioTrack song) async {
     /* v30_2_clear_yt_on_local */
     WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) NamiCoverPrecacher.warmAdjacent(context, _filteredSongs, song); });
     if (!song.path.startsWith('http')) {
-      NamiYoutubePlaybackBridge.clearActiveYoutubeTrack();
+      await NamiAudioArbitrator.claimLocal();
     }
     if (song.path.isEmpty) return;
     final prevPath = _audioPlayer.state.playing ? _currentSong?.path : null;
@@ -11804,7 +11806,9 @@ Future<void> _exportUnifiedNamiBackup() async {
       NamiYoutubeStore.instance.ensureLoaded();
       NamiYoutubeService.warmUpNativeEngine();
       NamiYtDownloadManager.instance.ensureLoaded();
-      NamiYoutubePlaybackBridge.bindSponsorBlock(_audioPlayer);
+      NamiAudioArbitrator.bindLocalPlayer(_audioPlayer);
+      NamiAudioArbitrator.activeSource.addListener(_onV36ArbitratorChanged);
+      NamiYtVideoBridge.isPipMode.addListener(_onV36ArbitratorChanged);
     });
     NamiAudiophileEngine.bindWidgetControls(
       onPlayPause: () {
@@ -11956,11 +11960,15 @@ Future<void> _exportUnifiedNamiBackup() async {
     }
   }
 
+    void _onV36ArbitratorChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _playV30YoutubeAudioTrack(
     AudioTrack track, {
     Map<String, String>? httpHeaders,
   }) async {
-    /* v31_local_file_yt_mpv */
+    /* v36_0_isolated_yt_player */
     if (track.path.startsWith('yt://')) {
       await NamiYoutubePlaybackBridge.playByVideoId(
         track.path.substring(5),
@@ -11968,12 +11976,10 @@ Future<void> _exportUnifiedNamiBackup() async {
       );
       return;
     }
-    setState(() {
-      _currentSong = track;
-    });
+    await NamiAudioArbitrator.claimYoutube();
+    final ytPlayer = NamiYoutubePlaybackBridge.ytPlayer;
     try {
-      await _audioPlayer.stop();
-      await _audioPlayer.open(
+      await ytPlayer.open(
         track.path.startsWith('http')
             ? Media(
                 track.path,
@@ -11982,14 +11988,17 @@ Future<void> _exportUnifiedNamiBackup() async {
             : Media(track.path),
         play: true,
       );
+      if ((NamiUxPrefs.ytPlaybackSpeed - 1.0).abs() > 0.02) {
+        await ytPlayer.setRate(NamiUxPrefs.ytPlaybackSpeed);
+      }
     } catch (e) {
-      debugPrint('[NamiYT] libmpv open failed: $e');
+      debugPrint('[NamiYT] ytPlayer open failed: $e');
       NamiLiveToastController.showMessage(
         'Playback error — tap to retry',
         icon: Icons.error_outline_rounded,
       );
     }
-    _syncV27WidgetAndSession(force: true);
+    if (mounted) setState(() {});
   }
 }
 

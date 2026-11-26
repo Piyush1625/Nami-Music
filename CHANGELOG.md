@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.6.0 (Step 1) — 2026-11-26
+
+### Single-Audio Arbitration, GPU TextureRegistry Live Video & Massive YouTube Mini-Player v2
+- **Strict 1-at-a-Time Playback (`NamiAudioArbitrator` + Dedicated `ytPlayer`):** Isolated YouTube onto its own `libmpv` player instance (`NamiYoutubePlaybackBridge.ytPlayer`) and added `NamiAudioArbitrator` so playing Offline FLACs immediately pauses YouTube (and vice versa) while preserving each player's separate track, queue, and exact timestamp.
+- **Flutter GPU `TextureRegistry` Live Video (`NamiYtVideoPlatformView.kt` + `NamiYtGpuVideoSurface`):** Replaced `AndroidView` with a native Flutter `TextureRegistry.SurfaceTextureEntry` fed by Media3 ExoPlayer (with ExoPlayer's audio track explicitly disabled via `DefaultTrackSelector` for zero dual-audio leaks) — fixing blank mini-player video permanently with 120Hz `ClipRRect` rendering and 0ms Watch ↔ Mini-Player handover.
+- **Massive YouTube Mini-Player v2 (`NamiYoutubeMiniPlayerBar`):** Upgraded with a `106×58` live GPU video preview, live timestamp & bottom progress scrubber, quality badge, swipe-up expand, swipe-left/right skip, and a **1-Tap Draggable Floating PiP Window (`208×118`)** with magnetic corner snapping so you can watch live video while browsing your offline library.
+
 ## v3.5.0 — 2026-11-26
 
 ### Connected YouTube Ecosystem, Dedicated YouTube Search, 480p Default & App-Wide Fluidity Fixes

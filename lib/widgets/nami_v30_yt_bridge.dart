@@ -41,6 +41,83 @@ String namiFormatBadgeForPath(
   return bitDepth > 0 ? '$safeExt ${bitDepth}B' : safeExt;
 }
 
+enum NamiActiveSource { none, local, youtube }
+
+/// Strict Single-Audio Playback Arbitrator (`v3.6.0`):
+/// Guarantees that Offline Nami Library (`_audioPlayer`) and YouTube (`ytPlayer` + `ExoPlayer`)
+/// NEVER play simultaneously — while keeping both mini-players, queues & timestamps 100% separate!
+class NamiAudioArbitrator {
+  static final ValueNotifier<NamiActiveSource> activeSource =
+      ValueNotifier<NamiActiveSource>(NamiActiveSource.none);
+
+  static Player? _localPlayer;
+  static Player? _ytPlayer;
+  static StreamSubscription<bool>? _localSub;
+  static StreamSubscription<bool>? _ytSub;
+
+  static void bindLocalPlayer(Player player) {
+    if (identical(_localPlayer, player)) return;
+    _localPlayer = player;
+    _localSub?.cancel();
+    _localSub = player.stream.playing.listen((playing) {
+      if (playing) {
+        claimLocal();
+      }
+    });
+  }
+
+  static void bindYoutubePlayer(Player player) {
+    if (identical(_ytPlayer, player)) return;
+    _ytPlayer = player;
+    _ytSub?.cancel();
+    _ytSub = player.stream.playing.listen((playing) {
+      if (playing) {
+        claimYoutube();
+      }
+    });
+  }
+
+  /// Claims playback ownership for Offline Local Library — immediately pauses YouTube audio + video!
+  static Future<void> claimLocal() async {
+    _namiSafeSetNotifier<NamiActiveSource>(activeSource, NamiActiveSource.local);
+    try {
+      if (_ytPlayer != null && _ytPlayer!.state.playing) {
+        await _ytPlayer!.pause();
+      }
+    } catch (_) {}
+    if (NamiYtVideoBridge.isVideoActive.value) {
+      unawaited(
+        NamiYtVideoBridge.syncState(
+          positionMs: _ytPlayer?.state.position.inMilliseconds ?? 0,
+          playing: false,
+        ),
+      );
+    }
+  }
+
+  /// Claims playback ownership for YouTube — immediately pauses Offline Local Library!
+  static Future<void> claimYoutube() async {
+    _namiSafeSetNotifier<NamiActiveSource>(activeSource, NamiActiveSource.youtube);
+    try {
+      if (_localPlayer != null && _localPlayer!.state.playing) {
+        await _localPlayer!.pause();
+      }
+    } catch (_) {}
+  }
+
+  /// Releases YouTube ownership cleanly when user closes YouTube Mini-Player (`X`).
+  static void releaseYoutube() {
+    if (activeSource.value == NamiActiveSource.youtube) {
+      final hasLocal = _NamiHomeShellState.activeInstance?._currentSong != null;
+      _namiSafeSetNotifier<NamiActiveSource>(
+        activeSource,
+        hasLocal ? NamiActiveSource.local : NamiActiveSource.none,
+      );
+    }
+  }
+}
+
+
 /// Unified YouTube -> Local Chunked Cache -> libmpv Playback Bridge (`v3.1.0`):
 /// - Downloads verified audio chunks to a local file so `libmpv` ALWAYS opens a real file path
 ///   (zero `Failed to open http://` errors, instant waveform seek, 0ms offline replay)
@@ -48,6 +125,21 @@ String namiFormatBadgeForPath(
 /// - Automatically pre-fetches the next YouTube track ~15s before the current track finishes
 /// - Runs SponsorBlock auto-skip & Auto-Start Radio
 class NamiYoutubePlaybackBridge {
+  static Player? _ytPlayer;
+
+  /// Dedicated libmpv audio player for YouTube (100% isolated from Offline Nami Library!).
+  static Player get ytPlayer {
+    if (_ytPlayer == null) {
+      final p = Player(
+        configuration: const PlayerConfiguration(title: 'Nami YouTube'),
+      );
+      _ytPlayer = p;
+      bindSponsorBlock(p);
+      NamiAudioArbitrator.bindYoutubePlayer(p);
+    }
+    return _ytPlayer!;
+  }
+
   static final ValueNotifier<NamiYtTrack?> activeYtTrack =
       ValueNotifier<NamiYtTrack?>(null);
   static final ValueNotifier<List<NamiYtTrack>> radioQueue =
@@ -283,6 +375,7 @@ class NamiYoutubePlaybackBridge {
     _activeSegments = const [];
     _skippedKeys.clear();
     _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, null);
+    NamiAudioArbitrator.releaseYoutube();
   }
 
   /// Pure-YouTube Instant-Start Playback (`v3.2.0`):
@@ -298,6 +391,7 @@ class NamiYoutubePlaybackBridge {
     if (shell == null) return false;
 
     final mySeq = ++_playSeq;
+    await NamiAudioArbitrator.claimYoutube();
     _namiSafeSetNotifier<bool>(isResolving, true);
 
     try {
