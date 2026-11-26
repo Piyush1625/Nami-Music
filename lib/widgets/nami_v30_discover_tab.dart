@@ -150,7 +150,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   @override
   void initState() {
     NamiYoutubeNavController.onSelectSubTab = _selectSubTab;
-    _namiSafeSetNotifier<int>(NamiYoutubeNavController.activeSubTab, _subTabIndex);
+    _namiSafeSetNotifier<int>(NamiYoutubeNavController.activeSubTab, 0);
     super.initState();
     _subPageCtrl = PageController(initialPage: 0);
     NamiYoutubeStore.instance.ensureLoaded().then((_) {
