@@ -881,3 +881,14 @@ def _apply_v38_0_newpipe_extractor():
 
 if __name__ == "__main__":
     _apply_v38_0_newpipe_extractor()
+
+# v38_0_r8_rhino_dontwarn
+def _apply_v38_0_r8_dontwarn():
+    import os as _os
+    _pg = "android/app/proguard-rules.pro"
+    if _os.path.exists("android/app"):
+        _cur = open(_pg, encoding="utf-8").read() if _os.path.exists(_pg) else ""
+        if "-dontwarn jdk.dynalink.**" not in _cur:
+            open(_pg, "w", encoding="utf-8").write(_cur.rstrip() + "\n" + '\n# R8 missing desktop-JVM class suppressions for Mozilla Rhino / NewPipeExtractor\n-dontwarn jdk.dynalink.**\n-dontwarn java.lang.invoke.**\n-dontwarn java.beans.**\n-dontwarn javax.swing.**\n-dontwarn javax.naming.**\n-dontwarn sun.misc.**\n-dontwarn org.mozilla.javascript.**\n-dontwarn org.mozilla.classfile.**\n-dontwarn org.jsoup.**\n-dontwarn com.grack.nanojson.**\n')
+if __name__ == "__main__":
+    _apply_v38_0_r8_dontwarn()

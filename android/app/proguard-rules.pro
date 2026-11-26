@@ -30,3 +30,15 @@
 -keep class org.mozilla.classfile.ClassFileWriter
 -dontwarn org.mozilla.javascript.tools.**
 -dontwarn org.schabi.newpipe.extractor.**
+
+# R8 missing desktop-JVM class suppressions for Mozilla Rhino / NewPipeExtractor
+-dontwarn jdk.dynalink.**
+-dontwarn java.lang.invoke.**
+-dontwarn java.beans.**
+-dontwarn javax.swing.**
+-dontwarn javax.naming.**
+-dontwarn sun.misc.**
+-dontwarn org.mozilla.javascript.**
+-dontwarn org.mozilla.classfile.**
+-dontwarn org.jsoup.**
+-dontwarn com.grack.nanojson.**
