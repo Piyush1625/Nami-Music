@@ -346,8 +346,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             onNext: widget.onNext,
                             onPrevious: widget.onPrevious,
                             onDismiss: () => NamiExpandablePlayerController.safeClose(context),
-                            child: Builder(
-                              builder: (pCtx) {
+                            child: StreamBuilder<bool>(
+                              stream: widget.audioPlayer.stream.playing,
+                              builder: (pCtx, pSnap) {
+                                final isP = pSnap.data ?? widget.audioPlayer.state.playing;
                                 return RepaintBoundary(
                                   child: Container(
                                     width: artSize,
