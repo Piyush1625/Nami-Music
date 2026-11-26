@@ -2394,11 +2394,7 @@ const SizedBox(height: 10),
                                   filled: true,
                                   fillColor: const Color(0xFF151522),
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                                  suffixIcon: IconButton(icon: const Icon(Icons.search_rounded), onPressed: () {
-            /* v35_0_yt_only_top_search */
-            if (_selectedIndex == 4) { openNamiYoutubeSearchScreen(context); return; }
-            searchOnlineArt(setModalState));
-          },
+                                  suffixIcon: IconButton(icon: const Icon(Icons.search_rounded), onPressed: () => searchOnlineArt(setModalState)),
                                 ),
                               ),
                               const SizedBox(height: 10),
