@@ -55,6 +55,7 @@ part 'widgets/nami_v30_yt_bridge.dart';
 part 'widgets/nami_v30_discover_tab.dart';
 part 'widgets/nami_v31_suite.dart';
 part 'widgets/nami_v33_youtube_watch.dart';
+part 'widgets/nami_v35_youtube_search.dart';
 const Map<String, String> _httpHeaders = {
   'User-Agent': 'NamiMusicPlayer/2.0 (https://github.com/Piyush1625/nami)',
   'Accept': 'application/json',
@@ -2393,7 +2394,11 @@ const SizedBox(height: 10),
                                   filled: true,
                                   fillColor: const Color(0xFF151522),
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                                  suffixIcon: IconButton(icon: const Icon(Icons.search_rounded), onPressed: () => searchOnlineArt(setModalState)),
+                                  suffixIcon: IconButton(icon: const Icon(Icons.search_rounded), onPressed: () {
+            /* v35_0_yt_only_top_search */
+            if (_selectedIndex == 4) { openNamiYoutubeSearchScreen(context); return; }
+            searchOnlineArt(setModalState));
+          },
                                 ),
                               ),
                               const SizedBox(height: 10),

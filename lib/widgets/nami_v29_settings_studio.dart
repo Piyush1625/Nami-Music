@@ -931,7 +931,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v3.4.0 Stable • Releases & Library Statistics',
+                subtitle: 'v3.5.0 Stable • Releases & Library Statistics',
                 index: 6,
               ),
             ],
@@ -1510,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.4.0 (v47)',
+                    'v3.5.0 (v48)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1731,7 +1731,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.4.0 Stable Engine',
+                          'Nami v3.5.0 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),
@@ -2334,13 +2334,20 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             selected: NamiUxPrefs.youtubeRegion,
             onSelect: (opt) { NamiUxPrefs.youtubeRegion = opt; NamiYoutubeService.instance.clearAllCaches(); },
           ),
+          _switchRow(
+            icon: Icons.headphones_rounded,
+            title: 'Audio-Only Mode (YouTube)',
+            subtitle: 'OFF by default — plays 480p video automatically when disabled',
+            value: NamiUxPrefs.ytAudioOnlyMode,
+            onChanged: (v) => NamiUxPrefs.ytAudioOnlyMode = v,
+          ),
           _pillChoiceRow(
             icon: Icons.ondemand_video_rounded,
-            title: 'Default Watch Mode',
-            subtitle: 'Choose Audio Only or auto-start Video when opening YouTube',
-            options: const ['Audio Only', 'Video 480p', 'Video 720p', 'Video 1080p'],
-            selected: NamiUxPrefs.ytDefaultMode,
-            onSelect: (opt) => NamiUxPrefs.ytDefaultMode = opt,
+            title: 'Default Video Quality',
+            subtitle: 'Used automatically when Audio-Only mode is OFF (default 480p)',
+            options: const ['360p', '480p', '720p', '1080p'],
+            selected: NamiUxPrefs.ytDefaultMode.replaceAll('Video ', ''),
+            onSelect: (opt) => NamiUxPrefs.ytDefaultMode = 'Video $opt',
           ),
           _pillChoiceRow(
             icon: Icons.speed_rounded,

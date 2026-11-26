@@ -294,8 +294,11 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       if (_bodyMode == 1) _bodyMode = 0;
     });
 
+    /* v35_0_immediate_yt_mini */
+    final prevActiveId = NamiYoutubePlaybackBridge.activeYtTrack.value?.videoId;
+    _namiSafeSetNotifier<NamiYtTrack?>(NamiYoutubePlaybackBridge.activeYtTrack, target);
     if (autoStartPlay) {
-      final activeId = NamiYoutubePlaybackBridge.activeYtTrack.value?.videoId;
+      final activeId = prevActiveId;
       if (forceRefresh || activeId != vid) {
         NamiYtVideoBridge.stopVideo();
         setState(() {
@@ -307,12 +310,12 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
             target,
             upcoming: widget.initialQueue,
           ).then((ok) {
-            if (ok && mounted && _track.videoId == vid && (widget.startVideoMode || NamiUxPrefs.ytDefaultMode != 'Audio Only')) {
+            if (ok && mounted && _track.videoId == vid && (widget.startVideoMode || !NamiUxPrefs.ytAudioOnlyMode)) {
               _activateDefaultVideoQuality();
             }
           }),
         );
-      } else if (widget.startVideoMode && !_isVideoActive) {
+      } else if ((widget.startVideoMode || !NamiUxPrefs.ytAudioOnlyMode) && !_isVideoActive) {
         unawaited(_activateDefaultVideoQuality());
       }
     }
@@ -405,9 +408,13 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     // Respect Data Saver & Default Mode cap; prefer hardware H.264 MP4 for instant Frame 1!
     final maxH = NamiUxPrefs.ytDataSaver == 'High'
         ? 240
-        : (NamiUxPrefs.ytDataSaver == 'Medium' || NamiUxPrefs.ytDefaultMode == 'Video 480p'
-            ? 480
-            : (NamiUxPrefs.ytDefaultMode == 'Video 1080p' ? 1080 : 720));
+        : (NamiUxPrefs.ytDefaultMode.contains('360')
+            ? 360
+            : (NamiUxPrefs.ytDefaultMode.contains('1080')
+                ? 1080
+                : (NamiUxPrefs.ytDefaultMode.contains('720') && NamiUxPrefs.ytDataSaver != 'Medium'
+                    ? 720
+                    : 480)));
     final preferMp4 = NamiUxPrefs.ytPreferredCodec != 'Auto Best';
     final mp4s = preferMp4 ? list.where((f) => f.mimeType.contains('mp4')).toList() : list;
     final pool = mp4s.isNotEmpty ? mp4s : list;

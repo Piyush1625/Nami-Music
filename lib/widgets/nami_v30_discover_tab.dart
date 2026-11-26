@@ -423,338 +423,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
   // SUB-TAB 0: Home (Local) — Matches Nami 127228.png
   // ---------------------------------------------------------------------------
   Widget _buildHomeLocalTab(Color accent) {
-    return ValueListenableBuilder<int>(
-      valueListenable: NamiYoutubeStore.instance.revision,
-      builder: (_, __, ___) {
-        final store = NamiYoutubeStore.instance;
-        final mixes = store.generatedMixes();
-        final recent = store.history;
-        final topRecent = store.mostPlayed(withinDays: _topRecentDays);
-
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 160),
-          children: [
-            // Header: Bold `Nami` + Quick icons
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 12, 10),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Nami',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'YouTube Music Feed',
-                    icon: const Icon(Icons.music_note_outlined, color: Colors.white70, size: 22),
-                    onPressed: () => _selectSubTab(1),
-                  ),
-                  IconButton(
-                    tooltip: 'Mornye Extensions',
-                    icon: const Icon(Icons.extension_outlined, color: Colors.white70, size: 21),
-                    onPressed: () => _selectSubTab(2),
-                  ),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: NamiYoutubeService.isSignedIn,
-                    builder: (_, signedIn, __) => IconButton(
-                      tooltip: signedIn ? 'YouTube Account (Signed In)' : 'YouTube Mode (Logged-Out)',
-                      icon: Icon(
-                        signedIn ? Icons.verified_user_rounded : Icons.account_circle_outlined,
-                        color: signedIn ? const Color(0xFF10B981) : Colors.white70,
-                        size: 22,
-                      ),
-                      onPressed: () => showNamiYoutubeAccountSheet(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Mixes Section
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 10),
-              child: Row(
-                children: [
-                  Icon(Icons.auto_awesome_mosaic_outlined, color: Colors.white60, size: 19),
-                  SizedBox(width: 9),
-                  Text(
-                    'Mixes',
-                    style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w800),
-                  ),
-                ],
-              ),
-            ),
-            if (mixes.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: NamiSpringTap(
-                  pressedScale: 0.97,
-                  onTap: () => _selectSubTab(1),
-                  child: Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0E0E15),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: accent.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Icon(Icons.play_arrow_rounded, color: accent, size: 28),
-                        ),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Start Listening on YouTube Music',
-                                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
-                              ),
-                              SizedBox(height: 3),
-                              Text(
-                                'Swipe to Music or tap here — Recommended & Supremacy Mixes build automatically on-device',
-                                style: TextStyle(color: Colors.white54, fontSize: 11.6),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              SizedBox(
-                height: 204,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: mixes.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (_, i) {
-                    final mix = mixes[i];
-                    return NamiSpringTap(
-                      pressedScale: 0.96,
-                      onTap: () {
-                        if (mix.tracks.isNotEmpty) {
-                          NamiYoutubePlaybackBridge.playTrack(
-                            mix.tracks.first,
-                            upcoming: mix.tracks.skip(1).toList(),
-                          );
-                        }
-                      },
-                      child: SizedBox(
-                        width: 248,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Stack(
-                                children: [
-                                  SizedBox(
-                                    width: 248,
-                                    height: 146,
-                                    child: Image.network(
-                                      mix.thumbnailUrl,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(color: const Color(0xFF161620)),
-                                    ),
-                                  ),
-                                  Positioned.fill(
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Colors.transparent,
-                                            Colors.black.withValues(alpha: 0.65),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: 10,
-                                    bottom: 10,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.72),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: Colors.white24, width: 0.7),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.play_circle_outline_rounded, color: Colors.white, size: 13),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${mix.tracks.length}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              mix.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              mix.subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white54, fontSize: 11.2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-            // Recent Listens Section
-            if (recent.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 12, 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.history_rounded, color: Colors.white60, size: 19),
-                    const SizedBox(width: 9),
-                    const Expanded(
-                      child: Text(
-                        'Recent Listens',
-                        style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 22),
-                      onPressed: () => _selectSubTab(4),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(
-                height: 152,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: recent.length.clamp(0, 15),
-                  separatorBuilder: (_, __) => const SizedBox(width: 11),
-                  itemBuilder: (_, i) => _build16x9TrackCard(recent[i], contextList: recent),
-                ),
-              ),
-            ],
-
-            // Top Recents Section with Timeframe Day Chips (127228.png)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 12, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.workspace_premium_outlined, color: Colors.white60, size: 19),
-                  const SizedBox(width: 9),
-                  const Expanded(
-                    child: Text(
-                      'Top Recents',
-                      style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 22),
-                    onPressed: () => _selectSubTab(4),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(
-              height: 36,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _topRecentDayOptions.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) {
-                  final days = _topRecentDayOptions[i];
-                  final sel = _topRecentDays == days;
-                  return GestureDetector(
-                    onTap: () {
-                      NamiUxPrefs.hapticLight();
-                      setState(() => _topRecentDays = days);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel ? Colors.white.withValues(alpha: 0.16) : const Color(0xFF101016),
-                        borderRadius: BorderRadius.circular(11),
-                        border: Border.all(
-                          color: sel ? Colors.white38 : Colors.white.withValues(alpha: 0.07),
-                        ),
-                      ),
-                      child: Text(
-                        days == 1 ? '1 Day' : '$days Days',
-                        style: TextStyle(
-                          color: sel ? Colors.white : Colors.white60,
-                          fontSize: 11.8,
-                          fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (topRecent.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Text(
-                  'Your most played YouTube tracks in this window will appear here.',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              )
-            else
-              SizedBox(
-                height: 152,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: topRecent.length.clamp(0, 15),
-                  separatorBuilder: (_, __) => const SizedBox(width: 11),
-                  itemBuilder: (_, i) => _build16x9TrackCard(topRecent[i], contextList: topRecent),
-                ),
-              ),
-          ],
-        );
-      },
-    );
+    return const NamiYoutubeConnectedHomeFeed();
   }
 
   // ---------------------------------------------------------------------------
@@ -981,7 +650,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                     borderRadius: BorderRadius.circular(12),
                     onTap: () {
                       NamiUxPrefs.hapticLight();
-                      NamiYoutubePlaybackBridge.playTrack(t, upcoming: tracks);
+                      openNamiYoutubeWatchScreen(context, t, queue: tracks);
                     },
                     onLongPress: () => showNamiYtWatchSheet(context, t),
                     child: Padding(
@@ -1061,14 +730,12 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
             pressedScale: 0.95,
             onTap: () {
               if (card.videoId != null && card.videoId!.isNotEmpty) {
-                NamiYoutubePlaybackBridge.playTrack(
-                  NamiYtTrack(
+                openNamiYoutubeWatchScreen(context, NamiYtTrack(
                     videoId: card.videoId!,
                     title: card.title,
                     artist: card.subtitle.isNotEmpty ? card.subtitle : 'YouTube Music',
                     thumbnailUrl: card.thumbnailUrl,
-                  ),
-                );
+                  ),);
               } else {
                 _loadMoodTracks(card.title);
               }
@@ -1241,7 +908,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                             const SizedBox(height: 16),
                             NamiSpringTap(
                               pressedScale: 0.94,
-                              onTap: () => showNamiYoutubeEngineBetaSheet(context),
+                              onTap: () => openNamiYoutubeSearchScreen(context),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                 decoration: BoxDecoration(
@@ -1289,7 +956,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                             icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 19),
                             onPressed: () => showNamiYtWatchSheet(context, t),
                           ),
-                          onTap: () => NamiYoutubePlaybackBridge.playTrack(t, upcoming: filtered),
+                          onTap: () => openNamiYoutubeWatchScreen(context, t, queue: filtered),
                         );
                       },
                     ),
@@ -1520,7 +1187,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                 onTap: () {
                   final list = store.tracksForPlaylist(pl);
                   if (list.isNotEmpty) {
-                    NamiYoutubePlaybackBridge.playTrack(list.first, upcoming: list.skip(1).toList());
+                    openNamiYoutubeWatchScreen(context, list.first, queue: list);
                   } else {
                     NamiLiveToastController.showMessage('Playlist "${pl.name}" is empty');
                   }
@@ -1928,7 +1595,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
             ),
             child: NamiSpringTap(
               pressedScale: 0.90,
-              onTap: () => showNamiYoutubeEngineBetaSheet(context),
+              onTap: () => openNamiYoutubeSearchScreen(context),
               child: Container(
                 width: 48,
                 height: 48,

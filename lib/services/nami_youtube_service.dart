@@ -775,12 +775,12 @@ class NamiYoutubeService {
   }
 
   /// Calls Android's invisible Chromium WebView to run Google's real BotGuard JS and intercept
-  /// a genuine PoToken-signed `googlevideo.com` audio stream (works BOTH logged-out & logged-in!).
+  /// BOTH genuine audio AND video `googlevideo.com` streams (works Logged-Out & Signed-In!).
   Future<NamiYtStreamResult?> _extractViaNativeWebView(String videoId) async {
     try {
       final res = await _ytNativeChannel
           .invokeMethod<dynamic>('extractAudioStream', {'videoId': videoId})
-          .timeout(const Duration(seconds: 13));
+          .timeout(const Duration(seconds: 11));
       if (res is! Map) return null;
       final url = (res['url'] ?? '').toString();
       if (!url.startsWith('http')) return null;
@@ -799,7 +799,37 @@ class NamiYoutubeService {
         if (cookie.isNotEmpty) 'Cookie': cookie,
         if (clen > 0) 'X-Nami-Content-Length': '$clen',
       };
-      if (await _probeStreamUrl(url, hdrs)) {
+
+      // Capture companion video stream returned by Chromium BotGuard (for 480p/720p playback!)
+      final vUrl = (res['videoUrl'] ?? '').toString();
+      if (vUrl.startsWith('http')) {
+        final vMime = (res['videoMimeType'] ?? 'video/mp4').toString();
+        final vClen = (res['videoContentLength'] as num?)?.toInt() ?? 0;
+        final vItag = (res['videoItag'] as num?)?.toInt() ?? 135;
+        final h = vItag == 137
+            ? 1080
+            : (vItag == 136 || vItag == 247 || vItag == 398
+                ? 720
+                : (vItag == 18 ? 360 : 480));
+        _lastWebViewVideoFormats[videoId] = [
+          NamiYtVideoFormat(
+            itag: vItag,
+            qualityLabel: '${h}p',
+            height: h,
+            bitrate: h >= 720 ? 1500000 : 750000,
+            contentLength: vClen,
+            mimeType: vMime.split(';').first.trim(),
+            url: vUrl,
+            headers: {
+              'User-Agent': ua.isNotEmpty ? ua : _webUserAgent,
+              if (cookie.isNotEmpty) 'Cookie': cookie,
+            },
+          ),
+        ];
+      }
+
+      // Probe head (always accept genuine Chromium-minted BotGuard stream without rejecting on strict tail!)
+      if (await _probeStreamUrl(url, hdrs, contentLength: 0)) {
         return NamiYtStreamResult(
           videoId: videoId,
           audioUrl: url,
@@ -1866,11 +1896,12 @@ static String _preferredFastClient = '';
   List<NamiYtVideoFormat> cachedVideoFormatsFor(String videoId) =>
       _bundleCache[videoId]?.videoFormats ?? const [];
 
-  /// Fast parallel media resolver (`v3.3.0`):
-  /// - Tries sticky winning client FIRST (instant ~250ms repeat hits!)
-  /// - Races remaining InnerTube clients in parallel (tight 3.5s budget) collecting BOTH
-  ///   audio AND full video qualities (`144p..2160p`)
-  /// - Drops immediately into pre-warmed Native Chromium BotGuard WebView if InnerTube is blocked
+  /// Fast Parallel Media Resolver (`v3.5.0`):
+  /// - Races 6 InnerTube clients (`VISIONOS`, `WEB_EMBED`, `TVHTML5_EMBED`, `IOS`, `ANDROID_SDKLESS`, `ANDROID_VR`)
+  /// - Pass 1: Prefers full-length tail-verified streams or HLS `.m3u8` (zero 30s cutoff!)
+  /// - Pass 2: Falls back cleanly to head-verified stream (with mid-stream 403 auto-heal)
+  /// - Pass 3: Native Chromium Headless BotGuard Extractor (captures BOTH audio + video!)
+  /// - ALWAYS populates `lastResolveDiagnostic` on failure so errors are 100% transparent.
   Future<NamiYtMediaBundle?> resolveMediaBundle(
     String videoId, {
     String quality = 'High (Opus)',
@@ -1891,6 +1922,7 @@ static String _preferredFastClient = '';
     final cookie = _effectiveCookie;
     final hasCookie = cookie.isNotEmpty;
     final authHdr = hasCookie ? _buildSapisidAuthHeader(cookie) : null;
+    final diag = <String>[];
 
     const safariUa =
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15';
@@ -1905,6 +1937,53 @@ static String _preferredFastClient = '';
         };
 
     final allClients = <Map<String, dynamic>>[
+      {
+        'name': 'VISIONOS',
+        'ua': safariUa,
+        'hdr': '101',
+        'ver': '1.02',
+        'ctx': {
+          'client': withVisitor({
+            'clientName': 'VISIONOS',
+            'clientVersion': '1.02',
+            'deviceMake': 'Apple',
+            'osName': 'visionOS',
+            'osVersion': '2.2',
+            'gl': gl,
+            'hl': hl,
+          }),
+        },
+      },
+      {
+        'name': 'WEB_EMBED',
+        'ua': safariUa,
+        'hdr': '56',
+        'ver': '1.20260310.04.00',
+        'ctx': {
+          'client': withVisitor({
+            'clientName': 'WEB_EMBEDDED_PLAYER',
+            'clientVersion': '1.20260310.04.00',
+            'gl': gl,
+            'hl': hl,
+          }),
+          'thirdParty': {'embedUrl': 'https://www.youtube.com/'},
+        },
+      },
+      {
+        'name': 'TVHTML5_EMBED',
+        'ua': _webUserAgent,
+        'hdr': '85',
+        'ver': '2.0',
+        'ctx': {
+          'client': withVisitor({
+            'clientName': 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+            'clientVersion': '2.0',
+            'gl': gl,
+            'hl': hl,
+          }),
+          'thirdParty': {'embedUrl': 'https://www.youtube.com/'},
+        },
+      },
       {
         'name': 'IOS',
         'ua': _iosUserAgent,
@@ -1939,23 +2018,6 @@ static String _preferredFastClient = '';
         },
       },
       {
-        'name': 'VISIONOS',
-        'ua': safariUa,
-        'hdr': '101',
-        'ver': '1.02',
-        'ctx': {
-          'client': withVisitor({
-            'clientName': 'VISIONOS',
-            'clientVersion': '1.02',
-            'deviceMake': 'Apple',
-            'osName': 'visionOS',
-            'osVersion': '2.2',
-            'gl': gl,
-            'hl': hl,
-          }),
-        },
-      },
-      {
         'name': 'ANDROID_VR',
         'ua': vr171Ua,
         'hdr': '28',
@@ -1975,6 +2037,8 @@ static String _preferredFastClient = '';
         },
       },
     ];
+
+    final headOnlyFallbacks = <NamiYtMediaBundle>[];
 
     Future<NamiYtMediaBundle?> tryClient(Map<String, dynamic> c) async {
       final cname = c['name'] as String;
@@ -2001,11 +2065,19 @@ static String _preferredFastClient = '';
                 'racyCheckOk': true,
               }),
             )
-            .timeout(const Duration(milliseconds: 3600));
-        if (resp.statusCode != 200) return null;
+            .timeout(const Duration(milliseconds: 4200));
+        if (resp.statusCode != 200) {
+          diag.add('$cname:h${resp.statusCode}');
+          return null;
+        }
         final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final psMap = json['playabilityStatus'];
+        final pStatus = (psMap is Map ? (psMap['status'] ?? '') : '').toString();
         final sd = json['streamingData'];
-        if (sd is! Map<String, dynamic>) return null;
+        if (sd is! Map<String, dynamic>) {
+          diag.add('$cname:${pStatus.isNotEmpty ? pStatus : 'noSD'}');
+          return null;
+        }
 
         final vd = json['videoDetails'];
         final durSec = int.tryParse(
@@ -2047,7 +2119,6 @@ static String _preferredFastClient = '';
               final ql = (f['qualityLabel'] ?? '${h}p').toString();
               final isMp4 = mime.startsWith('video/mp4');
               final prev = videoMap[h];
-              // Prefer H.264 MP4 (hardware-decoded on every Android TextureView/MediaPlayer!)
               if (prev == null ||
                   (isMp4 && !prev.mimeType.startsWith('video/mp4')) ||
                   (isMp4 == prev.mimeType.startsWith('video/mp4') && br > prev.bitrate)) {
@@ -2066,7 +2137,6 @@ static String _preferredFastClient = '';
             }
           }
         }
-        // Also collect muxed MP4 fallback (itag 18/22) if adaptive video empty
         if (sd['formats'] is List) {
           for (final f in sd['formats'] as List) {
             if (f is! Map<String, dynamic>) continue;
@@ -2093,34 +2163,7 @@ static String _preferredFastClient = '';
         final sortedVideos = videoMap.values.toList()
           ..sort((a, b) => b.height.compareTo(a.height));
 
-        if (audioFormats.isNotEmpty) {
-          final picked = _pickStreamByQuality(audioFormats, quality);
-          final candUrl = picked['url'].toString();
-          final cl = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
-          if (await _probeStreamUrl(candUrl, streamHeaders, contentLength: cl)) {
-            final audio = NamiYtStreamResult(
-              videoId: videoId,
-              audioUrl: candUrl,
-              mimeType: (picked['mimeType'] ?? 'audio/mp4').toString(),
-              bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
-              duration: Duration(seconds: durSec),
-              headers: {
-                ...streamHeaders,
-                if (cl > 0) 'X-Nami-Content-Length': '$cl',
-              },
-              expiresAtMs: DateTime.now()
-                  .add(const Duration(hours: 3, minutes: 30))
-                  .millisecondsSinceEpoch,
-              clientUsed: cname,
-            );
-            return NamiYtMediaBundle(
-              audioStream: audio,
-              videoFormats: sortedVideos,
-              duration: Duration(seconds: durSec),
-            );
-          }
-        }
-
+        // 1. Check HLS manifest first on VISIONOS/IOS (zero 30s cutoff!)
         final hlsUrl = (sd['hlsManifestUrl'] ?? '').toString();
         if (hlsUrl.startsWith('http') &&
             !excludeClients.contains('${cname}_HLS') &&
@@ -2143,11 +2186,52 @@ static String _preferredFastClient = '';
             duration: Duration(seconds: durSec),
           );
         }
-      } catch (_) {}
+
+        // 2. Check adaptive audio with full-length tail probe first; keep head-only as backup
+        if (audioFormats.isNotEmpty) {
+          final picked = _pickStreamByQuality(audioFormats, quality);
+          final candUrl = picked['url'].toString();
+          final cl = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
+          final audio = NamiYtStreamResult(
+            videoId: videoId,
+            audioUrl: candUrl,
+            mimeType: (picked['mimeType'] ?? 'audio/mp4').toString(),
+            bitrate: (picked['bitrate'] as num?)?.toInt() ?? 128000,
+            duration: Duration(seconds: durSec),
+            headers: {
+              ...streamHeaders,
+              if (cl > 0) 'X-Nami-Content-Length': '$cl',
+            },
+            expiresAtMs: DateTime.now()
+                .add(const Duration(hours: 3, minutes: 30))
+                .millisecondsSinceEpoch,
+            clientUsed: cname,
+          );
+          if (await _probeStreamUrl(candUrl, streamHeaders, contentLength: cl)) {
+            return NamiYtMediaBundle(
+              audioStream: audio,
+              videoFormats: sortedVideos,
+              duration: Duration(seconds: durSec),
+            );
+          }
+          if (await _probeStreamUrl(candUrl, streamHeaders, contentLength: 0)) {
+            headOnlyFallbacks.add(NamiYtMediaBundle(
+              audioStream: audio,
+              videoFormats: sortedVideos,
+              duration: Duration(seconds: durSec),
+            ));
+          }
+          diag.add('$cname:403');
+        } else {
+          diag.add('$cname:noUrl');
+        }
+      } catch (_) {
+        diag.add('$cname:err');
+      }
       return null;
     }
 
-    // 1. Sticky winner fast-path: if WebView won last time, launch WebView immediately!
+    // 1. Sticky winner fast-path
     if (_preferredFastClient.startsWith('WEBVIEW') &&
         !excludeClients.contains('WEBVIEW_BOTGUARD')) {
       final wvRes = await _extractViaNativeWebView(videoId);
@@ -2159,30 +2243,26 @@ static String _preferredFastClient = '';
         );
         _bundleCache[videoId] = bundle;
         _streamCache['$videoId|$quality'] = wvRes;
+        lastResolveDiagnostic = '';
         return bundle;
       }
     }
 
-    // 2. Parallel race across all 4 fast InnerTube clients (takes max ~3.6s total instead of 20s!)
-    /* v34_0_visionos_priority */
-    // Run VISIONOS first in priority order (full-length direct + HLS streams without 60s cutoff!)
-    final prioritized = [
-      ...allClients.where((e) => e['name'] == 'VISIONOS'),
-      ...allClients.where((e) => e['name'] != 'VISIONOS'),
-    ];
+    // 2. Parallel race across all 6 InnerTube clients (VISIONOS first!)
     final raceResults = await Future.wait<NamiYtMediaBundle?>(
-      prioritized.map(tryClient),
+      allClients.map(tryClient),
     );
     for (final b in raceResults) {
       if (b != null) {
         _preferredFastClient = b.audioStream.clientUsed;
         _bundleCache[videoId] = b;
         _streamCache['$videoId|$quality'] = b.audioStream;
+        lastResolveDiagnostic = '';
         return b;
       }
     }
 
-    // 3. Native Chromium Headless BotGuard PoToken Extractor (Logged-Out OR Signed-In!)
+    // 3. Native Chromium Headless BotGuard Extractor (Logged-Out OR Signed-In, Audio + Video!)
     if (!excludeClients.contains('WEBVIEW_BOTGUARD') &&
         !excludeClients.contains('WEBVIEW_AUTH')) {
       final wvRes = await _extractViaNativeWebView(videoId);
@@ -2195,10 +2275,23 @@ static String _preferredFastClient = '';
         );
         _bundleCache[videoId] = bundle;
         _streamCache['$videoId|$quality'] = wvRes;
+        lastResolveDiagnostic = '';
         return bundle;
       }
+      diag.add('WV:miss');
     }
 
+    // 4. Graceful fallback: if we captured a head-verified stream, return it with mid-stream 403 auto-heal!
+    if (headOnlyFallbacks.isNotEmpty) {
+      final b = headOnlyFallbacks.first;
+      _bundleCache[videoId] = b;
+      _streamCache['$videoId|$quality'] = b.audioStream;
+      lastResolveDiagnostic = '';
+      return b;
+    }
+
+    lastResolveDiagnostic = diag.join(' ');
+    debugPrint('[NamiYT] resolveMediaBundle failed for $videoId: $lastResolveDiagnostic');
     return null;
   }
 
@@ -2695,6 +2788,231 @@ static String _preferredFastClient = '';
       debugPrint('[NamiYT] fetchChannelTabVideos error: $e');
     }
     return out;
+  }
+
+
+/// Live YouTube Search Autocomplete (exact same suggestion engine as YouTube search bar!).
+  Future<List<String>> fetchYoutubeAutocomplete(
+    String query, {
+    String region = 'IN',
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final (gl, hl) = _regionLocale(region);
+    for (final base in const [
+      'https://suggestqueries-clients6.youtube.com/complete/search',
+      'https://suggestqueries.google.com/complete/search',
+    ]) {
+      try {
+        final uri = Uri.parse(
+          '$base?client=firefox&ds=yt&hl=$hl&gl=$gl&q=${Uri.encodeQueryComponent(q)}',
+        );
+        final resp = await http
+            .get(uri, headers: const {'User-Agent': _webUserAgent})
+            .timeout(const Duration(seconds: 4));
+        if (resp.statusCode != 200) continue;
+        final parsed = jsonDecode(resp.body);
+        if (parsed is List && parsed.length >= 2 && parsed[1] is List) {
+          final out = <String>[];
+          for (final item in parsed[1] as List) {
+            final s = (item is List && item.isNotEmpty)
+                ? item.first.toString().trim()
+                : item.toString().trim();
+            if (s.isNotEmpty && !out.contains(s)) out.add(s);
+          }
+          if (out.isNotEmpty) return out.take(12).toList();
+        }
+      } catch (_) {}
+    }
+    return const [];
+  }
+
+  /// Full YouTube Search (`All | Videos | Songs | Channels | Shorts`):
+  /// Returns videos, channels, and post-search related suggestion chips!
+  Future<Map<String, dynamic>> searchYoutubeFull(
+    String query, {
+    String filter = 'All',
+    String region = 'IN',
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      return const {
+        'tracks': <NamiYtTrack>[],
+        'channels': <NamiYtChannel>[],
+        'relatedQueries': <String>[],
+      };
+    }
+
+    // YouTube InnerTube search filter params (`sp`)
+    String? spParam;
+    if (filter == 'Videos') spParam = 'EgIQAQ%3D%3D';
+    if (filter == 'Channels') spParam = 'EgIQAg%3D%3D';
+    if (filter == 'Shorts') spParam = 'EgIYAQ%3D%3D';
+
+    final tracks = <NamiYtTrack>[];
+    final channels = <NamiYtChannel>[];
+    final seenVids = <String>{};
+    final seenChs = <String>{};
+    final relQueries = <String>[];
+
+    // Fetch live related autocomplete suggestions in parallel!
+    final suggestFut = fetchYoutubeAutocomplete(q, region: region);
+
+    if (filter == 'Songs') {
+      final songs = await searchMusic(q, region: region, limit: 24);
+      tracks.addAll(songs);
+    } else {
+      try {
+        final resp = await http
+            .post(
+              Uri.parse('$_ytApiBase/search?prettyPrint=false'),
+              headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': _webUserAgent,
+                if (_effectiveCookie.isNotEmpty) 'Cookie': _effectiveCookie,
+              },
+              body: jsonEncode({
+                'query': q,
+                if (spParam != null) 'params': Uri.decodeComponent(spParam),
+                'context': _webContext(region),
+              }),
+            )
+            .timeout(const Duration(seconds: 8));
+        if (resp.statusCode == 200) {
+          final root = jsonDecode(resp.body);
+          _extractVideoRenderers(root, tracks, seenVids, 28);
+          _walkJson(root, (node) {
+            if (node is! Map) return;
+            if (node['channelRenderer'] is Map) {
+              final cr = node['channelRenderer'] as Map;
+              final cid = (cr['channelId'] ?? '').toString();
+              final name = _readText(cr['title']);
+              if (cid.isNotEmpty && name.isNotEmpty && seenChs.add(cid)) {
+                final sub = _readText(cr['videoCountText']).isNotEmpty
+                    ? _readText(cr['videoCountText'])
+                    : _readText(cr['subscriberCountText']);
+                channels.add(NamiYtChannel(
+                  channelId: cid,
+                  name: name,
+                  avatarUrl: _bestThumb(cr['thumbnail']),
+                  subscriberText: sub,
+                  subscribedAtMs: 0,
+                ));
+              }
+            }
+            if (node['searchRefinementCardRenderer'] is Map) {
+              final t = _readText(node['searchRefinementCardRenderer']['query']);
+              if (t.isNotEmpty && !relQueries.contains(t)) relQueries.add(t);
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('[NamiYT] searchYoutubeFull error: $e');
+      }
+      // Top-up with YouTube Music results if web search returned sparse results
+      if (tracks.length < 6 && filter != 'Channels') {
+        final extra = await searchMusic(q, region: region, limit: 16);
+        for (final t in extra) {
+          if (seenVids.add(t.videoId)) tracks.add(t);
+        }
+      }
+    }
+
+    final autoSuggestions = await suggestFut;
+    for (final s in autoSuggestions) {
+      if (s.toLowerCase() != q.toLowerCase() && !relQueries.contains(s)) {
+        relQueries.add(s);
+      }
+    }
+
+    return {
+      'tracks': tracks,
+      'channels': channels,
+      'relatedQueries': relQueries.take(10).toList(),
+    };
+  }
+
+  /// Connected YouTube Home Feed (`v3.5.0`):
+  /// Returns BOTH personalized recommendations based on recently watched videos AND rich live YouTube home videos!
+  Future<Map<String, List<NamiYtTrack>>> fetchYoutubeHomeFeed({
+    String category = 'All',
+    String region = 'IN',
+    List<NamiYtTrack> recentHistory = const [],
+  }) async {
+    final becauseWatched = <NamiYtTrack>[];
+    final feedVideos = <NamiYtTrack>[];
+    final seen = <String>{};
+
+    // 1. Personalized "Because You Watched" recommendations from latest watched video
+    if (recentHistory.isNotEmpty) {
+      final seed = recentHistory.first;
+      seen.add(seed.videoId);
+      try {
+        final wd = await fetchWatchDetails(
+          seed.videoId,
+          region: region,
+          fetchDislikes: false,
+        );
+        for (final r in wd.relatedTracks) {
+          if (seen.add(r.videoId)) becauseWatched.add(r);
+        }
+      } catch (_) {}
+      if (becauseWatched.length < 6) {
+        final extra = await searchMusic(
+          '${seed.title} ${seed.artist}',
+          region: region,
+          limit: 12,
+        );
+        for (final r in extra) {
+          if (seen.add(r.videoId)) becauseWatched.add(r);
+        }
+      }
+    }
+
+    // 2. Category / Live YouTube Home Feed (`FEwhat_to_watch` or targeted category search)
+    if (category == 'All') {
+      try {
+        final resp = await http
+            .post(
+              Uri.parse('$_ytApiBase/browse?prettyPrint=false'),
+              headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': _webUserAgent,
+                if (_effectiveCookie.isNotEmpty) 'Cookie': _effectiveCookie,
+              },
+              body: jsonEncode({
+                'browseId': 'FEwhat_to_watch',
+                'context': _webContext(region),
+              }),
+            )
+            .timeout(const Duration(seconds: 7));
+        if (resp.statusCode == 200) {
+          final root = jsonDecode(resp.body);
+          _extractVideoRenderers(root, feedVideos, seen, 24);
+        }
+      } catch (_) {}
+    }
+
+    // Ensure rich, fresh India-first YouTube video & music recommendations even on fresh logged-out sessions!
+    if (feedVideos.length < 10) {
+      final query = switch (category) {
+        'Music' => region == 'IN' ? 'latest hindi punjabi music video 2026' : 'top music videos 2026',
+        'Trending' => region == 'IN' ? 'trending india music videos 2026' : 'trending videos 2026',
+        'Podcasts' => region == 'IN' ? 'indian podcast full episode 2026' : 'popular podcast full episode',
+        'Gaming' => 'gaming highlights 2026',
+        _ => region == 'IN' ? 'trending bollywood punjabi dhh official music video 2026' : 'trending music videos 2026',
+      };
+      final fallback = await searchYoutubeFull(query, filter: 'Videos', region: region);
+      final list = (fallback['tracks'] as List?)?.cast<NamiYtTrack>() ?? const <NamiYtTrack>[];
+      for (final t in list) {
+        if (seen.add(t.videoId)) feedVideos.add(t);
+      }
+    }
+
+    return {
+      'becauseWatched': becauseWatched,
+      'feed': feedVideos,
+    };
   }
 
 }

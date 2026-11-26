@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.5.0 — 2026-11-26
+
+### Connected YouTube Ecosystem, Dedicated YouTube Search, 480p Default & App-Wide Fluidity Fixes
+- **Fixed YouTube 13s Timeout & Dual Audio+Video BotGuard Capture:** Removed the `ump=1` filter in `NamiYtWebViewEngine.kt`, upgraded WebView to capture BOTH audio and companion video streams simultaneously, and added a 6-client parallel race (`VISIONOS`, `WEB_EMBED`, `TVHTML5_EMBED`, `IOS`, `ANDROID_SDKLESS`, `ANDROID_VR`) with HLS-first priority and full diagnostic reporting.
+- **Audio-Only OFF by Default + 480p Video Default:** YouTube videos now automatically open in crisp `480p` hardware ExoPlayer video (`Audio-Only Mode` OFF by default in Settings), handing live video directly to the floating Nami YouTube Mini-Player on minimize.
+- **Dedicated YouTube-Only Top Search Bar & Autocomplete (`NamiYoutubeSearchScreen`):** Tapping the top Search bar or FAB inside YouTube opens a 100% YouTube-only search screen with live as-you-type YouTube autocomplete predictions, search history, `All | Videos | Songs | Channels | Shorts` filters, post-search **Related Searches**, and **Suggested For You** videos.
+- **Connected YouTube Home Feed (`NamiYoutubeConnectedHomeFeed`):** Displays category pills, **Continue Watching**, dynamic **"Because you watched..."** recommendations that auto-refresh after every video, and a live 16:9 YouTube Home Feed—plus wired every `Music` / `Song mixes` / `Playlist` / `Channel` card straight into `NamiYoutubeWatchScreen`.
+- **App-Wide Fluidity Audit Fixes:** Eliminated the `00:00 / 00:00` duration flash & Play/Pause flicker on local track swipes, fixed the 4-second Synced Lyrics re-open scroll freeze, removed intermediate-tab flashes on non-adjacent bottom nav jumps, and accelerated expand scrim transitions.
+
 ## v3.4.0 — 2026-11-26
 
 ### Live-Video Nami Mini-Player, 30s Cutoff Fix & Full YouTube Video Settings
