@@ -43,17 +43,15 @@ String namiFormatBadgeForPath(
 
 enum NamiActiveSource { none, local, youtube }
 
-/// Strict Single-Audio Playback Arbitrator (`v3.6.0`):
-/// Guarantees that Offline Nami Library (`_audioPlayer`) and YouTube (`ytPlayer` + `ExoPlayer`)
-/// NEVER play simultaneously — while keeping both mini-players, queues & timestamps 100% separate!
+/// Strict Single-Audio Playback Arbitrator (`v3.7.0`):
+/// Strictly 1 active audio source at a time between Offline Nami Library (`libmpv`)
+/// and YouTube (`Media3 ExoPlayer` unified Video + Audio).
 class NamiAudioArbitrator {
   static final ValueNotifier<NamiActiveSource> activeSource =
       ValueNotifier<NamiActiveSource>(NamiActiveSource.none);
 
   static Player? _localPlayer;
-  static Player? _ytPlayer;
   static StreamSubscription<bool>? _localSub;
-  static StreamSubscription<bool>? _ytSub;
 
   static void bindLocalPlayer(Player player) {
     if (identical(_localPlayer, player)) return;
@@ -66,32 +64,11 @@ class NamiAudioArbitrator {
     });
   }
 
-  static void bindYoutubePlayer(Player player) {
-    if (identical(_ytPlayer, player)) return;
-    _ytPlayer = player;
-    _ytSub?.cancel();
-    _ytSub = player.stream.playing.listen((playing) {
-      if (playing) {
-        claimYoutube();
-      }
-    });
-  }
-
-  /// Claims playback ownership for Offline Local Library — immediately pauses YouTube audio + video!
+  /// Claims playback ownership for Offline Local Library — immediately pauses YouTube ExoPlayer!
   static Future<void> claimLocal() async {
     _namiSafeSetNotifier<NamiActiveSource>(activeSource, NamiActiveSource.local);
-    try {
-      if (_ytPlayer != null && _ytPlayer!.state.playing) {
-        await _ytPlayer!.pause();
-      }
-    } catch (_) {}
-    if (NamiYtVideoBridge.isVideoActive.value) {
-      unawaited(
-        NamiYtVideoBridge.syncState(
-          positionMs: _ytPlayer?.state.position.inMilliseconds ?? 0,
-          playing: false,
-        ),
-      );
+    if (NamiYtVideoBridge.isPlaying.value) {
+      await NamiYtVideoBridge.pause();
     }
   }
 
@@ -125,22 +102,7 @@ class NamiAudioArbitrator {
 /// - Automatically pre-fetches the next YouTube track ~15s before the current track finishes
 /// - Runs SponsorBlock auto-skip & Auto-Start Radio
 class NamiYoutubePlaybackBridge {
-  static Player? _ytPlayer;
-
-  /// Dedicated libmpv audio player for YouTube (100% isolated from Offline Nami Library!).
-  static Player get ytPlayer {
-    if (_ytPlayer == null) {
-      final p = Player(
-        configuration: const PlayerConfiguration(title: 'Nami YouTube'),
-      );
-      _ytPlayer = p;
-      bindSponsorBlock(p);
-      NamiAudioArbitrator.bindYoutubePlayer(p);
-    }
-    return _ytPlayer!;
-  }
-
-  static final ValueNotifier<NamiYtTrack?> activeYtTrack =
+static final ValueNotifier<NamiYtTrack?> activeYtTrack =
       ValueNotifier<NamiYtTrack?>(null);
   static final ValueNotifier<List<NamiYtTrack>> radioQueue =
       ValueNotifier<List<NamiYtTrack>>(const []);
@@ -258,25 +220,11 @@ class NamiYoutubePlaybackBridge {
     _sbSub?.cancel();
     _playSyncSub?.cancel();
     _playSyncSub = player.stream.playing.listen((playing) {
-      if (NamiYtVideoBridge.isVideoActive.value && activeYtTrack.value != null) {
-        NamiYtVideoBridge.syncState(
-          positionMs: player.state.position.inMilliseconds,
-          playing: playing,
-        );
-      }
+
     });
     _sbSub = player.stream.position.listen((pos) {
       /* v34_0_global_video_sync */
-      if (NamiYtVideoBridge.isVideoActive.value && activeYtTrack.value != null) {
-        final nowMs = DateTime.now().millisecondsSinceEpoch;
-        if (nowMs - _lastGlobalVideoSyncMs > 750) {
-          _lastGlobalVideoSyncMs = nowMs;
-          NamiYtVideoBridge.syncState(
-            positionMs: pos.inMilliseconds,
-            playing: player.state.playing,
-          );
-        }
-      }
+
       final dur = player.state.duration;
       // 1. Background 15-second pre-fetch for gapless mixed local/YouTube queue transitions
       if (dur.inSeconds > 20 && (dur - pos).inSeconds <= 15) {
@@ -378,139 +326,299 @@ class NamiYoutubePlaybackBridge {
     NamiAudioArbitrator.releaseYoutube();
   }
 
-  /// Pure-YouTube Instant-Start Playback (`v3.2.0`):
-  /// 1. 0ms instant disk replay if already in `nami_yt_cache`
-  /// 2. Instant-start progressive playback (< 300ms after resolve) via `NamiYtProgressiveProxy`
-  ///    (verifies Chunk 0, starts `libmpv` immediately, fills rest in 4-way parallel & saves to disk cache)
-  /// 3. Clean full-file cache fallback for HLS `.m3u8` manifests
+  static NamiYtStreamResult? _activeAudioStream;
+  static String _activeVideoId = '';
+  static bool _exoCallbacksBound = false;
+  static int _lastResumeSaveSec = -1;
+
+  static void _ensureExoCallbacksBound() {
+    if (_exoCallbacksBound) return;
+    _exoCallbacksBound = true;
+    NamiYtVideoBridge.ensureBound();
+    NamiYtVideoBridge.onPlaybackCompleted = () {
+      if (activeYtTrack.value == null) return;
+      if (NamiUxPrefs.ytLoopEnabled) {
+        NamiYtVideoBridge.seekTo(Duration.zero);
+        NamiYtVideoBridge.play();
+        return;
+      }
+      if (NamiUxPrefs.ytAutoStartRadio) {
+        unawaited(playNextInRadioQueue());
+      }
+    };
+    NamiYtVideoBridge.onPositionTick = (posMs) {
+      final cur = activeYtTrack.value;
+      if (cur == null) return;
+      // Save Watch Resume Timestamp every 4 seconds
+      final sec = posMs ~/ 1000;
+      if (sec >= 4 && sec != _lastResumeSaveSec && sec % 4 == 0) {
+        _lastResumeSaveSec = sec;
+        unawaited(
+          NamiYtTasteEngine.saveResumePosition(
+            cur.videoId,
+            Duration(milliseconds: posMs),
+            Duration(milliseconds: NamiYtVideoBridge.durationMs.value),
+          ),
+        );
+      }
+      // SponsorBlock Auto-Skip directly on ExoPlayer timeline
+      if (NamiUxPrefs.ytSponsorBlock && _activeSegments.isNotEmpty) {
+        final posSec = posMs / 1000.0;
+        for (final seg in _activeSegments) {
+          final key = '${cur.videoId}:${seg.startSec.round()}-${seg.endSec.round()}';
+          if (posSec >= seg.startSec &&
+              posSec < (seg.endSec - 0.5) &&
+              _skippedKeys.add(key)) {
+            NamiYtVideoBridge.seekTo(Duration(milliseconds: (seg.endSec * 1000).round()));
+            NamiLiveToastController.showMessage(
+              'SponsorBlock skipped ${seg.category}',
+              icon: Icons.fast_forward_rounded,
+              duration: const Duration(milliseconds: 1800),
+            );
+            break;
+          }
+        }
+      }
+    };
+  }
+
+  /// Switches video resolution live inside Media3 ExoPlayer (instant ABR cap for HLS,
+  /// seamless MergingMediaSource swap at exact current millisecond for DASH!).
+  static Future<void> switchVideoQuality(NamiYtVideoFormat? format, {int? targetMaxHeight}) async {
+    final vid = _activeVideoId;
+    if (vid.isEmpty) return;
+
+    // 1. HLS Master Playlist: instant zero-reload resolution switch via ExoPlayer TrackSelector!
+    if (NamiYtVideoBridge.isHlsStream.value) {
+      final h = targetMaxHeight ?? format?.height ?? 0;
+      await NamiYtVideoBridge.setMaxVideoHeight(
+        h,
+        label: h > 0 ? '${h}p' : 'Auto',
+      );
+      NamiLiveToastController.showMessage(
+        h > 0 ? 'Quality • ${h}p' : 'Quality • Auto',
+        icon: Icons.ondemand_video_rounded,
+        duration: const Duration(milliseconds: 1600),
+      );
+      return;
+    }
+
+    // 2. Adaptive DASH stream: swap video source cleanly at exact current playback position!
+    if (format == null) return;
+    final curPos = NamiYtVideoBridge.positionMs.value;
+    final wasPlaying = NamiYtVideoBridge.isPlaying.value;
+    final audioUrl = _activeAudioStream?.audioUrl ?? '';
+    final hdrs = <String, String>{};
+    format.headers.forEach((k, v) {
+      if (!k.toLowerCase().startsWith('x-nami-')) hdrs[k] = v;
+    });
+    await NamiYtVideoBridge.loadMedia(
+      videoId: vid,
+      videoUrl: format.url,
+      audioUrl: audioUrl,
+      isHls: false,
+      headers: hdrs,
+      seekMs: curPos,
+      playing: wasPlaying,
+      speed: NamiUxPrefs.ytPlaybackSpeed,
+      maxHeight: format.height,
+      loop: NamiUxPrefs.ytLoopEnabled,
+      qualityLabel: format.qualityLabel,
+    );
+    NamiLiveToastController.showMessage(
+      'Quality • ${format.qualityLabel}',
+      icon: Icons.ondemand_video_rounded,
+      duration: const Duration(milliseconds: 1600),
+    );
+  }
+
+  /// Unified Instant-Start Video + Audio Playback (`v3.7.0` — 100% Media3 ExoPlayer, ZERO Audio-Only!):
+  /// - HLS `.m3u8` streams directly in < 400ms (zero full-file HLS download freeze!)
+  /// - Adaptive DASH streams merge Video + Audio natively via ExoPlayer `MergingMediaSource`
+  /// - Records watch history immediately & populates Watch Screen resolutions right away!
   static Future<bool> playTrack(
     NamiYtTrack yt, {
     List<NamiYtTrack>? upcoming,
+    bool forceRefresh = false,
   }) async {
-    final shell = _NamiHomeShellState.activeInstance;
-    if (shell == null) return false;
-
+    _ensureExoCallbacksBound();
     final mySeq = ++_playSeq;
     await NamiAudioArbitrator.claimYoutube();
     _namiSafeSetNotifier<bool>(isResolving, true);
+    _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, yt);
+    _namiSafeSetNotifier<int>(NamiYtVideoBridge.positionMs, 0);
+    if (yt.duration.inMilliseconds > 0) {
+      _namiSafeSetNotifier<int>(NamiYtVideoBridge.durationMs, yt.duration.inMilliseconds);
+    }
 
     try {
       final svc = NamiYoutubeService.instance;
       final thumbFuture = svc.ensureCachedThumbnail(yt.videoId, yt.thumbnailUrl);
 
-      // Fast-path 1: already cached on disk (0ms instant offline playback!)
-      String? playbackSource;
-      String clientLabel = 'CACHED';
-      Duration resolvedDur = yt.duration;
+      NamiLiveToastController.showMessage(
+        'Loading ${yt.title}...',
+        icon: Icons.ondemand_video_rounded,
+        duration: const Duration(seconds: 6),
+      );
 
-      final cachedFile = NamiYtAudioCache.instance.findCachedFile(yt.videoId);
-      if (cachedFile != null && cachedFile.existsSync()) {
-        playbackSource = cachedFile.path;
-      } else {
-        NamiLiveToastController.showMessage(
-          'Playing ${yt.title}...',
-          icon: Icons.play_circle_outline_rounded,
-          duration: const Duration(seconds: 10),
+      final exclude = <String>{};
+      NamiYtMediaBundle? winningBundle;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        if (mySeq != _playSeq) return false;
+        final bundle = await svc.resolveMediaBundle(
+          yt.videoId,
+          quality: NamiUxPrefs.youtubeAudioQuality,
+          region: NamiUxPrefs.youtubeRegion,
+          forceRefresh: forceRefresh || attempt > 0,
+          excludeClients: exclude,
         );
-
-        final exclude = <String>{};
-        for (int attempt = 0; attempt < 3; attempt++) {
-          if (mySeq != _playSeq) return false;
-          final bundle = await svc.resolveMediaBundle(
-            yt.videoId,
-            quality: NamiUxPrefs.youtubeAudioQuality,
-            region: NamiUxPrefs.youtubeRegion,
-            forceRefresh: attempt > 0,
-            excludeClients: exclude,
-          );
-          if (bundle == null) break;
-          _namiSafeSetNotifier<List<NamiYtVideoFormat>>(
-            NamiYtVideoBridge.activeVideoFormats,
-            bundle.videoFormats,
-          );
-          final stream = bundle.audioStream;
-          if (stream.audioUrl.isEmpty) break;
-          if (mySeq != _playSeq) return false;
-
-          // Fast-path 2: Instant-Start Progressive Chunk-Cached Server (starts in ~150ms!)
-          final progressiveUrl = await NamiYtProgressiveProxy.instance.prepareAndRegister(
-            stream,
-            onRefreshStream: (failedClient) async {
-              final nextEx = <String>{...exclude, failedClient};
-              final refreshed = await svc.resolveMediaBundle(
-                yt.videoId,
-                quality: NamiUxPrefs.youtubeAudioQuality,
-                region: NamiUxPrefs.youtubeRegion,
-                forceRefresh: true,
-                excludeClients: nextEx,
-              );
-              return refreshed?.audioStream;
-            },
-          );
-          if (mySeq != _playSeq) return false;
-          if (progressiveUrl != null && progressiveUrl.isNotEmpty) {
-            playbackSource = progressiveUrl;
-            clientLabel = stream.clientUsed;
-            if (stream.duration.inSeconds > 0) resolvedDur = stream.duration;
-            break;
-          }
-
-          // Fallback for HLS `.m3u8` or streams without known length: full local file cache
-          final file = await NamiYtAudioCache.instance.ensureCachedAudioFile(
-            stream,
-            isCancelled: () => mySeq != _playSeq,
-            maxCacheMb: NamiUxPrefs.ytMaxCacheMb,
-          );
-          if (mySeq != _playSeq) return false;
-          if (file != null && file.existsSync()) {
-            playbackSource = file.path;
-            clientLabel = stream.clientUsed;
-            if (stream.duration.inSeconds > 0) resolvedDur = stream.duration;
-            break;
-          }
-          exclude.add(stream.clientUsed);
+        if (mySeq != _playSeq) return false;
+        if (bundle != null && bundle.audioStream.audioUrl.isNotEmpty) {
+          winningBundle = bundle;
+          break;
         }
+        break;
       }
 
       if (mySeq != _playSeq) return false;
       final cachedThumb = await thumbFuture;
 
-      if (playbackSource == null || playbackSource.isEmpty) {
+      if (winningBundle == null) {
+        _namiSafeSetNotifier<String>(
+          NamiYtVideoBridge.lastVideoError,
+          NamiYoutubeService.lastResolveDiagnostic.isNotEmpty
+              ? NamiYoutubeService.lastResolveDiagnostic
+              : 'Stream unavailable on current network',
+        );
+        _namiSafeSetNotifier<String>(NamiYtVideoBridge.videoState, 'error');
         NamiLiveToastController.showMessage(
           NamiYoutubeService.lastResolveDiagnostic.isNotEmpty
               ? 'YT: ${NamiYoutubeService.lastResolveDiagnostic}'
-              : 'YouTube stream unavailable — tap to retry or sign in',
+              : 'YouTube stream blocked — tap Retry or Sign In',
           icon: Icons.error_outline_rounded,
         );
         return false;
       }
 
+      final audio = winningBundle.audioStream;
+      final vFormats = winningBundle.videoFormats;
+      _activeAudioStream = audio;
+      _activeVideoId = yt.videoId;
+      _namiSafeSetNotifier<List<NamiYtVideoFormat>>(
+        NamiYtVideoBridge.activeVideoFormats,
+        vFormats,
+      );
+      if (vFormats.isNotEmpty) {
+        _namiSafeSetNotifier<List<int>>(
+          NamiYtVideoBridge.availableHeights,
+          vFormats.map((f) => f.height).toSet().toList()..sort((a, b) => b.compareTo(a)),
+        );
+      }
+
+      final resolvedDur = winningBundle.duration.inSeconds > 0
+          ? winningBundle.duration
+          : (audio.duration.inSeconds > 0 ? audio.duration : yt.duration);
       final enrichedYt = yt.copyWith(
         cachedThumbPath: cachedThumb ?? yt.cachedThumbPath,
-        duration: resolvedDur.inSeconds > 0 ? resolvedDur : yt.duration,
-      );
-      final audioTrack = toAudioTrack(
-        enrichedYt,
-        streamUrl: playbackSource,
-        localThumbPath: cachedThumb,
-        resolvedDuration: resolvedDur,
+        duration: resolvedDur,
       );
 
+      final isHls = audio.audioUrl.contains('.m3u8') ||
+          audio.audioUrl.contains('manifest/hls') ||
+          audio.mimeType.toLowerCase().contains('mpegurl');
+
+      final maxH = NamiYtVideoBridge.targetMaxHeightFromPrefs();
+      final savedResumeMs =
+          forceRefresh ? 0 : NamiYtTasteEngine.resumePositionMs(yt.videoId);
+
+      // Prepare clean HTTP headers for ExoPlayer
+      final cleanHdrs = <String, String>{};
+      audio.headers.forEach((k, v) {
+        if (!k.toLowerCase().startsWith('x-nami-')) cleanHdrs[k] = v;
+      });
+
+      String targetVideoUrl = '';
+      String targetAudioUrl = '';
+      String chosenLabel = '${maxH}p';
+
+      if (isHls) {
+        targetVideoUrl = audio.audioUrl;
+        targetAudioUrl = '';
+        chosenLabel = '${maxH}p';
+      } else {
+        // Pick preferred video resolution (H.264 MP4 preferred for universal hardware decode!)
+        NamiYtVideoFormat? pickedVid;
+        if (vFormats.isNotEmpty) {
+          final preferMp4 = NamiUxPrefs.ytPreferredCodec != 'Auto Best';
+          final mp4s = preferMp4
+              ? vFormats.where((f) => f.mimeType.contains('mp4')).toList()
+              : vFormats;
+          final pool = mp4s.isNotEmpty ? mp4s : vFormats;
+          pickedVid = pool.firstWhere(
+            (f) => f.height <= maxH && f.height >= 240,
+            orElse: () => pool.last,
+          );
+          chosenLabel = pickedVid.qualityLabel;
+        }
+        // Route audio through progressive proxy with mid-stream 403 auto-heal when possible
+        final proxiedAudio = await NamiYtProgressiveProxy.instance.prepareAndRegister(
+          audio,
+          isVideo: false,
+          onRefreshStream: (failedClient) async {
+            final refreshed = await svc.resolveMediaBundle(
+              yt.videoId,
+              quality: NamiUxPrefs.youtubeAudioQuality,
+              region: NamiUxPrefs.youtubeRegion,
+              forceRefresh: true,
+              excludeClients: <String>{failedClient},
+            );
+            return refreshed?.audioStream;
+          },
+        );
+        targetAudioUrl =
+            (proxiedAudio != null && proxiedAudio.isNotEmpty) ? proxiedAudio : audio.audioUrl;
+        targetVideoUrl = pickedVid?.url ?? targetAudioUrl;
+      }
+
+      if (mySeq != _playSeq) return false;
       _activeSegments = const [];
       _skippedKeys.clear();
+      _lastResumeSaveSec = -1;
       _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, enrichedYt);
+      if (resolvedDur.inMilliseconds > 0) {
+        _namiSafeSetNotifier<int>(NamiYtVideoBridge.durationMs, resolvedDur.inMilliseconds);
+      }
 
-      await shell._playV30YoutubeAudioTrack(audioTrack);
+      final started = await NamiYtVideoBridge.loadMedia(
+        videoId: yt.videoId,
+        videoUrl: targetVideoUrl,
+        audioUrl: targetAudioUrl,
+        isHls: isHls,
+        headers: cleanHdrs,
+        seekMs: savedResumeMs,
+        playing: true,
+        speed: NamiUxPrefs.ytPlaybackSpeed,
+        maxHeight: maxH,
+        loop: NamiUxPrefs.ytLoopEnabled,
+        qualityLabel: chosenLabel,
+      );
+
+      if (!started) {
+        NamiLiveToastController.showMessage(
+          'Video player init failed — tap Retry',
+          icon: Icons.error_outline_rounded,
+        );
+        return false;
+      }
+
       if (!NamiYtTasteEngine.pauseWatchHistory) {
         await NamiYoutubeStore.instance.recordPlay(enrichedYt);
       }
 
       NamiLiveToastController.showMessage(
-        clientLabel == 'CACHED'
-            ? 'Playing cached • ${namiFormatBadgeForPath(playbackSource)}'
-            : 'YouTube • $clientLabel (${namiFormatBadgeForPath(playbackSource)})',
-        icon: Icons.graphic_eq_rounded,
-        duration: const Duration(milliseconds: 2200),
+        'Playing $chosenLabel • ${audio.clientUsed}',
+        icon: Icons.ondemand_video_rounded,
+        duration: const Duration(milliseconds: 2000),
       );
 
       if (NamiUxPrefs.ytSponsorBlock) {

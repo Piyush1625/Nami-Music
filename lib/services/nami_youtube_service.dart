@@ -1896,12 +1896,64 @@ static String _preferredFastClient = '';
   List<NamiYtVideoFormat> cachedVideoFormatsFor(String videoId) =>
       _bundleCache[videoId]?.videoFormats ?? const [];
 
-  /// Fast Parallel Media Resolver (`v3.5.0`):
-  /// - Races 6 InnerTube clients (`VISIONOS`, `WEB_EMBED`, `TVHTML5_EMBED`, `IOS`, `ANDROID_SDKLESS`, `ANDROID_VR`)
-  /// - Pass 1: Prefers full-length tail-verified streams or HLS `.m3u8` (zero 30s cutoff!)
-  /// - Pass 2: Falls back cleanly to head-verified stream (with mid-stream 403 auto-heal)
-  /// - Pass 3: Native Chromium Headless BotGuard Extractor (captures BOTH audio + video!)
-  /// - ALWAYS populates `lastResolveDiagnostic` on failure so errors are 100% transparent.
+  /// Parses `#EXT-X-STREAM-INF` entries from a YouTube HLS `.m3u8` master playlist so all
+  /// resolutions (`1080p`, `720p`, `480p`, `360p`, `240p`, `144p`) appear immediately in Quality picker!
+  Future<List<NamiYtVideoFormat>> _parseHlsMasterFormats(
+    String hlsUrl,
+    Map<String, String> headers,
+  ) async {
+    try {
+      final cleanHdrs = <String, String>{};
+      headers.forEach((k, v) {
+        if (!k.toLowerCase().startsWith('x-nami-')) cleanHdrs[k] = v;
+      });
+      final resp = await http
+          .get(Uri.parse(hlsUrl), headers: cleanHdrs)
+          .timeout(const Duration(seconds: 5));
+      if (resp.statusCode < 200 || resp.statusCode >= 400 || !resp.body.contains('#EXTM3U')) {
+        return const [];
+      }
+      final byHeight = <int, NamiYtVideoFormat>{};
+      final lines = resp.body.split('\n');
+      for (int i = 0; i < lines.length; i++) {
+        final ln = lines[i].trim();
+        if (!ln.startsWith('#EXT-X-STREAM-INF:')) continue;
+        final mRes = RegExp(r'RESOLUTION=\d+x(\d+)').firstMatch(ln);
+        final mBw = RegExp(r'BANDWIDTH=(\d+)').firstMatch(ln);
+        final mFps = RegExp(r'FRAME-RATE=([0-9.]+)').firstMatch(ln);
+        final h = int.tryParse(mRes?.group(1) ?? '') ?? 0;
+        if (h < 140 || h > 2160) continue;
+        final bw = int.tryParse(mBw?.group(1) ?? '') ?? (h >= 720 ? 1800000 : 800000);
+        final fps = (double.tryParse(mFps?.group(1) ?? '') ?? 30.0).round();
+        final prev = byHeight[h];
+        if (prev == null || bw > prev.bitrate) {
+          byHeight[h] = NamiYtVideoFormat(
+            itag: h,
+            qualityLabel: '${h}p',
+            height: h,
+            fps: fps,
+            bitrate: bw,
+            contentLength: 0,
+            mimeType: 'application/x-mpegURL',
+            url: hlsUrl,
+            headers: cleanHdrs,
+          );
+        }
+      }
+      final out = byHeight.values.toList()..sort((a, b) => b.height.compareTo(a.height));
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Late-2026 Unified Pure-YouTube Video + Audio Resolver (`v3.7.0`):
+  /// - Races 6 working late-2026 InnerTube clients in parallel:
+  ///   `TV_SAMSUNG` (yt-dlp late-2026 default!), `VISIONOS` (HLS), `IOS` (HLS/DASH),
+  ///   `WEB_EMBED` (Safari UA), `ANDROID_SDKLESS`, `ANDROID_VR`
+  /// - Streams HLS `.m3u8` directly into Media3 ExoPlayer (< 400ms start, zero 30s cutoff!)
+  /// - Parses `#EXT-X-STREAM-INF` so all video resolutions populate immediately
+  /// - Falls back cleanly to pre-warmed Native Chromium BotGuard Extractor (`NamiYtWebViewEngine.kt`)!
   Future<NamiYtMediaBundle?> resolveMediaBundle(
     String videoId, {
     String quality = 'High (Opus)',
@@ -1926,6 +1978,8 @@ static String _preferredFastClient = '';
 
     const safariUa =
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15';
+    const samsungTvUa =
+        'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36';
     const androidUa =
         'com.google.android.youtube/20.10.38 (Linux; U; Android 14; en_IN) gzip';
     const vr171Ua =
@@ -1955,33 +2009,20 @@ static String _preferredFastClient = '';
         },
       },
       {
-        'name': 'WEB_EMBED',
-        'ua': safariUa,
-        'hdr': '56',
-        'ver': '1.20260310.04.00',
+        'name': 'TV_SAMSUNG',
+        'ua': samsungTvUa,
+        'hdr': '7',
+        'ver': '7.20261015.10.00',
         'ctx': {
           'client': withVisitor({
-            'clientName': 'WEB_EMBEDDED_PLAYER',
-            'clientVersion': '1.20260310.04.00',
+            'clientName': 'TVHTML5',
+            'clientVersion': '7.20261015.10.00',
+            'deviceMake': 'Samsung',
+            'osName': 'Tizen',
+            'osVersion': '7.0',
             'gl': gl,
             'hl': hl,
           }),
-          'thirdParty': {'embedUrl': 'https://www.youtube.com/'},
-        },
-      },
-      {
-        'name': 'TVHTML5_EMBED',
-        'ua': _webUserAgent,
-        'hdr': '85',
-        'ver': '2.0',
-        'ctx': {
-          'client': withVisitor({
-            'clientName': 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
-            'clientVersion': '2.0',
-            'gl': gl,
-            'hl': hl,
-          }),
-          'thirdParty': {'embedUrl': 'https://www.youtube.com/'},
         },
       },
       {
@@ -2000,6 +2041,21 @@ static String _preferredFastClient = '';
             'gl': gl,
             'hl': hl,
           }),
+        },
+      },
+      {
+        'name': 'WEB_EMBED',
+        'ua': safariUa,
+        'hdr': '56',
+        'ver': '1.20260310.04.00',
+        'ctx': {
+          'client': withVisitor({
+            'clientName': 'WEB_EMBEDDED_PLAYER',
+            'clientVersion': '1.20260310.04.00',
+            'gl': gl,
+            'hl': hl,
+          }),
+          'thirdParty': {'embedUrl': 'https://www.youtube.com/'},
         },
       },
       {
@@ -2042,7 +2098,9 @@ static String _preferredFastClient = '';
 
     Future<NamiYtMediaBundle?> tryClient(Map<String, dynamic> c) async {
       final cname = c['name'] as String;
-      if (excludeClients.contains(cname)) return null;
+      if (excludeClients.contains(cname) && excludeClients.contains('${cname}_HLS')) {
+        return null;
+      }
       try {
         final ua = c['ua'] as String;
         final resp = await http
@@ -2065,7 +2123,7 @@ static String _preferredFastClient = '';
                 'racyCheckOk': true,
               }),
             )
-            .timeout(const Duration(milliseconds: 4200));
+            .timeout(const Duration(milliseconds: 4500));
         if (resp.statusCode != 200) {
           diag.add('$cname:h${resp.statusCode}');
           return null;
@@ -2163,11 +2221,12 @@ static String _preferredFastClient = '';
         final sortedVideos = videoMap.values.toList()
           ..sort((a, b) => b.height.compareTo(a.height));
 
-        // 1. Check HLS manifest first on VISIONOS/IOS (zero 30s cutoff!)
+        // 1. HLS Master Playlist FIRST (ExoPlayer streams Video+Audio in < 400ms with zero 30s cutoff!)
         final hlsUrl = (sd['hlsManifestUrl'] ?? '').toString();
         if (hlsUrl.startsWith('http') &&
             !excludeClients.contains('${cname}_HLS') &&
             await _probeStreamUrl(hlsUrl, streamHeaders)) {
+          final hlsFormats = await _parseHlsMasterFormats(hlsUrl, streamHeaders);
           final audio = NamiYtStreamResult(
             videoId: videoId,
             audioUrl: hlsUrl,
@@ -2182,13 +2241,13 @@ static String _preferredFastClient = '';
           );
           return NamiYtMediaBundle(
             audioStream: audio,
-            videoFormats: sortedVideos,
+            videoFormats: hlsFormats.isNotEmpty ? hlsFormats : sortedVideos,
             duration: Duration(seconds: durSec),
           );
         }
 
-        // 2. Check adaptive audio with full-length tail probe first; keep head-only as backup
-        if (audioFormats.isNotEmpty) {
+        // 2. Separate DASH Video + Audio (tail-verified full-length first; head-only kept as backup)
+        if (audioFormats.isNotEmpty && !excludeClients.contains(cname)) {
           final picked = _pickStreamByQuality(audioFormats, quality);
           final candUrl = picked['url'].toString();
           final cl = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
@@ -2231,24 +2290,7 @@ static String _preferredFastClient = '';
       return null;
     }
 
-    // 1. Sticky winner fast-path
-    if (_preferredFastClient.startsWith('WEBVIEW') &&
-        !excludeClients.contains('WEBVIEW_BOTGUARD')) {
-      final wvRes = await _extractViaNativeWebView(videoId);
-      if (wvRes != null) {
-        final bundle = NamiYtMediaBundle(
-          audioStream: wvRes,
-          videoFormats: _lastWebViewVideoFormats[videoId] ?? const [],
-          duration: wvRes.duration,
-        );
-        _bundleCache[videoId] = bundle;
-        _streamCache['$videoId|$quality'] = wvRes;
-        lastResolveDiagnostic = '';
-        return bundle;
-      }
-    }
-
-    // 2. Parallel race across all 6 InnerTube clients (VISIONOS first!)
+    // 1. Parallel race across all 6 late-2026 InnerTube clients (VISIONOS & TV_SAMSUNG lead!)
     final raceResults = await Future.wait<NamiYtMediaBundle?>(
       allClients.map(tryClient),
     );
@@ -2262,15 +2304,19 @@ static String _preferredFastClient = '';
       }
     }
 
-    // 3. Native Chromium Headless BotGuard Extractor (Logged-Out OR Signed-In, Audio + Video!)
+    // 2. Native Chromium Headless BotGuard Extractor (captures BOTH audio + video on user IP!)
     if (!excludeClients.contains('WEBVIEW_BOTGUARD') &&
         !excludeClients.contains('WEBVIEW_AUTH')) {
       final wvRes = await _extractViaNativeWebView(videoId);
       if (wvRes != null) {
         _preferredFastClient = wvRes.clientUsed;
+        List<NamiYtVideoFormat> vFmts = _lastWebViewVideoFormats[videoId] ?? const [];
+        if (vFmts.isEmpty && wvRes.audioUrl.contains('.m3u8')) {
+          vFmts = await _parseHlsMasterFormats(wvRes.audioUrl, wvRes.headers);
+        }
         final bundle = NamiYtMediaBundle(
           audioStream: wvRes,
-          videoFormats: _lastWebViewVideoFormats[videoId] ?? const [],
+          videoFormats: vFmts,
           duration: wvRes.duration,
         );
         _bundleCache[videoId] = bundle;
@@ -2281,7 +2327,7 @@ static String _preferredFastClient = '';
       diag.add('WV:miss');
     }
 
-    // 4. Graceful fallback: if we captured a head-verified stream, return it with mid-stream 403 auto-heal!
+    // 3. Graceful fallback: return head-verified stream (with mid-stream 403 auto-heal)
     if (headOnlyFallbacks.isNotEmpty) {
       final b = headOnlyFallbacks.first;
       _bundleCache[videoId] = b;

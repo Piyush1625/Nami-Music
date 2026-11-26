@@ -11974,34 +11974,10 @@ Future<void> _exportUnifiedNamiBackup() async {
     AudioTrack track, {
     Map<String, String>? httpHeaders,
   }) async {
-    /* v36_0_isolated_yt_player */
     if (track.path.startsWith('yt://')) {
       await NamiYoutubePlaybackBridge.playByVideoId(
         track.path.substring(5),
         fallbackMeta: track,
-      );
-      return;
-    }
-    await NamiAudioArbitrator.claimYoutube();
-    final ytPlayer = NamiYoutubePlaybackBridge.ytPlayer;
-    try {
-      await ytPlayer.open(
-        track.path.startsWith('http')
-            ? Media(
-                track.path,
-                httpHeaders: httpHeaders ?? const <String, String>{},
-              )
-            : Media(track.path),
-        play: true,
-      );
-      if ((NamiUxPrefs.ytPlaybackSpeed - 1.0).abs() > 0.02) {
-        await ytPlayer.setRate(NamiUxPrefs.ytPlaybackSpeed);
-      }
-    } catch (e) {
-      debugPrint('[NamiYT] ytPlayer open failed: $e');
-      NamiLiveToastController.showMessage(
-        'Playback error — tap to retry',
-        icon: Icons.error_outline_rounded,
       );
     }
     if (mounted) setState(() {});

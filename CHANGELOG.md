@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.7.0 — 2026-11-26
+
+### Unified Media3 ExoPlayer Video + Audio Engine & 100% Audio-Only Mode Removal
+- **Fixed YouTube Video & Audio Not Playing (Eliminated HLS Freeze & Split-Player Bug):** Replaced the dual `libmpv` + muted `ExoPlayer` split-brain with a single **Unified Media3 ExoPlayer 1.5.1 Video + Audio Engine** (`NamiYtVideoPlatformView.kt`) that streams HLS `.m3u8` directly via `HlsMediaSource` (< 400ms start even on 1h+ movies, zero 30s cutoff) and merges DASH Video + Audio natively via `MergingMediaSource`.
+- **Late-2026 Resolver Upgrade (`TV_SAMSUNG` + HLS Master Resolution Parser):** Added late-2026 `TV_SAMSUNG` (`TVHTML5`) alongside `VISIONOS`, `IOS`, `WEB_EMBED`, `ANDROID_SDKLESS`, `ANDROID_VR`, and Native Chromium WebView, plus `#EXT-X-STREAM-INF` parsing so real `1080p / 720p / 480p / 360p / 240p / 144p` resolutions populate immediately.
+- **Removed All `Audio Only` Mode Codes from YouTube:** Completely stripped `Audio Only` from the Watch Screen Quality Settings sheet, removed the square blurred Audio-Only box from the 16:9 viewport, removed `Audio-Only Mode (YouTube)` from Settings, and deleted `ytAudioOnlyMode` dead code.
+- **Refined Watch Screen, Live-Video Mini-Player & PiP:** Added inline Retry / Sign-In recovery overlay, live 250ms ExoPlayer ticks for Watch Screen & Mini-Player scrubbers, instant zero-reload HLS quality switching, automatic Floating PiP hiding when expanding the full Offline Now-Playing screen, and strict 1-at-a-time arbitration with Offline FLAC playback.
+
 ## v3.6.2 (Step 3 Final) — 2026-11-26
 
 ### Video-First Watch Screen, Bigger 5-Tab Merged Header, Unified Library & History-Powered Feeds

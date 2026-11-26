@@ -1,28 +1,78 @@
 part of '../main.dart';
 
-/// Dart bridge to AndroidX Media3 ExoPlayer GPU TextureRegistry (`com.piyush.nami/yt_video`)
-/// synced 1:1 to Nami's dedicated YouTube libmpv audio player (`v3.6.0`).
+/// Unified Dart bridge to AndroidX Media3 ExoPlayer Video + Audio Engine (`v3.7.0`):
+/// - Single source of truth for YouTube video texture, audio playback, position, duration,
+///   quality switching, speed, loop, and SponsorBlock timing (ZERO Audio-Only split-brain!).
 class NamiYtVideoBridge {
   static const MethodChannel _ch = MethodChannel('com.piyush.nami/yt_video');
   static final ValueNotifier<List<NamiYtVideoFormat>> activeVideoFormats =
       ValueNotifier<List<NamiYtVideoFormat>>(const []);
+  static final ValueNotifier<List<int>> availableHeights =
+      ValueNotifier<List<int>>(const []);
   static final ValueNotifier<String> selectedQuality =
-      ValueNotifier<String>('Audio Only');
+      ValueNotifier<String>('480p');
   static final ValueNotifier<bool> isVideoActive = ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> isHlsStream = ValueNotifier<bool>(false);
   static final ValueNotifier<bool> isPipMode = ValueNotifier<bool>(false);
   static final ValueNotifier<int?> textureId = ValueNotifier<int?>(null);
   static final ValueNotifier<double> videoAspectRatio = ValueNotifier<double>(16 / 9);
   static final ValueNotifier<String> videoState =
       ValueNotifier<String>('idle'); // idle | buffering | ready | error | ended
   static final ValueNotifier<String> lastVideoError = ValueNotifier<String>('');
+
+  // Unified live playback state straight from Media3 ExoPlayer (250ms ticks!)
+  static final ValueNotifier<int> positionMs = ValueNotifier<int>(0);
+  static final ValueNotifier<int> durationMs = ValueNotifier<int>(0);
+  static final ValueNotifier<bool> isPlaying = ValueNotifier<bool>(false);
+
   static String activeVideoTrackId = '';
+  static VoidCallback? onPlaybackCompleted;
+  static void Function(int posMs)? onPositionTick;
   static bool _handlerBound = false;
+
+  static int targetMaxHeightFromPrefs() {
+    if (NamiUxPrefs.ytDataSaver == 'High') return 240;
+    final dm = NamiUxPrefs.ytDefaultMode;
+    if (dm.contains('360')) return 360;
+    if (dm.contains('1080')) return NamiUxPrefs.ytDataSaver == 'Medium' ? 480 : 1080;
+    if (dm.contains('720')) return NamiUxPrefs.ytDataSaver == 'Medium' ? 480 : 720;
+    return 480;
+  }
 
   static void ensureBound() {
     if (_handlerBound) return;
     _handlerBound = true;
     _ch.setMethodCallHandler((call) async {
-      if (call.method == 'onVideoState' && call.arguments is Map) {
+      if (call.method == 'onPlaybackTick' && call.arguments is Map) {
+        final args = call.arguments as Map;
+        final pos = (args['positionMs'] as num?)?.toInt() ?? 0;
+        final dur = (args['durationMs'] as num?)?.toInt() ?? 0;
+        final playing = args['playing'] == true;
+        final st = (args['state'] ?? 'idle').toString();
+        final w = (args['width'] as num?)?.toDouble() ?? 16.0;
+        final h = (args['height'] as num?)?.toDouble() ?? 9.0;
+
+        _namiSafeSetNotifier<int>(positionMs, pos);
+        if (dur > 0) _namiSafeSetNotifier<int>(durationMs, dur);
+        if (isPlaying.value != playing) {
+          _namiSafeSetNotifier<bool>(isPlaying, playing);
+          if (playing) {
+            unawaited(NamiAudioArbitrator.claimYoutube());
+          }
+        }
+        _namiSafeSetNotifier<String>(videoState, st);
+        if (w > 0 && h > 0) {
+          _namiSafeSetNotifier<double>(videoAspectRatio, (w / h).clamp(0.4, 3.0));
+        }
+        final qList = args['qualities'];
+        if (qList is List && qList.isNotEmpty) {
+          final parsed = qList.map((e) => (e as num).toInt()).where((e) => e > 0).toList();
+          if (parsed.isNotEmpty) {
+            _namiSafeSetNotifier<List<int>>(availableHeights, parsed);
+          }
+        }
+        onPositionTick?.call(pos);
+      } else if (call.method == 'onVideoState' && call.arguments is Map) {
         final args = call.arguments as Map;
         final st = (args['state'] ?? 'idle').toString();
         final det = (args['detail'] ?? '').toString();
@@ -35,27 +85,47 @@ class NamiYtVideoBridge {
         if (w > 0 && h > 0) {
           _namiSafeSetNotifier<double>(videoAspectRatio, (w / h).clamp(0.4, 3.0));
         }
+      } else if (call.method == 'onCompleted') {
+        _namiSafeSetNotifier<bool>(isPlaying, false);
+        onPlaybackCompleted?.call();
       }
     });
   }
 
-  static Future<void> loadVideo({
-    required String url,
+  static Future<bool> loadMedia({
+    required String videoId,
+    required String videoUrl,
+    String audioUrl = '',
+    bool isHls = false,
     Map<String, String> headers = const {},
     int seekMs = 0,
     bool playing = true,
     double speed = 1.0,
+    int maxHeight = 480,
+    bool loop = false,
+    String qualityLabel = '480p',
   }) async {
     ensureBound();
+    activeVideoTrackId = videoId;
+    _namiSafeSetNotifier<bool>(isVideoActive, true);
+    _namiSafeSetNotifier<bool>(isHlsStream, isHls);
+    _namiSafeSetNotifier<String>(selectedQuality, qualityLabel);
     _namiSafeSetNotifier<String>(videoState, 'buffering');
     _namiSafeSetNotifier<String>(lastVideoError, '');
+    if (seekMs <= 0) {
+      _namiSafeSetNotifier<int>(positionMs, 0);
+    }
     try {
-      final res = await _ch.invokeMethod<dynamic>('loadVideo', {
-        'url': url,
+      final res = await _ch.invokeMethod<dynamic>('loadMedia', {
+        'videoUrl': videoUrl,
+        'audioUrl': audioUrl,
+        'isHls': isHls,
         'headers': headers,
         'seekMs': seekMs,
         'playing': playing,
         'speed': speed,
+        'maxHeight': maxHeight,
+        'loop': loop,
       });
       if (res is Map) {
         final tid = (res['textureId'] as num?)?.toInt();
@@ -67,19 +137,43 @@ class NamiYtVideoBridge {
         if (w > 0 && h > 0) {
           _namiSafeSetNotifier<double>(videoAspectRatio, (w / h).clamp(0.4, 3.0));
         }
+        return tid != null && tid >= 0;
       }
+    } catch (e) {
+      debugPrint('[NamiYtVideoBridge] loadMedia error: $e');
+    }
+    return false;
+  }
+
+  static Future<void> play() async {
+    ensureBound();
+    await NamiAudioArbitrator.claimYoutube();
+    _namiSafeSetNotifier<bool>(isPlaying, true);
+    try {
+      await _ch.invokeMethod<void>('play');
     } catch (_) {}
   }
 
-  static Future<void> syncState({
-    required int positionMs,
-    required bool playing,
-  }) async {
+  static Future<void> pause() async {
+    _namiSafeSetNotifier<bool>(isPlaying, false);
     try {
-      await _ch.invokeMethod<void>('syncState', {
-        'positionMs': positionMs,
-        'playing': playing,
-      });
+      await _ch.invokeMethod<void>('pause');
+    } catch (_) {}
+  }
+
+  static Future<void> togglePlayPause() async {
+    if (isPlaying.value) {
+      await pause();
+    } else {
+      await play();
+    }
+  }
+
+  static Future<void> seekTo(Duration target) async {
+    final ms = target.inMilliseconds.clamp(0, 86400000);
+    _namiSafeSetNotifier<int>(positionMs, ms);
+    try {
+      await _ch.invokeMethod<void>('seekTo', {'positionMs': ms});
     } catch (_) {}
   }
 
@@ -89,10 +183,35 @@ class NamiYtVideoBridge {
     } catch (_) {}
   }
 
+  static Future<void> setLoop(bool loop) async {
+    try {
+      await _ch.invokeMethod<void>('setLoop', {'loop': loop});
+    } catch (_) {}
+  }
+
+  static Future<void> setMaxVideoHeight(int maxHeight, {String? label}) async {
+    _namiSafeSetNotifier<String>(
+      selectedQuality,
+      label ?? (maxHeight > 0 ? '${maxHeight}p' : 'Auto'),
+    );
+    try {
+      await _ch.invokeMethod<void>('setMaxVideoHeight', {'maxHeight': maxHeight});
+    } catch (_) {}
+  }
+
+  static Future<void> setVideoDecoderEnabled(bool enabled) async {
+    try {
+      await _ch.invokeMethod<void>('setVideoDecoderEnabled', {'enabled': enabled});
+    } catch (_) {}
+  }
+
   static Future<void> stopVideo() async {
     _namiSafeSetNotifier<bool>(isVideoActive, false);
+    _namiSafeSetNotifier<bool>(isPlaying, false);
     _namiSafeSetNotifier<bool>(isPipMode, false);
-    _namiSafeSetNotifier<String>(selectedQuality, 'Audio Only');
+    _namiSafeSetNotifier<int>(positionMs, 0);
+    _namiSafeSetNotifier<int>(durationMs, 0);
+    _namiSafeSetNotifier<List<int>>(availableHeights, const []);
     activeVideoTrackId = '';
     _namiSafeSetNotifier<String>(videoState, 'idle');
     try {
@@ -102,8 +221,6 @@ class NamiYtVideoBridge {
 }
 
 /// Pure Flutter 120Hz GPU Texture widget backed by `TextureRegistry.SurfaceTextureEntry`.
-/// Zero AndroidView glitches, true `ClipRRect` rounded corners, and 0ms handoff between
-/// Watch Screen, Docked YouTube Mini-Player, and Draggable Floating PiP!
 class NamiYtGpuVideoSurface extends StatelessWidget {
   final BoxFit fit;
   const NamiYtGpuVideoSurface({super.key, this.fit = BoxFit.cover});
@@ -221,15 +338,12 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   bool _loadingVideoStream = false;
   bool _isFullscreen = false;
   bool _showOverlay = true;
-  String _qualityLabel = 'Audio Only';
+  String _qualityLabel = '480p';
   Timer? _overlayHideTimer;
-  StreamSubscription<Duration>? _posSub;
-  StreamSubscription<bool>? _playSub;
   Duration _curPos = Duration.zero;
   Duration _curDur = Duration.zero;
   bool _isPlaying = false;
   double? _scrubDragMs;
-  int _lastVideoSyncMs = 0;
   String? _seekFeedbackText;
   bool _isHold2x = false;
   Timer? _seekFeedbackTimer;
@@ -254,81 +368,58 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isPipMode, false);
     _track = widget.initialTrack;
-    if (NamiYtVideoBridge.isVideoActive.value && NamiYtVideoBridge.activeVideoTrackId == _track.videoId) {
-      _isVideoActive = true;
-      _qualityLabel = NamiYtVideoBridge.selectedQuality.value;
-    }
     _liked = NamiYoutubeStore.instance.isFavorite(_track.videoId);
+    _disliked = NamiYtTasteEngine.isDisliked(_track.videoId);
+    _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isPipMode, false);
     NamiYtVideoBridge.ensureBound();
-    NamiYtVideoBridge.videoState.addListener(_onVideoBridgeStateChanged);
+    NamiYtVideoBridge.positionMs.addListener(_onExoTick);
+    NamiYtVideoBridge.durationMs.addListener(_onExoTick);
+    NamiYtVideoBridge.isPlaying.addListener(_onExoTick);
+    NamiYtVideoBridge.videoState.addListener(_onExoTick);
+    NamiYtVideoBridge.selectedQuality.addListener(_onExoTick);
     NamiYoutubePlaybackBridge.activeYtTrack.addListener(_onExternalTrackChanged);
-    _bindPlayerStreams();
+    _onExoTick();
     _loadWatchData(_track, autoStartPlay: true);
     _scheduleHideOverlay();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Pause hardware video decoder cleanly on background while libmpv keeps playing audio!
+    // Pause video decoder in background to save battery while Media3 ExoPlayer audio keeps playing!
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      if (_isVideoActive && NamiUxPrefs.ytBackgroundVideoPause) {
-        NamiYtVideoBridge.syncState(positionMs: _curPos.inMilliseconds, playing: false);
+      if (NamiUxPrefs.ytBackgroundVideoPause) {
+        NamiYtVideoBridge.setVideoDecoderEnabled(false);
       }
-    } else if (state == AppLifecycleState.resumed && _isVideoActive) {
-      NamiYtVideoBridge.syncState(positionMs: _curPos.inMilliseconds, playing: _isPlaying);
+    } else if (state == AppLifecycleState.resumed) {
+      NamiYtVideoBridge.setVideoDecoderEnabled(true);
     }
   }
 
-  void _bindPlayerStreams() {
-    final player = NamiYoutubePlaybackBridge.ytPlayer;
-    _curPos = player.state.position;
-    _curDur = player.state.duration;
-    _isPlaying = player.state.playing;
-
-    _posSub?.cancel();
-    _posSub = player.stream.position.listen((p) {
-      if (!mounted) return;
-      final d = player.state.duration;
-      setState(() {
-        _curPos = p;
-        if (d.inSeconds > 0) _curDur = d;
-      });
-      if (_isVideoActive) {
-        final now = DateTime.now().millisecondsSinceEpoch;
-        if (now - _lastVideoSyncMs > 700) {
-          _lastVideoSyncMs = now;
-          NamiYtVideoBridge.syncState(
-            positionMs: p.inMilliseconds,
-            playing: _isPlaying,
-          );
-          /* v36_2_save_resume_pos */
-          if (p.inSeconds > 4 && p.inSeconds % 3 == 0) {
-            unawaited(NamiYtTasteEngine.saveResumePosition(_track.videoId, p, _curDur));
-          }
-        }
-      }
+  void _onExoTick() {
+    if (!mounted) return;
+    final pMs = NamiYtVideoBridge.positionMs.value;
+    final dMs = NamiYtVideoBridge.durationMs.value;
+    final playing = NamiYtVideoBridge.isPlaying.value;
+    final qual = NamiYtVideoBridge.selectedQuality.value;
+    setState(() {
+      _curPos = Duration(milliseconds: pMs);
+      if (dMs > 0) _curDur = Duration(milliseconds: dMs);
+      _isPlaying = playing;
+      _qualityLabel = qual;
+      _isVideoActive = true;
+      _loadingVideoStream = false;
     });
+  }
 
-    _playSub?.cancel();
-    NamiYtVideoBridge.videoState.removeListener(_onVideoBridgeStateChanged);
-    NamiYoutubePlaybackBridge.activeYtTrack.removeListener(_onExternalTrackChanged);
-    _playSub = player.stream.playing.listen((playing) {
-      if (!mounted) return;
-      setState(() => _isPlaying = playing);
-      if (_isVideoActive) {
-        NamiYtVideoBridge.syncState(
-          positionMs: _curPos.inMilliseconds,
-          playing: playing,
-        );
-      }
-    });
+  void _onExternalTrackChanged() {
+    final ext = NamiYoutubePlaybackBridge.activeYtTrack.value;
+    if (!mounted || ext == null || ext.videoId == _track.videoId) return;
+    _loadWatchData(ext, autoStartPlay: false);
   }
 
   void _scheduleHideOverlay() {
     _overlayHideTimer?.cancel();
-    _seekFeedbackTimer?.cancel();
     _overlayHideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted && _isPlaying && _showOverlay) {
         setState(() => _showOverlay = false);
@@ -342,6 +433,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     bool forceRefresh = false,
   }) async {
     final vid = target.videoId;
+    final prevActiveId = NamiYtVideoBridge.activeVideoTrackId;
     setState(() {
       _track = target;
       _loadingDetails = true;
@@ -354,44 +446,26 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       _newestSortToken = null;
       _commentsCountText = '';
       _loadedReplies.clear();
+      if (target.duration.inSeconds > 0) _curDur = target.duration;
       if (_bodyMode == 1) _bodyMode = 0;
     });
 
-    /* v35_0_immediate_yt_mini */
-    final prevActiveId = NamiYoutubePlaybackBridge.activeYtTrack.value?.videoId;
-    _namiSafeSetNotifier<NamiYtTrack?>(NamiYoutubePlaybackBridge.activeYtTrack, target);
     if (autoStartPlay) {
-      final activeId = prevActiveId;
-      if (forceRefresh || activeId != vid) {
-        NamiYtVideoBridge.stopVideo();
-        setState(() {
-          _isVideoActive = false;
-          _qualityLabel = 'Audio Only';
-        });
-        /* v36_2_always_start_video_default */
-        final wantVideo = widget.startVideoMode && !NamiUxPrefs.ytAudioOnlyMode;
+      final needsLoad = forceRefresh ||
+          prevActiveId != vid ||
+          NamiYtVideoBridge.videoState.value == 'idle' ||
+          NamiYtVideoBridge.videoState.value == 'error';
+      if (needsLoad) {
         unawaited(
           NamiYoutubePlaybackBridge.playTrack(
             target,
             upcoming: widget.initialQueue,
-          ).then((ok) {
-            if (ok && mounted && _track.videoId == vid) {
-              final savedMs = NamiYtTasteEngine.resumePositionMs(vid);
-              if (savedMs > 4000 && !forceRefresh) {
-                NamiYoutubePlaybackBridge.ytPlayer.seek(Duration(milliseconds: savedMs));
-              }
-              if (wantVideo) {
-                _activateDefaultVideoQuality();
-              }
-            }
-          }),
+            forceRefresh: forceRefresh,
+          ),
         );
-      } else if ((widget.startVideoMode || !NamiUxPrefs.ytAudioOnlyMode) && !_isVideoActive) {
-        unawaited(_activateDefaultVideoQuality());
       }
     }
 
-    // Fetch rich watch metadata + comments preview + RYD dislikes concurrently
     final details = await NamiYoutubeService.instance.fetchWatchDetails(
       vid,
       region: NamiUxPrefs.youtubeRegion,
@@ -402,8 +476,6 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       _details = details;
       _loadingDetails = false;
     });
-
-    // Preload first batch of real YouTube comments in background so opening Comments is instant!
     unawaited(_loadComments(vid, reset: true));
   }
 
@@ -450,120 +522,11 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     });
   }
 
-  Future<void> _activateDefaultVideoQuality() async {
-    final formats = NamiYtVideoBridge.activeVideoFormats.value.isNotEmpty
-        ? NamiYtVideoBridge.activeVideoFormats.value
-        : NamiYoutubeService.instance.cachedVideoFormatsFor(_track.videoId);
-    if (formats.isEmpty) {
-      // Trigger a bundle resolve if video formats aren't populated yet
-      final bundle = await NamiYoutubeService.instance.resolveMediaBundle(
-        _track.videoId,
-        quality: NamiUxPrefs.youtubeAudioQuality,
-        region: NamiUxPrefs.youtubeRegion,
-      );
-      if (bundle != null && bundle.videoFormats.isNotEmpty) {
-        _namiSafeSetNotifier<List<NamiYtVideoFormat>>(
-          NamiYtVideoBridge.activeVideoFormats,
-          bundle.videoFormats,
-        );
-      }
-    }
-    final list = NamiYtVideoBridge.activeVideoFormats.value;
-    if (list.isEmpty) {
-      NamiLiveToastController.showMessage(
-        'Video stream unavailable for this track — playing Audio Only',
-        icon: Icons.music_note_rounded,
-      );
-      return;
-    }
-    // Respect Data Saver & Default Mode cap; prefer hardware H.264 MP4 for instant Frame 1!
-    final maxH = NamiUxPrefs.ytDataSaver == 'High'
-        ? 240
-        : (NamiUxPrefs.ytDefaultMode.contains('360')
-            ? 360
-            : (NamiUxPrefs.ytDefaultMode.contains('1080')
-                ? 1080
-                : (NamiUxPrefs.ytDefaultMode.contains('720') && NamiUxPrefs.ytDataSaver != 'Medium'
-                    ? 720
-                    : 480)));
-    final preferMp4 = NamiUxPrefs.ytPreferredCodec != 'Auto Best';
-    final mp4s = preferMp4 ? list.where((f) => f.mimeType.contains('mp4')).toList() : list;
-    final pool = mp4s.isNotEmpty ? mp4s : list;
-    final pick = pool.firstWhere(
-      (f) => f.height <= maxH && f.height >= 240,
-      orElse: () => pool.last,
-    );
-    await _selectVideoFormat(pick);
-  }
 
-  Future<void> _selectAudioOnly() async {
-    await NamiYtVideoBridge.stopVideo();
-    if (!mounted) return;
-    setState(() {
-      _isVideoActive = false;
-      _loadingVideoStream = false;
-      _qualityLabel = 'Audio Only';
-    });
-    _namiSafeSetNotifier<String>(NamiYtVideoBridge.selectedQuality, 'Audio Only');
-    NamiLiveToastController.showMessage(
-      'Switched to Audio Only (libmpv)',
-      icon: Icons.headphones_rounded,
-    );
-  }
 
-  Future<void> _selectVideoFormat(NamiYtVideoFormat fmt) async {
-    setState(() {
-      _loadingVideoStream = true;
-      _qualityLabel = fmt.qualityLabel;
-    });
-    _namiSafeSetNotifier<String>(NamiYtVideoBridge.selectedQuality, fmt.qualityLabel);
 
-    // Route video stream through our bounded-chunk progressive local server so MediaPlayer plays cleanly!
-    final proxyStream = NamiYtStreamResult(
-      videoId: '${_track.videoId}_v${fmt.itag}',
-      audioUrl: fmt.url,
-      mimeType: fmt.mimeType,
-      bitrate: fmt.bitrate,
-      duration: _curDur,
-      headers: {
-        ...fmt.headers,
-        if (fmt.contentLength > 0) 'X-Nami-Content-Length': '${fmt.contentLength}',
-      },
-      expiresAtMs: DateTime.now().add(const Duration(hours: 2)).millisecondsSinceEpoch,
-      clientUsed: 'VIDEO_${fmt.qualityLabel}',
-    );
 
-    final localUrl = await NamiYtProgressiveProxy.instance.prepareAndRegister(
-      proxyStream,
-      isVideo: true,
-    );
-    if (!mounted) return;
 
-    final targetUrl = (localUrl != null && localUrl.isNotEmpty) ? localUrl : fmt.url;
-    final useHdrs = (localUrl != null && localUrl.isNotEmpty)
-        ? const <String, String>{}
-        : fmt.headers;
-    NamiYtVideoBridge.activeVideoTrackId = _track.videoId;
-    _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isVideoActive, true);
-    setState(() {
-      _isVideoActive = true;
-      _loadingVideoStream = false;
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      NamiYtVideoBridge.loadVideo(
-        url: targetUrl,
-        headers: useHdrs,
-        seekMs: _curPos.inMilliseconds,
-        playing: _isPlaying,
-        speed: NamiUxPrefs.ytPlaybackSpeed,
-      );
-    });
-    NamiLiveToastController.showMessage(
-      'Video • ${fmt.qualityLabel}',
-      icon: Icons.ondemand_video_rounded,
-    );
-  }
 
   void _toggleFullscreen() {
     NamiUxPrefs.hapticLight();
@@ -584,10 +547,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
 
   void _openQualityMenu() {
     NamiUxPrefs.hapticLight();
-    final formats = NamiYtVideoBridge.activeVideoFormats.value.isNotEmpty
-        ? NamiYtVideoBridge.activeVideoFormats.value
-        : NamiYoutubeService.instance.cachedVideoFormatsFor(_track.videoId);
     final dur = _curDur.inSeconds > 0 ? _curDur : _track.duration;
+
     showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
@@ -597,309 +558,325 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       builder: (sheetCtx) {
         final accent = Theme.of(sheetCtx).colorScheme.primary;
         return StatefulBuilder(
-          builder: (ctx, setS) => Container(
-            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.78),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0B0B11),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 38,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(4),
+          builder: (ctx, setS) {
+            final formats = NamiYtVideoBridge.activeVideoFormats.value.isNotEmpty
+                ? NamiYtVideoBridge.activeVideoFormats.value
+                : NamiYoutubeService.instance.cachedVideoFormatsFor(_track.videoId);
+            final hlsHeights = NamiYtVideoBridge.availableHeights.value;
+            final curQual = NamiYtVideoBridge.selectedQuality.value;
+
+            // Build unified list of real selectable video qualities (never empty!)
+            final heightRows = <int>[];
+            for (final f in formats) {
+              if (!heightRows.contains(f.height)) heightRows.add(f.height);
+            }
+            for (final h in hlsHeights) {
+              if (!heightRows.contains(h)) heightRows.add(h);
+            }
+            if (heightRows.isEmpty) {
+              heightRows.addAll(const [1080, 720, 480, 360, 240, 144]);
+            }
+            heightRows.sort((a, b) => b.compareTo(a));
+
+            return Container(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.78),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0B0B11),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Text(
-                      'Video Quality & Player Settings',
-                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                    const SizedBox(height: 12),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        'Video Quality & Player Settings',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        // 1. Data Saver Mode Row (Off | Medium | High)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.speed_rounded, color: Colors.white70, size: 18),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Data Saver',
-                                    style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  for (final preset in const ['Off', 'Medium', 'High']) ...[
-                                    if (preset != 'Off') const SizedBox(width: 8),
-                                    Expanded(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          NamiUxPrefs.hapticLight();
-                                          NamiUxPrefs.ytDataSaver = preset;
-                                          NamiUxPrefs.save();
-                                          setS(() {});
-                                          if (mounted) setState(() {});
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(vertical: 8),
-                                          alignment: Alignment.center,
-                                          decoration: BoxDecoration(
-                                            color: NamiUxPrefs.ytDataSaver == preset
-                                                ? accent.withValues(alpha: 0.22)
-                                                : const Color(0xFF151520),
-                                            borderRadius: BorderRadius.circular(11),
-                                            border: Border.all(
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          // 1. Data Saver Mode Row (Off | Medium | High)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(Icons.speed_rounded, color: Colors.white70, size: 18),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Data Saver',
+                                      style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    for (final preset in const ['Off', 'Medium', 'High']) ...[
+                                      if (preset != 'Off') const SizedBox(width: 8),
+                                      Expanded(
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            NamiUxPrefs.hapticLight();
+                                            NamiUxPrefs.ytDataSaver = preset;
+                                            NamiUxPrefs.save();
+                                            final cap = NamiYtVideoBridge.targetMaxHeightFromPrefs();
+                                            NamiYoutubePlaybackBridge.switchVideoQuality(null, targetMaxHeight: cap);
+                                            setS(() {});
+                                            if (mounted) setState(() {});
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            alignment: Alignment.center,
+                                            decoration: BoxDecoration(
                                               color: NamiUxPrefs.ytDataSaver == preset
-                                                  ? accent
-                                                  : Colors.white12,
+                                                  ? accent.withValues(alpha: 0.22)
+                                                  : const Color(0xFF151520),
+                                              borderRadius: BorderRadius.circular(11),
+                                              border: Border.all(
+                                                color: NamiUxPrefs.ytDataSaver == preset
+                                                    ? accent
+                                                    : Colors.white12,
+                                              ),
                                             ),
-                                          ),
-                                          child: Text(
-                                            preset,
-                                            style: TextStyle(
-                                              color: NamiUxPrefs.ytDataSaver == preset
-                                                  ? accent
-                                                  : Colors.white70,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w800,
+                                            child: Text(
+                                              preset,
+                                              style: TextStyle(
+                                                color: NamiUxPrefs.ytDataSaver == preset
+                                                    ? accent
+                                                    : Colors.white70,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w800,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
+                                    ],
                                   ],
-                                ],
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const Divider(color: Colors.white10),
+                          const Divider(color: Colors.white10),
 
-                        // 2. Audio Only + All Video Qualities (`144p..2160p`)
-                        ListTile(
-                          dense: true,
-                          leading: Icon(
-                            Icons.headphones_rounded,
-                            color: !_isVideoActive ? accent : Colors.white60,
-                          ),
-                          title: Text(
-                            'Audio Only',
-                            style: TextStyle(
-                              color: !_isVideoActive ? accent : Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                          subtitle: const Text(
-                            'Audiophile libmpv stream • EQ, USB DAC & lowest data',
-                            style: TextStyle(color: Colors.white54, fontSize: 11.2),
-                          ),
-                          trailing: !_isVideoActive
-                              ? Icon(Icons.check_rounded, color: accent, size: 20)
-                              : null,
-                          onTap: () {
-                            Navigator.of(sheetCtx).pop();
-                            _selectAudioOnly();
-                          },
-                        ),
-                        if (formats.isEmpty)
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.refresh_rounded, color: Colors.white54),
-                            title: const Text(
-                              'Fetch Video Resolutions',
-                              style: TextStyle(color: Colors.white70, fontSize: 13.2, fontWeight: FontWeight.w700),
-                            ),
-                            subtitle: const Text(
-                              'Tap to refresh 144p–1080p video tracks',
-                              style: TextStyle(color: Colors.white54, fontSize: 11.2),
-                            ),
-                            onTap: () {
-                              Navigator.of(sheetCtx).pop();
-                              _activateDefaultVideoQuality();
-                            },
-                          ),
-                        for (final fmt in formats)
+                          // 2. Auto Adaptive Video + Real Video Resolutions (Video-First)
                           ListTile(
                             dense: true,
                             leading: Icon(
-                              Icons.ondemand_video_rounded,
-                              color: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
-                                  ? accent
-                                  : Colors.white54,
+                              Icons.auto_awesome_rounded,
+                              color: curQual == 'Auto' ? accent : Colors.white60,
                             ),
                             title: Text(
-                              '${fmt.qualityLabel} • ${fmt.sizeLabelFor(dur)}',
+                              'Auto (Adaptive Video)',
                               style: TextStyle(
-                                color: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
-                                    ? accent
-                                    : Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13.6,
+                                color: curQual == 'Auto' ? accent : Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13.8,
                               ),
                             ),
-                            subtitle: Text(
-                              '${fmt.bitrateLabel} • ${fmt.mimeType.contains('mp4') ? 'H.264 MP4' : 'VP9'}',
-                              style: const TextStyle(color: Colors.white54, fontSize: 11.2),
+                            subtitle: const Text(
+                              'Adjusts resolution automatically for smooth playback',
+                              style: TextStyle(color: Colors.white54, fontSize: 11.2),
                             ),
-                            trailing: (_isVideoActive && _qualityLabel == fmt.qualityLabel)
+                            trailing: curQual == 'Auto'
                                 ? Icon(Icons.check_rounded, color: accent, size: 20)
                                 : null,
                             onTap: () {
                               Navigator.of(sheetCtx).pop();
-                              _selectVideoFormat(fmt);
+                              NamiYoutubePlaybackBridge.switchVideoQuality(null, targetMaxHeight: 0);
                             },
                           ),
-                        const Divider(color: Colors.white10),
-
-                        // 3. Playback Speed (0.5x .. 2.0x — synced to BOTH libmpv & ExoPlayer!)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(6, 8, 6, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.shutter_speed_rounded, color: Colors.white70, size: 18),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Playback Speed (${NamiUxPrefs.ytPlaybackSpeed}x)',
-                                    style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
+                          for (final h in heightRows) ...[
+                            Builder(
+                              builder: (_) {
+                                final matchFmt = formats.cast<NamiYtVideoFormat?>().firstWhere(
+                                      (f) => f != null && f.height == h,
+                                      orElse: () => null,
+                                    );
+                                final label = '${h}p';
+                                final isSel = curQual == label || curQual.startsWith('${h}p');
+                                final sub = matchFmt != null
+                                    ? '${matchFmt.sizeLabelFor(dur)} • ${matchFmt.bitrateLabel}'
+                                    : (h >= 720 ? 'HD Video Stream' : 'Standard Video Stream');
+                                return ListTile(
+                                  dense: true,
+                                  leading: Icon(
+                                    Icons.ondemand_video_rounded,
+                                    color: isSel ? accent : Colors.white54,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  for (final spd in const [0.75, 1.0, 1.25, 1.5, 2.0]) ...[
-                                    if (spd != 0.75) const SizedBox(width: 6),
-                                    Expanded(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          NamiUxPrefs.hapticLight();
-                                          NamiUxPrefs.ytPlaybackSpeed = spd;
-                                          NamiYoutubePlaybackBridge.ytPlayer.setRate(spd);
-                                          NamiYtVideoBridge.setSpeed(spd);
-                                          setS(() {});
-                                          if (mounted) setState(() {});
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(vertical: 7),
-                                          alignment: Alignment.center,
-                                          decoration: BoxDecoration(
-                                            color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
-                                                ? accent.withValues(alpha: 0.22)
-                                                : const Color(0xFF151520),
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(
+                                  title: Text(
+                                    h >= 720 ? '$label HD' : label,
+                                    style: TextStyle(
+                                      color: isSel ? accent : Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.6,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    sub,
+                                    style: const TextStyle(color: Colors.white54, fontSize: 11.2),
+                                  ),
+                                  trailing: isSel
+                                      ? Icon(Icons.check_rounded, color: accent, size: 20)
+                                      : null,
+                                  onTap: () {
+                                    Navigator.of(sheetCtx).pop();
+                                    NamiYoutubePlaybackBridge.switchVideoQuality(
+                                      matchFmt,
+                                      targetMaxHeight: h,
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ],
+                          const Divider(color: Colors.white10),
+
+                          // 3. Playback Speed (0.75x .. 2.0x natively inside ExoPlayer!)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 8, 6, 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.shutter_speed_rounded, color: Colors.white70, size: 18),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Playback Speed (${NamiUxPrefs.ytPlaybackSpeed}x)',
+                                      style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    for (final spd in const [0.75, 1.0, 1.25, 1.5, 2.0]) ...[
+                                      if (spd != 0.75) const SizedBox(width: 6),
+                                      Expanded(
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            NamiUxPrefs.hapticLight();
+                                            NamiUxPrefs.ytPlaybackSpeed = spd;
+                                            NamiYtVideoBridge.setSpeed(spd);
+                                            setS(() {});
+                                            if (mounted) setState(() {});
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(vertical: 7),
+                                            alignment: Alignment.center,
+                                            decoration: BoxDecoration(
                                               color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
-                                                  ? accent
-                                                  : Colors.white12,
+                                                  ? accent.withValues(alpha: 0.22)
+                                                  : const Color(0xFF151520),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
+                                                    ? accent
+                                                    : Colors.white12,
+                                              ),
                                             ),
-                                          ),
-                                          child: Text(
-                                            '${spd}x',
-                                            style: TextStyle(
-                                              color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
-                                                  ? accent
-                                                  : Colors.white70,
-                                              fontSize: 11.4,
-                                              fontWeight: FontWeight.w800,
+                                            child: Text(
+                                              '${spd}x',
+                                              style: TextStyle(
+                                                color: (NamiUxPrefs.ytPlaybackSpeed - spd).abs() < 0.05
+                                                    ? accent
+                                                    : Colors.white70,
+                                                fontSize: 11.4,
+                                                fontWeight: FontWeight.w800,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
+                                    ],
                                   ],
-                                ],
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const Divider(color: Colors.white10),
+                          const Divider(color: Colors.white10),
 
-                        // 4. Live Half-Screen YouTube Settings Toggles
-                        SwitchListTile(
-                          dense: true,
-                          activeThumbColor: accent,
-                          secondary: const Icon(Icons.repeat_one_rounded, color: Colors.white70, size: 20),
-                          title: const Text('Loop Current Video / Track', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
-                          value: NamiUxPrefs.ytLoopEnabled,
-                          onChanged: (v) {
-                            NamiUxPrefs.ytLoopEnabled = v;
-                            NamiYoutubePlaybackBridge.ytPlayer.setPlaylistMode(
-                              v ? PlaylistMode.single : PlaylistMode.none,
-                            );
-                            setS(() {});
-                          },
-                        ),
-                        SwitchListTile(
-                          dense: true,
-                          activeThumbColor: accent,
-                          secondary: const Icon(Icons.block_rounded, color: Colors.white70, size: 20),
-                          title: const Text('SponsorBlock Auto-Skip', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
-                          value: NamiUxPrefs.ytSponsorBlock,
-                          onChanged: (v) {
-                            NamiUxPrefs.ytSponsorBlock = v;
-                            NamiUxPrefs.save();
-                            setS(() {});
-                          },
-                        ),
-                        SwitchListTile(
-                          dense: true,
-                          activeThumbColor: accent,
-                          secondary: const Icon(Icons.podcasts_rounded, color: Colors.white70, size: 20),
-                          title: const Text('Auto-Play Next / Radio', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
-                          value: NamiUxPrefs.ytAutoStartRadio,
-                          onChanged: (v) {
-                            NamiUxPrefs.ytAutoStartRadio = v;
-                            NamiUxPrefs.save();
-                            setS(() {});
-                          },
-                        ),
-                        SwitchListTile(
-                          dense: true,
-                          activeThumbColor: accent,
-                          secondary: const Icon(Icons.thumb_down_outlined, color: Colors.white70, size: 20),
-                          title: const Text('Return YouTube Dislike', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
-                          value: NamiUxPrefs.ytReturnDislike,
-                          onChanged: (v) {
-                            NamiUxPrefs.ytReturnDislike = v;
-                            NamiUxPrefs.save();
-                            setS(() {});
-                          },
-                        ),
-                      ],
+                          // 4. Live Half-Screen YouTube Settings Toggles
+                          SwitchListTile(
+                            dense: true,
+                            activeThumbColor: accent,
+                            secondary: const Icon(Icons.repeat_one_rounded, color: Colors.white70, size: 20),
+                            title: const Text('Loop Current Video', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                            value: NamiUxPrefs.ytLoopEnabled,
+                            onChanged: (v) {
+                              NamiUxPrefs.ytLoopEnabled = v;
+                              NamiYtVideoBridge.setLoop(v);
+                              setS(() {});
+                            },
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            activeThumbColor: accent,
+                            secondary: const Icon(Icons.block_rounded, color: Colors.white70, size: 20),
+                            title: const Text('SponsorBlock Auto-Skip', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                            value: NamiUxPrefs.ytSponsorBlock,
+                            onChanged: (v) {
+                              NamiUxPrefs.ytSponsorBlock = v;
+                              NamiUxPrefs.save();
+                              setS(() {});
+                            },
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            activeThumbColor: accent,
+                            secondary: const Icon(Icons.podcasts_rounded, color: Colors.white70, size: 20),
+                            title: const Text('Auto-Play Next / Radio', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                            value: NamiUxPrefs.ytAutoStartRadio,
+                            onChanged: (v) {
+                              NamiUxPrefs.ytAutoStartRadio = v;
+                              NamiUxPrefs.save();
+                              setS(() {});
+                            },
+                          ),
+                          SwitchListTile(
+                            dense: true,
+                            activeThumbColor: accent,
+                            secondary: const Icon(Icons.thumb_down_outlined, color: Colors.white70, size: 20),
+                            title: const Text('Return YouTube Dislike', style: TextStyle(color: Colors.white, fontSize: 13.4, fontWeight: FontWeight.w700)),
+                            value: NamiUxPrefs.ytReturnDislike,
+                            onChanged: (v) {
+                              NamiUxPrefs.ytReturnDislike = v;
+                              NamiUxPrefs.save();
+                              setS(() {});
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -1147,50 +1124,21 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   }
 
 
-  void _onExternalTrackChanged() {
-    final ext = NamiYoutubePlaybackBridge.activeYtTrack.value;
-    if (!mounted || ext == null || ext.videoId == _track.videoId) return;
-    _loadWatchData(ext, autoStartPlay: false);
-  }
 
-  void _onVideoBridgeStateChanged() {
-    if (!mounted || !_isVideoActive) return;
-    /* v36_2_ready_resync */
-    if (NamiYtVideoBridge.videoState.value == 'ready') {
-      final p = NamiYoutubePlaybackBridge.ytPlayer;
-      NamiYtVideoBridge.setSpeed(NamiUxPrefs.ytPlaybackSpeed);
-      NamiYtVideoBridge.syncState(
-        positionMs: p.state.position.inMilliseconds,
-        playing: p.state.playing,
-      );
-      return;
-    }
-    if (NamiYtVideoBridge.videoState.value == 'error') {
-      final list = NamiYtVideoBridge.activeVideoFormats.value;
-      final fallback = list.cast<NamiYtVideoFormat?>().firstWhere(
-            (f) => f != null && f.mimeType.contains('mp4') && f.height <= 480 && f.qualityLabel != _qualityLabel,
-            orElse: () => null,
-          );
-      if (fallback != null) {
-        _selectVideoFormat(fallback);
-      } else {
-        NamiLiveToastController.showMessage(
-          'Video decoder error (${NamiYtVideoBridge.lastVideoError.value}) — using Audio Only',
-          icon: Icons.headphones_rounded,
-        );
-        _selectAudioOnly();
-      }
-    }
-  }
+
+
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _overlayHideTimer?.cancel();
-    _posSub?.cancel();
-    _playSub?.cancel();
-    /* v34_0_preserve_video_on_minimize */
-    // Keep ExoPlayer running seamlessly so NamiYoutubeMiniPlayerBar takes over the live video surface!
+    _seekFeedbackTimer?.cancel();
+    NamiYtVideoBridge.positionMs.removeListener(_onExoTick);
+    NamiYtVideoBridge.durationMs.removeListener(_onExoTick);
+    NamiYtVideoBridge.isPlaying.removeListener(_onExoTick);
+    NamiYtVideoBridge.videoState.removeListener(_onExoTick);
+    NamiYtVideoBridge.selectedQuality.removeListener(_onExoTick);
+    NamiYoutubePlaybackBridge.activeYtTrack.removeListener(_onExternalTrackChanged);
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
@@ -1199,11 +1147,10 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   }
 
   Widget _buildViewport(Color accent) {
-    final Player player = NamiYoutubePlaybackBridge.ytPlayer;
     final totalMs = (_curDur.inMilliseconds > 0
             ? _curDur.inMilliseconds
             : _track.duration.inMilliseconds)
-        .clamp(1, 36000000);
+        .clamp(1, 86400000);
     final posMs = (_scrubDragMs ?? _curPos.inMilliseconds.toDouble())
         .clamp(0.0, totalMs.toDouble());
 
@@ -1218,12 +1165,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         final isForward = details.localPosition.dx >= w * 0.5;
         final delta = isForward ? const Duration(seconds: 10) : const Duration(seconds: -10);
         final nextMs = (_curPos.inMilliseconds + delta.inMilliseconds).clamp(0, totalMs);
-        final target = Duration(milliseconds: nextMs);
         NamiUxPrefs.hapticLight();
-        player.seek(target);
-        if (_isVideoActive) {
-          NamiYtVideoBridge.syncState(positionMs: nextMs, playing: _isPlaying);
-        }
+        NamiYtVideoBridge.seekTo(Duration(milliseconds: nextMs));
         _seekFeedbackTimer?.cancel();
         setState(() => _seekFeedbackText = isForward ? '+10s  >>' : '<<  -10s');
         _seekFeedbackTimer = Timer(const Duration(milliseconds: 700), () {
@@ -1233,15 +1176,12 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       onLongPressStart: (_) {
         if (!NamiUxPrefs.ytVideoGestures) return;
         NamiUxPrefs.hapticLight();
-        player.setRate(2.0);
         NamiYtVideoBridge.setSpeed(2.0);
         setState(() => _isHold2x = true);
       },
       onLongPressEnd: (_) {
         if (!_isHold2x) return;
-        final restore = NamiUxPrefs.ytPlaybackSpeed;
-        player.setRate(restore);
-        NamiYtVideoBridge.setSpeed(restore);
+        NamiYtVideoBridge.setSpeed(NamiUxPrefs.ytPlaybackSpeed);
         setState(() => _isHold2x = false);
       },
       onVerticalDragEnd: (d) {
@@ -1255,95 +1195,106 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 1. Background Thumbnail + Nami-style Audio-Only Artwork Glow
+            // 1. Clean 16:9 Thumbnail underneath while Frame 1 prepares (ZERO square Audio-Only box!)
             Image.network(
               _track.thumbnailUrl,
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
-                color: const Color(0xFF101018),
-                child: const Icon(Icons.music_note_rounded, color: Colors.white24, size: 54),
+                color: const Color(0xFF0E0E14),
+                child: const Icon(Icons.ondemand_video_rounded, color: Colors.white24, size: 54),
               ),
             ),
-            if (!_isVideoActive)
-              Container(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    colors: [
-                      accent.withValues(alpha: 0.22),
-                      Colors.black.withValues(alpha: 0.78),
-                    ],
-                    radius: 0.95,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Container(
-                  width: 132,
-                  height: 132,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: 0.35),
-                        blurRadius: 28,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Image.network(
-                      _track.thumbnailUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: const Color(0xFF14141E),
-                        child: const Icon(Icons.music_note_rounded, color: Colors.white38, size: 42),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+
+            // 2. Unified 120Hz Hardware Media3 ExoPlayer GPU Video Surface
+            const NamiYtGpuVideoSurface(fit: BoxFit.contain),
+
+            // 3. Double-Tap ±10s & Hold 2.0x Speed Feedback Pill
             if (_seekFeedbackText != null || _isHold2x)
               Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.76),
+                    color: Colors.black.withValues(alpha: 0.78),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: Colors.white24),
                   ),
                   child: Text(
                     _isHold2x ? '2.0x Speed  >>' : (_seekFeedbackText ?? ''),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
 
-            // 2. Native Hardware-Accelerated Android TextureView Video Layer
-            if (_isVideoActive)
-              const NamiYtGpuVideoSurface(fit: BoxFit.contain),
-
-            // 3. Live ExoPlayer buffering indicator (auto-hides on Frame 1 ready!)
-            ValueListenableBuilder<String>(
-              valueListenable: NamiYtVideoBridge.videoState,
-              builder: (_, vst, __) {
-                if (!_loadingVideoStream && !(_isVideoActive && vst == 'buffering')) {
+            // 4. Live Buffering / Error Recovery Overlay (never silently stuck at 00:00!)
+            ValueListenableBuilder<bool>(
+              valueListenable: NamiYoutubePlaybackBridge.isResolving,
+              builder: (_, resolving, __) => ValueListenableBuilder<String>(
+                valueListenable: NamiYtVideoBridge.videoState,
+                builder: (_, vst, __) {
+                  if (resolving || vst == 'buffering') {
+                    return const Center(
+                      child: SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white),
+                      ),
+                    );
+                  }
+                  if (vst == 'error') {
+                    return Center(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 24),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _loadWatchData(_track, autoStartPlay: true, forceRefresh: true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.24),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: accent),
+                                ),
+                                child: Text(
+                                  'Retry Video',
+                                  style: TextStyle(color: accent, fontSize: 12.2, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            GestureDetector(
+                              onTap: () => showNamiYoutubeAccountSheet(context),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF181822),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: const Text(
+                                  'Sign In',
+                                  style: TextStyle(color: Colors.white, fontSize: 12.2, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
                   return const SizedBox.shrink();
-                }
-                return const Center(
-                  child: SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: CircularProgressIndicator(strokeWidth: 2.6, color: Colors.white),
-                  ),
-                );
-              },
+                },
+              ),
             ),
 
-            // 4. Interactive YouTube Overlay Controls
+            // 5. Interactive Video Overlay Controls (Minimize, Quality Gear, Floating PiP, Fullscreen)
             IgnorePointer(
               ignoring: !_showOverlay,
               child: AnimatedOpacity(
@@ -1356,7 +1307,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.black.withValues(alpha: 0.72),
-                        Colors.black.withValues(alpha: 0.18),
+                        Colors.black.withValues(alpha: 0.14),
                         Colors.black.withValues(alpha: 0.80),
                       ],
                     ),
@@ -1364,7 +1315,6 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Top Bar: Minimize, Audio/Video Pill Toggle, Quality Gear, Fullscreen
                       Padding(
                         padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
                         child: Row(
@@ -1386,9 +1336,28 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               },
                             ),
                             const Spacer(),
-
+                            // Clean Quality Indicator Pill -> opens Video Quality & Settings directly
+                            GestureDetector(
+                              onTap: _openQualityMenu,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.56),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.white24, width: 0.8),
+                                ),
+                                child: Text(
+                                  _qualityLabel,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11.2,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
                             IconButton(
-                              tooltip: 'Quality Settings',
+                              tooltip: 'Quality & Settings',
                               icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
                               onPressed: _openQualityMenu,
                             ),
@@ -1417,7 +1386,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         ),
                       ),
 
-                      // Center Transport Controls
+                      // Center Transport Controls (Prev / Play-Pause / Next)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1429,8 +1398,6 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 final cur = NamiYoutubePlaybackBridge.activeYtTrack.value;
                                 if (ok && cur != null && mounted) {
                                   _loadWatchData(cur, autoStartPlay: false);
-                                  /* v36_2_skip_auto_video */
-                                  if (!NamiUxPrefs.ytAudioOnlyMode) _activateDefaultVideoQuality();
                                 }
                               });
                             },
@@ -1441,14 +1408,19 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                             builder: (_, resolving, __) => GestureDetector(
                               onTap: () {
                                 NamiUxPrefs.hapticLight();
-                                if (player.state.playing) { player.pause(); } else { NamiAudioArbitrator.claimYoutube(); player.play(); }
+                                if (NamiYtVideoBridge.videoState.value == 'idle' ||
+                                    NamiYtVideoBridge.videoState.value == 'error') {
+                                  _loadWatchData(_track, autoStartPlay: true, forceRefresh: true);
+                                } else {
+                                  NamiYtVideoBridge.togglePlayPause();
+                                }
                                 _scheduleHideOverlay();
                               },
                               child: Container(
                                 width: 54,
                                 height: 54,
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.55),
+                                  color: Colors.black.withValues(alpha: 0.56),
                                   shape: BoxShape.circle,
                                   border: Border.all(color: Colors.white30),
                                 ),
@@ -1479,8 +1451,6 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 final cur = NamiYoutubePlaybackBridge.activeYtTrack.value;
                                 if (ok && cur != null && mounted) {
                                   _loadWatchData(cur, autoStartPlay: false);
-                                  /* v36_2_skip_auto_video */
-                                  if (!NamiUxPrefs.ytAudioOnlyMode) _activateDefaultVideoQuality();
                                 }
                               });
                             },
@@ -1523,14 +1493,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 onChangeStart: (_) => _overlayHideTimer?.cancel(),
                                 onChanged: (v) => setState(() => _scrubDragMs = v),
                                 onChangeEnd: (v) {
-                                  final target = Duration(milliseconds: v.round());
-                                  player.seek(target);
-                                  if (_isVideoActive) {
-                                    NamiYtVideoBridge.syncState(
-                                      positionMs: target.inMilliseconds,
-                                      playing: _isPlaying,
-                                    );
-                                  }
+                                  NamiYtVideoBridge.seekTo(Duration(milliseconds: v.round()));
                                   setState(() => _scrubDragMs = null);
                                   _scheduleHideOverlay();
                                 },

@@ -25,7 +25,6 @@ class NamiUxPrefs {
   static bool youtubeLocalOnly = true;
   static bool ytSponsorBlock = true;
   static bool ytReturnDislike = true;
-  static bool ytAudioOnlyMode = false; // OFF by default (v3.5.0)
   static bool ytAutoStartRadio = true;
   static bool ytPersonalizedFeeds = true;
   static bool ytSearchCleanup = true;
@@ -100,7 +99,6 @@ class NamiUxPrefs {
       youtubeLocalOnly = prefs.getBool('nami_v29_yt_local') ?? true;
       ytSponsorBlock = prefs.getBool('nami_v30_yt_sb') ?? true;
       ytReturnDislike = prefs.getBool('nami_v30_yt_ryd') ?? true;
-      ytAudioOnlyMode = prefs.getBool('nami_v30_yt_audio_only') ?? true;
       ytAutoStartRadio = prefs.getBool('nami_v30_yt_radio') ?? true;
       ytPersonalizedFeeds = prefs.getBool('nami_v30_yt_pers') ?? true;
       ytSearchCleanup = prefs.getBool('nami_v30_yt_clean') ?? true;
@@ -153,7 +151,6 @@ class NamiUxPrefs {
       await prefs.setBool('nami_v29_yt_local', youtubeLocalOnly);
       await prefs.setBool('nami_v30_yt_sb', ytSponsorBlock);
       await prefs.setBool('nami_v30_yt_ryd', ytReturnDislike);
-      await prefs.setBool('nami_v30_yt_audio_only', ytAudioOnlyMode);
       await prefs.setBool('nami_v30_yt_radio', ytAutoStartRadio);
       await prefs.setBool('nami_v30_yt_pers', ytPersonalizedFeeds);
       await prefs.setBool('nami_v30_yt_clean', ytSearchCleanup);
