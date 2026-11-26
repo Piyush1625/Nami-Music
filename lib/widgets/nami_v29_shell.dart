@@ -722,7 +722,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                         ignoring: t < 0.94,
                                         child: Opacity(
                                           opacity: fullChildOpacity,
-                                          child: fullChild ?? const SizedBox.shrink(),
+                                          child: RepaintBoundary(child: fullChild ?? const SizedBox.shrink()),
                                         ),
                                       ),
                                     ),
@@ -1068,7 +1068,7 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
                   errorBuilder: (_, __, ___) => Container(
                     color: const Color(0xFF14141E),
                     child: const Icon(Icons.ondemand_video_rounded, color: Colors.white38, size: 32),
-                  ),
+                  ), gaplessPlayback: true,
                 ),
                 if (NamiUxPrefs.ytMiniPlayerVideo)
                   const NamiYtGpuVideoSurface(fit: BoxFit.cover),
@@ -1312,7 +1312,7 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
                                       errorBuilder: (_, __, ___) => Container(
                                         color: const Color(0xFF181822),
                                         child: const Icon(Icons.ondemand_video_rounded, color: Colors.white38, size: 22),
-                                      ),
+                                      ), gaplessPlayback: true,
                                     ),
                                     if (NamiUxPrefs.ytMiniPlayerVideo)
                                       const IgnorePointer(

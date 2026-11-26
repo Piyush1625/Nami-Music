@@ -7127,6 +7127,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
   }
 
   Widget _buildReactiveMiniPlayer() {
+    if (_selectedIndex >= 4) return const SizedBox.shrink();
     final accent = Theme.of(context).colorScheme.primary;
     return ValueListenableBuilder<AudioTrack?>(
       valueListenable: _currentSongNotifier,
@@ -8657,7 +8658,8 @@ void _showCreatePlaylistDialog() {
         ),
           if (_isSelectionMode)
             Positioned(left: 10, right: 10, bottom: 86, child: _buildBatchSelectionBar()),
-          Positioned(left: 10, right: 10, bottom: 8, child: _buildReactiveMiniPlayer()),
+          if (_selectedIndex < 4)
+            Positioned(left: 10, right: 10, bottom: 8, child: RepaintBoundary(child: _buildReactiveMiniPlayer())),
         ],
       ),
       bottomNavigationBar: NamiExpandableBottomNavWrap(

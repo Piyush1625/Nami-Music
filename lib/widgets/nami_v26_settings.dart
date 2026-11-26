@@ -122,6 +122,7 @@ class NamiUxPrefs {
       performanceMode = prefs.getString('nami_v30_perf_mode') ?? '120Hz High';
       imageCacheLimitMb = prefs.getInt('nami_v30_img_cache_mb') ?? 256;
       audioCacheLimitGb = prefs.getInt('nami_v30_aud_cache_gb') ?? 4;
+      ytDefaultMode = prefs.getString('nami_v38_yt_default_mode') ?? ytDefaultMode;
       NamiArtistMetadataService.indiaFirst = indiaFirstMetadata;
     } catch (_) {}
   }
@@ -138,6 +139,7 @@ class NamiUxPrefs {
       await prefs.setBool('nami_v26_swipe_dismiss', swipeDownDismiss);
       await prefs.setString('nami_v26_motion_speed', motionSpeed);
       await prefs.setBool('nami_v27_gapless', gaplessPlayback);
+      await prefs.setString('nami_v38_yt_default_mode', ytDefaultMode);
       await prefs.setString('nami_v27_replaygain', replayGainMode);
       await prefs.setBool('nami_v27_persist_session', persistSession);
       await prefs.setBool('nami_v29_blur', enableBlurEffect);

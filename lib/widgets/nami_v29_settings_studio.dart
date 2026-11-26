@@ -2340,7 +2340,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             subtitle: 'Default YouTube video resolution (480p recommended for fast 5G start)',
             options: const ['360p', '480p', '720p', '1080p'],
             selected: NamiUxPrefs.ytDefaultMode.replaceAll('Video ', ''),
-            onSelect: (opt) => NamiUxPrefs.ytDefaultMode = 'Video $opt',
+            onSelect: (opt) { NamiUxPrefs.hapticLight(); NamiUxPrefs.ytDefaultMode = 'Video $opt'; NamiUxPrefs.save(); },
           ),
           _pillChoiceRow(
             icon: Icons.speed_rounded,

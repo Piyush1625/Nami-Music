@@ -1,3 +1,4 @@
+import 'dart:async';
 part of '../main.dart';
 
 class NowPlayingModal extends StatefulWidget {
@@ -340,31 +341,14 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
                   Center(
                     child: _viewMode == 0
-                        ? GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onHorizontalDragEnd: (details) {
-                              final v = details.primaryVelocity ?? 0;
-                              if (v < -220) {
-                                HapticFeedback.lightImpact();
-                                widget.onNext();
-                              } else if (v > 220) {
-                                HapticFeedback.lightImpact();
-                                widget.onPrevious();
-                              }
-                            },
-                            onVerticalDragEnd: (details) {
-                              if ((details.primaryVelocity ?? 0) > 360) {
-                                NamiExpandablePlayerController.safeClose(context);
-                              }
-                            },
-                            child: StreamBuilder<bool>(
-                              stream: widget.audioPlayer.stream.playing,
-                              builder: (pCtx, pSnap) {
-                                final isP = pSnap.data ?? widget.audioPlayer.state.playing;
-                                return AnimatedScale(
-                                  scale: isP ? 1.0 : 0.94,
-                                  duration: const Duration(milliseconds: 240),
-                                  curve: Curves.easeOutCubic,
+                        ? _NamiSmoothSwipeArt(
+                            audioPlayer: widget.audioPlayer,
+                            onNext: widget.onNext,
+                            onPrevious: widget.onPrevious,
+                            onDismiss: () => NamiExpandablePlayerController.safeClose(context),
+                            child: Builder(
+                              builder: (pCtx) {
+                                return RepaintBoundary(
                                   child: Container(
                                     width: artSize,
                                     height: artSize,
@@ -880,6 +864,131 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
       ),
         );
       },
+    );
+  }
+}
+
+
+class _NamiSmoothSwipeArt extends StatefulWidget {
+  final dynamic audioPlayer;
+  final VoidCallback onNext;
+  final VoidCallback onPrevious;
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  const _NamiSmoothSwipeArt({
+    required this.audioPlayer,
+    required this.onNext,
+    required this.onPrevious,
+    required this.onDismiss,
+    required this.child,
+  });
+
+  @override
+  State<_NamiSmoothSwipeArt> createState() => _NamiSmoothSwipeArtState();
+}
+
+class _NamiSmoothSwipeArtState extends State<_NamiSmoothSwipeArt> {
+  double _dx = 0.0;
+  Duration _slideDuration = Duration.zero;
+  bool _optimisticHold = false;
+  Timer? _holdTimer;
+  Timer? _slideTimer;
+
+  void _startOptimisticHold() {
+    _holdTimer?.cancel();
+    setState(() => _optimisticHold = true);
+    _holdTimer = Timer(const Duration(milliseconds: 650), () {
+      if (mounted) setState(() => _optimisticHold = false);
+    });
+  }
+
+  void _triggerSwipe(int dir, VoidCallback action) {
+    HapticFeedback.selectionClick();
+    _startOptimisticHold();
+    _slideTimer?.cancel();
+    setState(() {
+      _slideDuration = const Duration(milliseconds: 110);
+      _dx = dir * 92.0;
+    });
+    action();
+    _slideTimer = Timer(const Duration(milliseconds: 115), () {
+      if (!mounted) return;
+      setState(() {
+        _slideDuration = Duration.zero;
+        _dx = -dir * 68.0;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _slideDuration = const Duration(milliseconds: 240);
+          _dx = 0.0;
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    _slideTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dragNorm = (_dx.abs() / 160.0).clamp(0.0, 1.0);
+    final dragScale = 1.0 - (dragNorm * 0.04);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (d) {
+        final resist = _dx.abs() > 80.0 ? 0.35 : 0.92;
+        setState(() {
+          _slideDuration = Duration.zero;
+          _dx = (_dx + d.delta.dx * resist).clamp(-155.0, 155.0);
+        });
+      },
+      onHorizontalDragEnd: (details) {
+        final vx = details.primaryVelocity ?? 0.0;
+        if (_dx < -52.0 || vx < -240.0) {
+          _triggerSwipe(-1, widget.onNext);
+        } else if (_dx > 52.0 || vx > 240.0) {
+          _triggerSwipe(1, widget.onPrevious);
+        } else {
+          setState(() {
+            _slideDuration = const Duration(milliseconds: 220);
+            _dx = 0.0;
+          });
+        }
+      },
+      onHorizontalDragCancel: () {
+        setState(() {
+          _slideDuration = const Duration(milliseconds: 220);
+          _dx = 0.0;
+        });
+      },
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) > 360) {
+          widget.onDismiss();
+        }
+      },
+      child: StreamBuilder<bool>(
+        stream: widget.audioPlayer.stream.playing,
+        builder: (ctx, snap) {
+          final isP = (snap.data ?? widget.audioPlayer.state.playing) || _optimisticHold;
+          return AnimatedContainer(
+            duration: _slideDuration,
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.translationValues(_dx, 0.0, 0.0),
+            child: AnimatedScale(
+              scale: (isP ? 1.0 : 0.95) * dragScale,
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+              child: widget.child,
+            ),
+          );
+        },
+      ),
     );
   }
 }

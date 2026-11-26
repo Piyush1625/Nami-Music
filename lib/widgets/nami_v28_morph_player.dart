@@ -804,9 +804,11 @@ class _NamiSpringMiniPlayerWrapState extends State<NamiSpringMiniPlayerWrap>
             child: ValueListenableBuilder<double>(
               valueListenable: NamiMorphPlayerController.progress,
               builder: (_, morphProgress, child) {
-                final hidden = morphProgress > 0.0015;
+                final double op = morphProgress <= 0.06
+                    ? 1.0
+                    : (1.0 - ((morphProgress - 0.06) / 0.08)).clamp(0.0, 1.0);
                 return Opacity(
-                  opacity: hidden ? 0.0 : 1.0,
+                  opacity: op,
                   child: child,
                 );
               },

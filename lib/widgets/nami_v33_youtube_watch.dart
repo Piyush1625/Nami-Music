@@ -110,6 +110,7 @@ class NamiYtVideoBridge {
     _namiSafeSetNotifier<bool>(isVideoActive, true);
     _namiSafeSetNotifier<bool>(isHlsStream, isHls);
     _namiSafeSetNotifier<String>(selectedQuality, qualityLabel);
+    if (qualityLabel.endsWith('p')) { NamiUxPrefs.ytDefaultMode = 'Video $qualityLabel'; NamiUxPrefs.save(); }
     _namiSafeSetNotifier<String>(videoState, 'buffering');
     _namiSafeSetNotifier<String>(lastVideoError, '');
     if (seekMs <= 0) {
