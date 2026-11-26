@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.8.0 — 2026-11-27
+
+### Native Kotlin NewPipeExtractor v0.27.1 + On-Device BotGuard PoToken & Dual Mini-Player Fix
+- **Native Kotlin `NewPipeExtractor v0.27.1` Engine (`NamiNewPipeEngine.kt`):** Replaced unreliable custom HTTP scraping as Tier 1 with TeamNewPipe's maintained extractor + Mozilla Rhino live `player.js` cipher & `n`-parameter solver, feeding clean deciphered DASH/HLS streams straight into Media3 ExoPlayer with zero proxy overhead.
+- **On-Device BotGuard `PoTokenProvider` (`NamiBotGuardPoTokenProvider`):** Integrated an offline-sandboxed WebView BotGuard solver (Google WAA Create/GenerateIT flow with cached Integrity Token) implementing `PoTokenProvider.getWebClientPoToken(videoId)` so YouTube stays playable on flagged mobile 5G networks in both Logged-Out and Signed-In modes.
+- **Fixed Dual Mini-Players on YouTube Tab (`Ss1`):** Unconditionally hid the offline FLAC mini-player (`_buildMiniPlayer` + `NamiExpandablePlayerHost`) whenever Tab `4` (**YouTube**) is open — even when YouTube is in Floating PiP, paused, or idle.
+- **Gradle & R8 Release Hardening:** Added JitPack repository, `desugar_jdk_libs_nio:2.1.5` core library desugaring, and Mozilla Rhino ProGuard keep-rules (both locally and in `scripts/configure_android_native.py` for GitHub Actions CI).
+
 ## v3.7.0 — 2026-11-26
 
 ### Unified Media3 ExoPlayer Video + Audio Engine & 100% Audio-Only Mode Removal

@@ -49,6 +49,13 @@ enum NamiActiveSource { none, local, youtube }
 class NamiAudioArbitrator {
   static final ValueNotifier<NamiActiveSource> activeSource =
       ValueNotifier<NamiActiveSource>(NamiActiveSource.none);
+  static final ValueNotifier<bool> isYoutubeTabActive = ValueNotifier<bool>(false);
+
+  static void setYoutubeTabActive(bool active) {
+    if (isYoutubeTabActive.value != active) {
+      _namiSafeSetNotifier<bool>(isYoutubeTabActive, active);
+    }
+  }
 
   static Player? _localPlayer;
   static StreamSubscription<bool>? _localSub;
@@ -560,24 +567,31 @@ static final ValueNotifier<NamiYtTrack?> activeYtTrack =
           );
           chosenLabel = pickedVid.qualityLabel;
         }
-        // Route audio through progressive proxy with mid-stream 403 auto-heal when possible
-        final proxiedAudio = await NamiYtProgressiveProxy.instance.prepareAndRegister(
-          audio,
-          isVideo: false,
-          onRefreshStream: (failedClient) async {
-            final refreshed = await svc.resolveMediaBundle(
-              yt.videoId,
-              quality: NamiUxPrefs.youtubeAudioQuality,
-              region: NamiUxPrefs.youtubeRegion,
-              forceRefresh: true,
-              excludeClients: <String>{failedClient},
-            );
-            return refreshed?.audioStream;
-          },
-        );
-        targetAudioUrl =
-            (proxiedAudio != null && proxiedAudio.isNotEmpty) ? proxiedAudio : audio.audioUrl;
-        targetVideoUrl = pickedVid?.url ?? targetAudioUrl;
+        /* v38_0_newpipe_direct_exo */
+        if (audio.clientUsed.startsWith('NEWPIPE')) {
+          // NewPipeExtractor URLs are already Rhino-deciphered & unthrottled — feed straight to ExoPlayer!
+          targetAudioUrl = audio.audioUrl;
+          targetVideoUrl = pickedVid?.url ?? targetAudioUrl;
+        } else {
+          // Route fallback audio through progressive proxy with mid-stream 403 auto-heal
+          final proxiedAudio = await NamiYtProgressiveProxy.instance.prepareAndRegister(
+            audio,
+            isVideo: false,
+            onRefreshStream: (failedClient) async {
+              final refreshed = await svc.resolveMediaBundle(
+                yt.videoId,
+                quality: NamiUxPrefs.youtubeAudioQuality,
+                region: NamiUxPrefs.youtubeRegion,
+                forceRefresh: true,
+                excludeClients: <String>{failedClient},
+              );
+              return refreshed?.audioStream;
+            },
+          );
+          targetAudioUrl =
+              (proxiedAudio != null && proxiedAudio.isNotEmpty) ? proxiedAudio : audio.audioUrl;
+          targetVideoUrl = pickedVid?.url ?? targetAudioUrl;
+        }
       }
 
       if (mySeq != _playSeq) return false;

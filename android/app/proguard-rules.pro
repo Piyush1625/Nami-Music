@@ -24,3 +24,9 @@
 # Optional Play Core deferred component classes referenced by Flutter engine
 -dontwarn com.google.android.play.core.**
 -dontwarn java.lang.invoke.StringConcatFactory
+
+# NewPipeExtractor v0.27.1 (Mozilla Rhino live player.js solver)
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter
+-dontwarn org.mozilla.javascript.tools.**
+-dontwarn org.schabi.newpipe.extractor.**

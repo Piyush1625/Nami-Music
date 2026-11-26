@@ -585,11 +585,13 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         valueListenable: NamiAudioArbitrator.activeSource,
         builder: (context, activeSrc, _) => ValueListenableBuilder<bool>(
           valueListenable: NamiYtVideoBridge.isPipMode,
-          builder: (context, isPip, _) {
-            final bool showDockedYt =
-                ytActive != null && !isPip && activeSrc == NamiActiveSource.youtube;
-            final bool showPipYt = ytActive != null && isPip && _ctrl.value < 0.15;
-            final bool showLocalPlayer = widget.hasSong && !showDockedYt;
+          builder: (context, isPip, _) => ValueListenableBuilder<bool>(
+            valueListenable: NamiAudioArbitrator.isYoutubeTabActive,
+            builder: (context, onYtTab, _) {
+              final bool showDockedYt =
+                  ytActive != null && !isPip && (onYtTab || activeSrc == NamiActiveSource.youtube);
+              final bool showPipYt = ytActive != null && isPip && _ctrl.value < 0.15;
+              final bool showLocalPlayer = widget.hasSong && !onYtTab && !showDockedYt;
 
     final mq = MediaQuery.of(context);
     final size = mq.size;
@@ -846,7 +848,8 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
       ],
     );
   
-          },
+            },
+          ),
         ),
       ),
     );

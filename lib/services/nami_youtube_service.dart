@@ -734,6 +734,7 @@ class NamiYoutubeService {
     try {
       final res = await _ytNativeChannel.invokeMethod<dynamic>('openSignIn');
       _applyNativeSessionMap(res);
+      unawaited(resetNewPipePoToken());
       return isSignedIn.value;
     } catch (_) {
       return isSignedIn.value;
@@ -751,6 +752,7 @@ class NamiYoutubeService {
       _applyNativeSessionMap(res);
     } catch (_) {}
     isSignedIn.value = false;
+    unawaited(resetNewPipePoToken());
   }
 
   static Future<void> loadCustomCookie() async {
@@ -1947,6 +1949,130 @@ static String _preferredFastClient = '';
     }
   }
 
+  static const MethodChannel _newPipeChannel = MethodChannel('com.piyush.nami/newpipe');
+
+  /// Resets the native BotGuard PoToken cache (e.g., after signing in/out of YouTube).
+  static Future<void> resetNewPipePoToken() async {
+    try {
+      await _newPipeChannel.invokeMethod<void>('resetPoToken');
+    } catch (_) {}
+  }
+
+  /// Tier-1 Native Kotlin NewPipeExtractor v0.27.1 + On-Device BotGuard PoToken Resolver (`v3.8.0`):
+  /// Uses TeamNewPipe's maintained Mozilla Rhino `player.js` cipher & n-param solver so streams
+  /// play smoothly without HTTP 403 throttling or 30s cutoffs on Indian 5G networks.
+  Future<NamiYtMediaBundle?> _extractViaNewPipe(
+    String videoId, {
+    String quality = 'High (Opus)',
+    String region = 'IN',
+    bool forceRefresh = false,
+  }) async {
+    try {
+      final res = await _newPipeChannel
+          .invokeMethod<dynamic>('extractStreams', {
+            'videoId': videoId,
+            'region': region,
+            'cookie': _effectiveCookie,
+            'forceRefresh': forceRefresh,
+          })
+          .timeout(const Duration(seconds: 18));
+
+      if (res is! Map) return null;
+      if (res['ok'] != true) {
+        final err = (res['error'] ?? '').toString();
+        if (err.isNotEmpty) lastResolveDiagnostic = 'NP:$err';
+        return null;
+      }
+
+      final durSec = (res['durationSec'] as num?)?.toInt() ?? 0;
+      final ua = (res['userAgent'] ?? _webUserAgent).toString();
+      final ck = (res['cookie'] ?? '').toString();
+      final clientUsed = (res['clientUsed'] ?? 'NEWPIPE_027').toString();
+      final hlsUrl = (res['hlsUrl'] ?? '').toString();
+      final hdrs = <String, String>{
+        'User-Agent': ua,
+        if (ck.isNotEmpty) 'Cookie': ck,
+      };
+
+      final vFormats = <NamiYtVideoFormat>[];
+      final rawVideos = res['videoStreams'];
+      if (rawVideos is List) {
+        for (final item in rawVideos) {
+          if (item is! Map) continue;
+          final u = (item['url'] ?? '').toString();
+          final h = (item['height'] as num?)?.toInt() ?? 0;
+          if (!u.startsWith('http') || h <= 0) continue;
+          vFormats.add(NamiYtVideoFormat(
+            itag: (item['itag'] as num?)?.toInt() ?? 0,
+            qualityLabel: (item['qualityLabel'] ?? '${h}p').toString(),
+            height: h,
+            fps: (item['fps'] as num?)?.toInt() ?? 30,
+            bitrate: (item['bitrate'] as num?)?.toInt() ?? 800000,
+            contentLength: 0,
+            mimeType: (item['mimeType'] ?? 'video/mp4').toString(),
+            url: u,
+            headers: hdrs,
+          ));
+        }
+      }
+
+      final rawAudios = res['audioStreams'];
+      String pickedAudioUrl = '';
+      String pickedAudioMime = 'audio/mp4';
+      int pickedAudioBr = 128000;
+      if (rawAudios is List && rawAudios.isNotEmpty) {
+        final sorted = rawAudios.whereType<Map>().toList();
+        if (sorted.isNotEmpty) {
+          Map chosen = sorted.first;
+          if (quality == 'Data Saver') {
+            chosen = sorted.last;
+          } else if (quality == 'Balanced' && sorted.length > 1) {
+            chosen = sorted[sorted.length ~/ 2];
+          }
+          pickedAudioUrl = (chosen['url'] ?? '').toString();
+          pickedAudioMime = (chosen['mimeType'] ?? 'audio/mp4').toString();
+          pickedAudioBr = (chosen['bitrate'] as num?)?.toInt() ?? 128000;
+        }
+      }
+
+      // Fallback cleanly to HLS master playlist or muxed stream when audio list is empty
+      if (pickedAudioUrl.isEmpty && hlsUrl.startsWith('http')) {
+        pickedAudioUrl = hlsUrl;
+        pickedAudioMime = 'application/x-mpegURL';
+        if (vFormats.isEmpty) {
+          final hlsFmts = await _parseHlsMasterFormats(hlsUrl, hdrs);
+          vFormats.addAll(hlsFmts);
+        }
+      } else if (pickedAudioUrl.isEmpty && vFormats.isNotEmpty) {
+        pickedAudioUrl = vFormats.first.url;
+        pickedAudioMime = vFormats.first.mimeType;
+      }
+      if (pickedAudioUrl.isEmpty) return null;
+
+      final audio = NamiYtStreamResult(
+        videoId: videoId,
+        audioUrl: pickedAudioUrl,
+        mimeType: pickedAudioMime,
+        bitrate: pickedAudioBr,
+        duration: Duration(seconds: durSec),
+        headers: hdrs,
+        expiresAtMs: DateTime.now()
+            .add(const Duration(hours: 3))
+            .millisecondsSinceEpoch,
+        clientUsed: clientUsed,
+      );
+      return NamiYtMediaBundle(
+        audioStream: audio,
+        videoFormats: vFormats,
+        duration: Duration(seconds: durSec),
+      );
+    } catch (e) {
+      lastResolveDiagnostic = 'NP:$e';
+      debugPrint('[NamiYT] NewPipeExtractor native call failed: $e');
+      return null;
+    }
+  }
+
   /// Late-2026 Unified Pure-YouTube Video + Audio Resolver (`v3.7.0`):
   /// - Races 6 working late-2026 InnerTube clients in parallel:
   ///   `TV_SAMSUNG` (yt-dlp late-2026 default!), `VISIONOS` (HLS), `IOS` (HLS/DASH),
@@ -1967,6 +2093,23 @@ static String _preferredFastClient = '';
         !cached.audioStream.isExpired &&
         !excludeClients.contains(cached.audioStream.clientUsed)) {
       return cached;
+    }
+
+    /* v38_0_newpipe_tier1 */
+    if (!excludeClients.contains('NEWPIPE_027') &&
+        !excludeClients.contains('NEWPIPE_BOTGUARD')) {
+      final npBundle = await _extractViaNewPipe(
+        videoId,
+        quality: quality,
+        region: region,
+        forceRefresh: forceRefresh,
+      );
+      if (npBundle != null) {
+        _bundleCache[videoId] = npBundle;
+        _streamCache['$videoId|$quality'] = npBundle.audioStream;
+        lastResolveDiagnostic = '';
+        return npBundle;
+      }
     }
 
     final (gl, hl) = _regionLocale(region);

@@ -8206,6 +8206,7 @@ void _showCreatePlaylistDialog() {
 
   @override
   Widget build(BuildContext context) {
+    NamiAudioArbitrator.setYoutubeTabActive(_selectedIndex == 4);
     final uniqueArtistsForHome = _buildArtistGroupsMap();
     final List<String> tabTitles = ['Nami', 'Tracks', 'Artists', 'Playlists', 'YouTube'];
 
