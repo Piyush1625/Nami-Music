@@ -903,9 +903,10 @@ class NamiShellTabFabWrap extends StatelessWidget {
   }
 }
 
-/// Dedicated compact YouTube Mini-Player Bar (`v3.3.1`):
-/// Replaces the local music Now-Playing mini-bar whenever a YouTube video/song is active
-/// (matching the dedicated YouTube bar above the bottom navigation — tapping opens Watch Screen!).
+/// Nami-Inspired Live-Video YouTube Mini-Player Bar (`v3.4.0`):
+/// - Renders LIVE Media3 ExoPlayer video inside its 16:9 viewport when Video mode is active!
+/// - Matches Nami's offline library mini-player aesthetic (pitch-black AMOLED pill, live progress bar,
+///   format badge, Prev / Play-Pause / Next / Close X, swipe-up to expand, swipe left/right to skip).
 class NamiYoutubeMiniPlayerBar extends StatelessWidget {
   final NamiYtTrack track;
   final double bottomInset;
@@ -926,7 +927,7 @@ class NamiYoutubeMiniPlayerBar extends StatelessWidget {
       left: 8,
       right: 8,
       bottom: bottomInset,
-      height: 64,
+      height: 68,
       child: Material(
         color: Colors.transparent,
         child: GestureDetector(
@@ -934,130 +935,237 @@ class NamiYoutubeMiniPlayerBar extends StatelessWidget {
             NamiUxPrefs.hapticLight();
             openNamiYoutubeWatchScreen(context, track);
           },
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0D0D13),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.11), width: 0.9),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.65),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                // 16:9 YouTube Video Thumbnail
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: 84,
-                    height: 48,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.network(
-                          track.thumbnailUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: const Color(0xFF181822),
-                            child: const Icon(Icons.ondemand_video_rounded, color: Colors.white38, size: 22),
-                          ),
-                        ),
-                        Positioned(
-                          right: 4,
-                          bottom: 3,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.78),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'YT',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+          onVerticalDragEnd: (d) {
+            if ((d.primaryVelocity ?? 0) < -240) {
+              NamiUxPrefs.hapticLight();
+              openNamiYoutubeWatchScreen(context, track);
+            }
+          },
+          onHorizontalDragEnd: (d) {
+            final vx = d.primaryVelocity ?? 0;
+            if (vx < -280) {
+              NamiUxPrefs.hapticLight();
+              NamiYoutubePlaybackBridge.playNextInRadioQueue();
+            } else if (vx > 280) {
+              NamiUxPrefs.hapticLight();
+              NamiYoutubePlaybackBridge.playPrevInRadioQueue();
+            }
+          },
+          child: ValueListenableBuilder<bool>(
+            valueListenable: NamiYtVideoBridge.isVideoActive,
+            builder: (_, videoOn, __) => ValueListenableBuilder<String>(
+              valueListenable: NamiYtVideoBridge.selectedQuality,
+              builder: (_, qual, __) {
+                final showLiveVideo = videoOn && NamiUxPrefs.ytMiniPlayerVideo;
+                final badgeText = videoOn
+                    ? 'YT ${qual.toUpperCase()}'
+                    : namiFormatBadgeForPath(shell?._currentSong?.path, fallback: 'YT AUDIO');
+
+                return Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B0B10),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: videoOn
+                          ? accent.withValues(alpha: 0.36)
+                          : Colors.white.withValues(alpha: 0.11),
+                      width: 0.95,
                     ),
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        track.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13.4,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        track.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11.4,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.72),
+                        blurRadius: 20,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),
-                ),
-                // Live Play / Pause Button
-                if (player != null)
-                  StreamBuilder<bool>(
-                    stream: player.stream.playing,
-                    initialData: player.state.playing,
-                    builder: (_, snap) {
-                      final playing = snap.data == true;
-                      return IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                        icon: Icon(
-                          playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                          color: Colors.white,
-                          size: 26,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 6, 4, 4),
+                          child: Row(
+                            children: [
+                              // Live 16:9 Video Viewport (or crisp thumbnail in Audio Only)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: SizedBox(
+                                  width: showLiveVideo ? 94 : 52,
+                                  height: 52,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Image.network(
+                                        track.thumbnailUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(
+                                          color: const Color(0xFF181822),
+                                          child: const Icon(
+                                            Icons.ondemand_video_rounded,
+                                            color: Colors.white38,
+                                            size: 22,
+                                          ),
+                                        ),
+                                      ),
+                                      if (showLiveVideo)
+                                        const IgnorePointer(
+                                          child: AndroidView(
+                                            viewType: 'com.piyush.nami/yt_video_view',
+                                            creationParamsCodec: StandardMessageCodec(),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              // Title + Artist + Nami-Style Format Pill
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      track.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13.2,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2.5),
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            track.artist,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 11.2,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: videoOn
+                                                ? accent.withValues(alpha: 0.18)
+                                                : Colors.white.withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                          child: Text(
+                                            badgeText,
+                                            style: TextStyle(
+                                              color: videoOn ? accent : Colors.white70,
+                                              fontSize: 8.8,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Nami Offline-Library Style Transport Controls (Prev / Play-Pause / Next / Close)
+                              if (!showLiveVideo)
+                                IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
+                                  icon: const Icon(Icons.skip_previous_rounded, color: Colors.white70, size: 21),
+                                  onPressed: () {
+                                    NamiUxPrefs.hapticLight();
+                                    NamiYoutubePlaybackBridge.playPrevInRadioQueue();
+                                  },
+                                ),
+                              if (player != null)
+                                StreamBuilder<bool>(
+                                  stream: player.stream.playing,
+                                  initialData: player.state.playing,
+                                  builder: (_, snap) {
+                                    final playing = snap.data == true;
+                                    return GestureDetector(
+                                      onTap: () {
+                                        NamiUxPrefs.hapticLight();
+                                        player.playOrPause();
+                                      },
+                                      child: Container(
+                                        width: 36,
+                                        height: 36,
+                                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                          color: Colors.white,
+                                          size: 22,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
+                                icon: const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 21),
+                                onPressed: () {
+                                  NamiUxPrefs.hapticLight();
+                                  NamiYoutubePlaybackBridge.playNextInRadioQueue();
+                                },
+                              ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 30, minHeight: 36),
+                                tooltip: 'Close YouTube Player',
+                                icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 18),
+                                onPressed: () {
+                                  NamiUxPrefs.hapticLight();
+                                  NamiYtVideoBridge.stopVideo();
+                                  player?.stop();
+                                  NamiYoutubePlaybackBridge.clearActiveYoutubeTrack();
+                                },
+                              ),
+                            ],
+                          ),
                         ),
-                        onPressed: () {
-                          NamiUxPrefs.hapticLight();
-                          player.playOrPause();
-                        },
-                      );
-                    },
-                  )
-                else
-                  Icon(Icons.play_arrow_rounded, color: accent, size: 24),
-                // Close YouTube Player Button
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  tooltip: 'Close YouTube Player',
-                  icon: const Icon(Icons.close_rounded, color: Colors.white60, size: 20),
-                  onPressed: () {
-                    NamiUxPrefs.hapticLight();
-                    NamiYtVideoBridge.stopVideo();
-                    player?.stop();
-                    NamiYoutubePlaybackBridge.clearActiveYoutubeTrack();
-                  },
-                ),
-              ],
+                      ),
+                      // Live Thin Bottom Progress Bar (matches Nami Offline Mini-Player!)
+                      if (player != null)
+                        StreamBuilder<Duration>(
+                          stream: player.stream.position,
+                          initialData: player.state.position,
+                          builder: (_, snap) {
+                            final posMs = (snap.data ?? Duration.zero).inMilliseconds;
+                            final durMs = (player.state.duration.inMilliseconds > 0
+                                    ? player.state.duration.inMilliseconds
+                                    : track.duration.inMilliseconds)
+                                .clamp(1, 36000000);
+                            final frac = (posMs / durMs).clamp(0.0, 1.0);
+                            return SizedBox(
+                              height: 2.4,
+                              width: double.infinity,
+                              child: LinearProgressIndicator(
+                                value: frac,
+                                backgroundColor: Colors.white10,
+                                valueColor: AlwaysStoppedAnimation<Color>(accent),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -1065,4 +1173,5 @@ class NamiYoutubeMiniPlayerBar extends StatelessWidget {
     );
   }
 }
+
 

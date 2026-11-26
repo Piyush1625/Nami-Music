@@ -931,7 +931,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
               _categoryRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About Nami',
-                subtitle: 'v3.3.1 Stable • Releases & Library Statistics',
+                subtitle: 'v3.4.0 Stable • Releases & Library Statistics',
                 index: 6,
               ),
             ],
@@ -1510,7 +1510,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                   const SizedBox(height: 3),
                   const Text(
-                    'v3.3.1 (v46)',
+                    'v3.4.0 (v47)',
                     style: TextStyle(color: Colors.white70, fontSize: 12.6, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 2),
@@ -1731,7 +1731,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Nami v3.3.1 Stable Engine',
+                          'Nami v3.4.0 Stable Engine',
                           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                         ),
                         SizedBox(height: 2),
@@ -2338,7 +2338,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             icon: Icons.ondemand_video_rounded,
             title: 'Default Watch Mode',
             subtitle: 'Choose Audio Only or auto-start Video when opening YouTube',
-            options: const ['Audio Only', 'Video 480p', 'Video 720p'],
+            options: const ['Audio Only', 'Video 480p', 'Video 720p', 'Video 1080p'],
             selected: NamiUxPrefs.ytDefaultMode,
             onSelect: (opt) => NamiUxPrefs.ytDefaultMode = opt,
           ),
@@ -2349,6 +2349,53 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
             options: const ['Off', 'Medium', 'High'],
             selected: NamiUxPrefs.ytDataSaver,
             onSelect: (opt) => NamiUxPrefs.ytDataSaver = opt,
+          ),
+          _pillChoiceRow(
+            icon: Icons.video_settings_rounded,
+            title: 'Preferred Video Codec',
+            subtitle: 'H.264 MP4 gives fastest hardware decode on every Android device',
+            options: const ['H.264 MP4', 'Auto Best'],
+            selected: NamiUxPrefs.ytPreferredCodec,
+            onSelect: (opt) => NamiUxPrefs.ytPreferredCodec = opt,
+          ),
+          _switchRow(
+            icon: Icons.picture_in_picture_alt_rounded,
+            title: 'Live Video in Mini-Player',
+            subtitle: 'Plays live hardware video inside the floating YouTube mini-player bar',
+            value: NamiUxPrefs.ytMiniPlayerVideo,
+            onChanged: (v) => NamiUxPrefs.ytMiniPlayerVideo = v,
+          ),
+          _switchRow(
+            icon: Icons.touch_app_outlined,
+            title: 'Video Player Gestures',
+            subtitle: 'Double-tap ±10s seek, hold for 2x speed & swipe-down minimize',
+            value: NamiUxPrefs.ytVideoGestures,
+            onChanged: (v) => NamiUxPrefs.ytVideoGestures = v,
+          ),
+          _switchRow(
+            icon: Icons.battery_saver_rounded,
+            title: 'Pause Video Decoder in Background',
+            subtitle: 'Saves battery when app is minimized while audio keeps playing',
+            value: NamiUxPrefs.ytBackgroundVideoPause,
+            onChanged: (v) => NamiUxPrefs.ytBackgroundVideoPause = v,
+          ),
+          _switchRow(
+            icon: Icons.screen_rotation_rounded,
+            title: 'Auto-Rotate on Fullscreen',
+            subtitle: 'Switches to landscape orientation when tapping fullscreen',
+            value: NamiUxPrefs.ytAutoRotateFullscreen,
+            onChanged: (v) => NamiUxPrefs.ytAutoRotateFullscreen = v,
+          ),
+          _pillChoiceRow(
+            icon: Icons.sd_storage_outlined,
+            title: 'Max YouTube Audio Cache',
+            subtitle: 'Controls automatic LRU cache budget for 0ms offline replay',
+            options: const ['256 MB', '512 MB', '1024 MB'],
+            selected: '${NamiUxPrefs.ytMaxCacheMb} MB',
+            onSelect: (opt) {
+              NamiUxPrefs.ytMaxCacheMb =
+                  int.tryParse(opt.replaceAll(RegExp(r'[^0-9]'), '')) ?? 512;
+            },
           ),
           _pillChoiceRow(
             icon: Icons.high_quality_outlined,

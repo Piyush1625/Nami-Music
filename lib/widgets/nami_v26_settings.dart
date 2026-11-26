@@ -33,6 +33,12 @@ class NamiUxPrefs {
   static String ytDataSaver = 'Off'; // 'Off' | 'Medium' | 'High'
   static double ytPlaybackSpeed = 1.0;
   static bool ytLoopEnabled = false;
+  static bool ytMiniPlayerVideo = true;
+  static bool ytVideoGestures = true;
+  static bool ytBackgroundVideoPause = true;
+  static bool ytAutoRotateFullscreen = true;
+  static String ytPreferredCodec = 'H.264 MP4'; // 'H.264 MP4' | 'Auto Best'
+  static int ytMaxCacheMb = 512;
   static bool ytDownloadMetadataTags = true;
   static int ytDimMiniAfterSec = 15;
   static int ytDimIntensityPct = 50;

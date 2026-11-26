@@ -8,6 +8,8 @@ class NamiYtVideoBridge {
       ValueNotifier<List<NamiYtVideoFormat>>(const []);
   static final ValueNotifier<String> selectedQuality =
       ValueNotifier<String>('Audio Only');
+  static final ValueNotifier<bool> isVideoActive = ValueNotifier<bool>(false);
+  static String activeVideoTrackId = '';
   static final ValueNotifier<String> videoState =
       ValueNotifier<String>('idle'); // idle | buffering | ready | error | ended
   static final ValueNotifier<String> lastVideoError =
@@ -68,6 +70,9 @@ class NamiYtVideoBridge {
   }
 
   static Future<void> stopVideo() async {
+    _namiSafeSetNotifier<bool>(isVideoActive, false);
+    _namiSafeSetNotifier<String>(selectedQuality, 'Audio Only');
+    activeVideoTrackId = '';
     _namiSafeSetNotifier<String>(videoState, 'idle');
     try {
       await _ch.invokeMethod<void>('stopVideo');
@@ -83,12 +88,21 @@ Future<void> openNamiYoutubeWatchScreen(
   bool startVideoMode = false,
 }) {
   return Navigator.of(context, rootNavigator: true).push(
-    MaterialPageRoute<void>(
-      builder: (_) => NamiYoutubeWatchScreen(
+    PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 260),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, __, ___) => NamiYoutubeWatchScreen(
         initialTrack: track,
         initialQueue: queue,
         startVideoMode: startVideoMode,
       ),
+      transitionsBuilder: (_, anim, __, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.14), end: Offset.zero).animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
+        );
+      },
     ),
   );
 }
@@ -156,6 +170,9 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   bool _isPlaying = false;
   double? _scrubDragMs;
   int _lastVideoSyncMs = 0;
+  String? _seekFeedbackText;
+  bool _isHold2x = false;
+  Timer? _seekFeedbackTimer;
 
   // Local engagement toggles
   bool _liked = false;
@@ -178,6 +195,10 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _track = widget.initialTrack;
+    if (NamiYtVideoBridge.isVideoActive.value && NamiYtVideoBridge.activeVideoTrackId == _track.videoId) {
+      _isVideoActive = true;
+      _qualityLabel = NamiYtVideoBridge.selectedQuality.value;
+    }
     _liked = NamiYoutubeStore.instance.isFavorite(_track.videoId);
     NamiYtVideoBridge.ensureBound();
     NamiYtVideoBridge.videoState.addListener(_onVideoBridgeStateChanged);
@@ -191,7 +212,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Pause hardware video decoder cleanly on background while libmpv keeps playing audio!
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      if (_isVideoActive) {
+      if (_isVideoActive && NamiUxPrefs.ytBackgroundVideoPause) {
         NamiYtVideoBridge.syncState(positionMs: _curPos.inMilliseconds, playing: false);
       }
     } else if (state == AppLifecycleState.resumed && _isVideoActive) {
@@ -244,6 +265,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
 
   void _scheduleHideOverlay() {
     _overlayHideTimer?.cancel();
+    _seekFeedbackTimer?.cancel();
     _overlayHideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted && _isPlaying && _showOverlay) {
         setState(() => _showOverlay = false);
@@ -385,8 +407,9 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         ? 240
         : (NamiUxPrefs.ytDataSaver == 'Medium' || NamiUxPrefs.ytDefaultMode == 'Video 480p'
             ? 480
-            : 720);
-    final mp4s = list.where((f) => f.mimeType.contains('mp4')).toList();
+            : (NamiUxPrefs.ytDefaultMode == 'Video 1080p' ? 1080 : 720));
+    final preferMp4 = NamiUxPrefs.ytPreferredCodec != 'Auto Best';
+    final mp4s = preferMp4 ? list.where((f) => f.mimeType.contains('mp4')).toList() : list;
     final pool = mp4s.isNotEmpty ? mp4s : list;
     final pick = pool.firstWhere(
       (f) => f.height <= maxH && f.height >= 240,
@@ -442,6 +465,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     final useHdrs = (localUrl != null && localUrl.isNotEmpty)
         ? const <String, String>{}
         : fmt.headers;
+    NamiYtVideoBridge.activeVideoTrackId = _track.videoId;
+    _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isVideoActive, true);
     setState(() {
       _isVideoActive = true;
       _loadingVideoStream = false;
@@ -467,10 +492,12 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     setState(() => _isFullscreen = !_isFullscreen);
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      if (NamiUxPrefs.ytAutoRotateFullscreen) {
+        SystemChrome.setPreferredOrientations(const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
@@ -1076,7 +1103,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
     _overlayHideTimer?.cancel();
     _posSub?.cancel();
     _playSub?.cancel();
-    NamiYtVideoBridge.stopVideo();
+    /* v34_0_preserve_video_on_minimize */
+    // Keep ExoPlayer running seamlessly so NamiYoutubeMiniPlayerBar takes over the live video surface!
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
@@ -1099,12 +1127,50 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         setState(() => _showOverlay = !_showOverlay);
         if (_showOverlay) _scheduleHideOverlay();
       },
+      onDoubleTapDown: (details) {
+        if (!NamiUxPrefs.ytVideoGestures || player == null) return;
+        final w = MediaQuery.sizeOf(context).width;
+        final isForward = details.localPosition.dx >= w * 0.5;
+        final delta = isForward ? const Duration(seconds: 10) : const Duration(seconds: -10);
+        final nextMs = (_curPos.inMilliseconds + delta.inMilliseconds).clamp(0, totalMs);
+        final target = Duration(milliseconds: nextMs);
+        NamiUxPrefs.hapticLight();
+        player.seek(target);
+        if (_isVideoActive) {
+          NamiYtVideoBridge.syncState(positionMs: nextMs, playing: _isPlaying);
+        }
+        _seekFeedbackTimer?.cancel();
+        setState(() => _seekFeedbackText = isForward ? '+10s  >>' : '<<  -10s');
+        _seekFeedbackTimer = Timer(const Duration(milliseconds: 700), () {
+          if (mounted) setState(() => _seekFeedbackText = null);
+        });
+      },
+      onLongPressStart: (_) {
+        if (!NamiUxPrefs.ytVideoGestures || player == null) return;
+        NamiUxPrefs.hapticLight();
+        player.setRate(2.0);
+        NamiYtVideoBridge.setSpeed(2.0);
+        setState(() => _isHold2x = true);
+      },
+      onLongPressEnd: (_) {
+        if (!_isHold2x) return;
+        final restore = NamiUxPrefs.ytPlaybackSpeed;
+        player?.setRate(restore);
+        NamiYtVideoBridge.setSpeed(restore);
+        setState(() => _isHold2x = false);
+      },
+      onVerticalDragEnd: (d) {
+        if (!_isFullscreen && (d.primaryVelocity ?? 0) > 360) {
+          NamiUxPrefs.hapticLight();
+          Navigator.of(context).maybePop();
+        }
+      },
       child: Container(
         color: Colors.black,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 1. Background Thumbnail (always visible underneath for 0ms transitions)
+            // 1. Background Thumbnail + Nami-style Audio-Only Artwork Glow
             Image.network(
               _track.thumbnailUrl,
               fit: BoxFit.cover,
@@ -1113,6 +1179,63 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                 child: const Icon(Icons.music_note_rounded, color: Colors.white24, size: 54),
               ),
             ),
+            if (!_isVideoActive)
+              Container(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    colors: [
+                      accent.withValues(alpha: 0.22),
+                      Colors.black.withValues(alpha: 0.78),
+                    ],
+                    radius: 0.95,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Container(
+                  width: 132,
+                  height: 132,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.35),
+                        blurRadius: 28,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Image.network(
+                      _track.thumbnailUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: const Color(0xFF14141E),
+                        child: const Icon(Icons.music_note_rounded, color: Colors.white38, size: 42),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (_seekFeedbackText != null || _isHold2x)
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.76),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Text(
+                    _isHold2x ? '2.0x Speed  >>' : (_seekFeedbackText ?? ''),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
 
             // 2. Native Hardware-Accelerated Android TextureView Video Layer
             if (_isVideoActive)

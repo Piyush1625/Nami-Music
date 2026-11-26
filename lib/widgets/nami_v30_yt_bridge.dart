@@ -59,6 +59,8 @@ class NamiYoutubePlaybackBridge {
   static List<NamiYtSponsorSegment> _activeSegments = const [];
   static final Set<String> _skippedKeys = <String>{};
   static StreamSubscription<Duration>? _sbSub;
+  static StreamSubscription<bool>? _playSyncSub;
+  static int _lastGlobalVideoSyncMs = 0;
   static StreamSubscription<String>? _errSub;
   static StreamSubscription<bool>? _doneSub;
   static int _playSeq = 0;
@@ -162,7 +164,27 @@ class NamiYoutubePlaybackBridge {
       debugPrint('[NamiMPV Error] $err');
     });
     _sbSub?.cancel();
+    _playSyncSub?.cancel();
+    _playSyncSub = player.stream.playing.listen((playing) {
+      if (NamiYtVideoBridge.isVideoActive.value && activeYtTrack.value != null) {
+        NamiYtVideoBridge.syncState(
+          positionMs: player.state.position.inMilliseconds,
+          playing: playing,
+        );
+      }
+    });
     _sbSub = player.stream.position.listen((pos) {
+      /* v34_0_global_video_sync */
+      if (NamiYtVideoBridge.isVideoActive.value && activeYtTrack.value != null) {
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        if (nowMs - _lastGlobalVideoSyncMs > 750) {
+          _lastGlobalVideoSyncMs = nowMs;
+          NamiYtVideoBridge.syncState(
+            positionMs: pos.inMilliseconds,
+            playing: player.state.playing,
+          );
+        }
+      }
       final dur = player.state.duration;
       // 1. Background 15-second pre-fetch for gapless mixed local/YouTube queue transitions
       if (dur.inSeconds > 20 && (dur - pos).inSeconds <= 15) {
@@ -203,6 +225,8 @@ class NamiYoutubePlaybackBridge {
   static void dispose() {
     _sbSub?.cancel();
     _sbSub = null;
+    _playSyncSub?.cancel();
+    _playSyncSub = null;
     _errSub?.cancel();
     _errSub = null;
     _doneSub?.cancel();
@@ -255,6 +279,7 @@ class NamiYoutubePlaybackBridge {
   }
 
   static void clearActiveYoutubeTrack() {
+    NamiYtVideoBridge.stopVideo();
     _activeSegments = const [];
     _skippedKeys.clear();
     _namiSafeSetNotifier<NamiYtTrack?>(activeYtTrack, null);
@@ -314,8 +339,20 @@ class NamiYoutubePlaybackBridge {
           if (mySeq != _playSeq) return false;
 
           // Fast-path 2: Instant-Start Progressive Chunk-Cached Server (starts in ~150ms!)
-          final progressiveUrl =
-              await NamiYtProgressiveProxy.instance.prepareAndRegister(stream);
+          final progressiveUrl = await NamiYtProgressiveProxy.instance.prepareAndRegister(
+            stream,
+            onRefreshStream: (failedClient) async {
+              final nextEx = <String>{...exclude, failedClient};
+              final refreshed = await svc.resolveMediaBundle(
+                yt.videoId,
+                quality: NamiUxPrefs.youtubeAudioQuality,
+                region: NamiUxPrefs.youtubeRegion,
+                forceRefresh: true,
+                excludeClients: nextEx,
+              );
+              return refreshed?.audioStream;
+            },
+          );
           if (mySeq != _playSeq) return false;
           if (progressiveUrl != null && progressiveUrl.isNotEmpty) {
             playbackSource = progressiveUrl;
@@ -328,6 +365,7 @@ class NamiYoutubePlaybackBridge {
           final file = await NamiYtAudioCache.instance.ensureCachedAudioFile(
             stream,
             isCancelled: () => mySeq != _playSeq,
+            maxCacheMb: NamiUxPrefs.ytMaxCacheMb,
           );
           if (mySeq != _playSeq) return false;
           if (file != null && file.existsSync()) {

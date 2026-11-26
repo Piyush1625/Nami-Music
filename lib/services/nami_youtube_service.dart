@@ -948,8 +948,13 @@ class NamiYoutubeService {
     return Uri.parse(rawUrl);
   }
 
-  /// Probes either an HLS `.m3u8` playlist OR the first 32KB audio chunk with magic-byte verification.
-  Future<bool> _probeStreamUrl(String url, Map<String, String> headers) async {
+  /// Probes BOTH Byte 0 (`0..32767`, verifying real audio/video magic bytes) AND a mid/tail
+  /// chunk (`>= 1.5 MB` or `65%` of contentLength, past Google's 30s/60s tokenless 403 cutoff!).
+  Future<bool> _probeStreamUrl(
+    String url,
+    Map<String, String> headers, {
+    int contentLength = 0,
+  }) async {
     if (!url.startsWith('http')) return false;
     final cleanHeaders = <String, String>{};
     headers.forEach((k, v) {
@@ -966,17 +971,54 @@ class NamiYoutubeService {
       }
     }
     try {
-      final probeUri = buildBoundedChunkUri(url, 0, 32767);
-      if (!probeUri.toString().contains('range=')) {
-        cleanHeaders['Range'] = 'bytes=0-32767';
+      // 1. Head probe: verify HTTP 200/206 + valid audio/video container magic bytes
+      final headUri = buildBoundedChunkUri(url, 0, 32767);
+      final headHdrs = Map<String, String>.from(cleanHeaders);
+      if (!headUri.toString().contains('range=')) {
+        headHdrs['Range'] = 'bytes=0-32767';
       }
       final resp = await http
-          .get(probeUri, headers: cleanHeaders)
+          .get(headUri, headers: headHdrs)
           .timeout(const Duration(seconds: 6));
       if (resp.statusCode != 200 && resp.statusCode != 206) return false;
       final ct = (resp.headers['content-type'] ?? '').toLowerCase();
       if (ct.contains('text/html')) return false;
-      return isValidAudioHeader(resp.bodyBytes);
+      if (!isValidAudioHeader(resp.bodyBytes)) return false;
+
+      // Discover exact contentLength from Content-Range or ?clen= if not provided
+      int clen = contentLength;
+      if (clen <= 0) {
+        final cr = resp.headers['content-range'] ?? '';
+        final slash = cr.lastIndexOf('/');
+        if (slash != -1) {
+          clen = int.tryParse(cr.substring(slash + 1).trim()) ?? 0;
+        }
+      }
+      if (clen <= 0) {
+        final mClen = RegExp(r'[?&]clen=(\d+)').firstMatch(url);
+        clen = int.tryParse(mClen?.group(1) ?? '') ?? 0;
+      }
+
+      // 2. Tail probe (anti-30s/60s cutoff guard!):
+      //    If file is > 900 KB, verify bytes at ~68% into the track (past Google's 512KB/60s 403 wall!)
+      if (clen > 900000) {
+        final tailStart = ((clen * 68) ~/ 100).clamp(655360, clen - 16384);
+        final tailEnd = (tailStart + 16383).clamp(tailStart, clen - 1);
+        final tailUri = buildBoundedChunkUri(url, tailStart, tailEnd);
+        final tailHdrs = Map<String, String>.from(cleanHeaders);
+        if (!tailUri.toString().contains('range=')) {
+          tailHdrs['Range'] = 'bytes=$tailStart-$tailEnd';
+        }
+        final tailResp = await http
+            .get(tailUri, headers: tailHdrs)
+            .timeout(const Duration(seconds: 5));
+        if (tailResp.statusCode != 200 && tailResp.statusCode != 206) {
+          debugPrint('[NamiYT] Rejected 30s/60s truncated stream (tail HTTP ${tailResp.statusCode})');
+          return false;
+        }
+        if (tailResp.bodyBytes.length < 1024) return false;
+      }
+      return true;
     } catch (_) {
       return false;
     }
@@ -1178,9 +1220,9 @@ class NamiYoutubeService {
           if (formats.isNotEmpty) {
             final picked = _pickStreamByQuality(formats, quality);
             final candUrl = picked['url'].toString();
-            if (await _probeStreamUrl(candUrl, streamHeaders)) {
-              final contentLen =
-                  int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
+            final contentLen =
+                int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
+            if (await _probeStreamUrl(candUrl, streamHeaders, contentLength: contentLen)) {
               final res = NamiYtStreamResult(
                 videoId: videoId,
                 audioUrl: candUrl,
@@ -2054,8 +2096,8 @@ static String _preferredFastClient = '';
         if (audioFormats.isNotEmpty) {
           final picked = _pickStreamByQuality(audioFormats, quality);
           final candUrl = picked['url'].toString();
-          if (await _probeStreamUrl(candUrl, streamHeaders)) {
-            final cl = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
+          final cl = int.tryParse((picked['contentLength'] ?? '').toString()) ?? 0;
+          if (await _probeStreamUrl(candUrl, streamHeaders, contentLength: cl)) {
             final audio = NamiYtStreamResult(
               videoId: videoId,
               audioUrl: candUrl,
@@ -2122,8 +2164,14 @@ static String _preferredFastClient = '';
     }
 
     // 2. Parallel race across all 4 fast InnerTube clients (takes max ~3.6s total instead of 20s!)
+    /* v34_0_visionos_priority */
+    // Run VISIONOS first in priority order (full-length direct + HLS streams without 60s cutoff!)
+    final prioritized = [
+      ...allClients.where((e) => e['name'] == 'VISIONOS'),
+      ...allClients.where((e) => e['name'] != 'VISIONOS'),
+    ];
     final raceResults = await Future.wait<NamiYtMediaBundle?>(
-      allClients.map(tryClient),
+      prioritized.map(tryClient),
     );
     for (final b in raceResults) {
       if (b != null) {
@@ -3414,17 +3462,19 @@ class NamiYtAudioCache {
 }
 
 class _NamiProgressiveSession {
-  final NamiYtStreamResult stream;
-  final Map<String, String> cleanHeaders;
-  final int totalLength;
+  NamiYtStreamResult stream;
+  Map<String, String> cleanHeaders;
+  int totalLength;
   final String ext;
   final String mimeType;
   final bool isVideo;
+  final Future<NamiYtStreamResult?> Function(String failedClient)? onRefreshStream;
   final Map<int, Uint8List> chunks = {};
   final List<int> chunkLruOrder = [];
   final Map<int, Future<Uint8List?>> pendingChunks = {};
   bool bgStarted = false;
   bool disposed = false;
+  int healAttempts = 0;
 
   _NamiProgressiveSession({
     required this.stream,
@@ -3433,6 +3483,7 @@ class _NamiProgressiveSession {
     required this.ext,
     required this.mimeType,
     this.isVideo = false,
+    this.onRefreshStream,
   });
 
   int get chunkCount =>
@@ -3442,27 +3493,25 @@ class _NamiProgressiveSession {
     chunks[idx] = data;
     chunkLruOrder.remove(idx);
     chunkLruOrder.add(idx);
-    // Keep video RAM bounded to 16 chunks (8 MB) while always keeping Chunk 0 (moov/init header!)
     if (isVideo) {
-      while (chunks.length > 16 && chunkLruOrder.isNotEmpty) {
+      while (chunks.length > 18 && chunkLruOrder.isNotEmpty) {
         final oldest = chunkLruOrder.removeAt(0);
-        if (oldest != 0) {
-          chunks.remove(oldest);
-        }
+        if (oldest != 0) chunks.remove(oldest);
       }
     }
   }
 }
 
-/// Instant-Start Progressive Chunk-Cached Streaming Server (`v3.3.1`):
-/// - Separate Audio & Video session pools (switching video quality NEVER evicts active audio!)
-/// - Audio sessions pre-fill in 4-way parallel & save to `nami_yt_cache` for 0ms offline replay
-/// - Video sessions use an 8 MB sliding RAM window with proper `.mp4`/`.webm` extensions for ExoPlayer!
+/// Self-Healing Instant-Start Progressive Chunk-Cached Streaming Server (`v3.4.0`):
+/// - Separate Audio & Video pools (switching video quality NEVER evicts active audio!)
+/// - Mid-stream HTTP 403 Auto-Heal (`onRefreshStream`) eliminates 30s/60s playback cutoffs!
+/// - Shared keep-alive `http.Client` for faster chunk throughput & lower mobile latency.
 class NamiYtProgressiveProxy {
   NamiYtProgressiveProxy._();
   static final NamiYtProgressiveProxy instance = NamiYtProgressiveProxy._();
 
   static const int chunkSize = 512 * 1024;
+  final http.Client _httpClient = http.Client();
   HttpServer? _server;
   int _port = 0;
   final Map<String, _NamiProgressiveSession> _audioSessions = {};
@@ -3480,6 +3529,7 @@ class NamiYtProgressiveProxy {
   Future<String?> prepareAndRegister(
     NamiYtStreamResult stream, {
     bool isVideo = false,
+    Future<NamiYtStreamResult?> Function(String failedClient)? onRefreshStream,
   }) async {
     if (stream.audioUrl.contains('.m3u8') ||
         stream.audioUrl.contains('manifest/hls') ||
@@ -3543,6 +3593,7 @@ class NamiYtProgressiveProxy {
       ext: ext,
       mimeType: stream.mimeType.split(';').first.trim(),
       isVideo: isVid,
+      onRefreshStream: onRefreshStream,
     );
     sess.storeChunk(0, chunk0);
     pool[key] = sess;
@@ -3550,7 +3601,6 @@ class NamiYtProgressiveProxy {
     if (!isVid) {
       unawaited(_backgroundFillAndPersistAudio(sess));
     } else {
-      // Pre-warm chunks 1 & 2 (1.5 MB ahead) so ExoPlayer starts Frame 1 with zero stall!
       unawaited(_prewarmVideoHead(sess));
     }
 
@@ -3577,14 +3627,37 @@ class NamiYtProgressiveProxy {
     if (start >= sess.totalLength) return Uint8List(0);
     final end = (start + chunkSize - 1).clamp(start, sess.totalLength - 1);
 
-    final fut = _fetchBoundedChunk(sess.stream.audioUrl, sess.cleanHeaders, start, end);
-    sess.pendingChunks[index] = fut;
-    try {
-      final data = await fut;
+    final fut = () async {
+      Uint8List? data = await _fetchBoundedChunk(sess.stream.audioUrl, sess.cleanHeaders, start, end);
+      // Mid-stream 403 Auto-Heal: if Chunk >= 1 fails (e.g. tokenless cutoff / URL expiry),
+      // transparently refresh stream from another full-length client & retry this exact byte range!
+      if ((data == null || data.isEmpty) &&
+          !sess.disposed &&
+          sess.onRefreshStream != null &&
+          sess.healAttempts < 2) {
+        sess.healAttempts++;
+        try {
+          final fresh = await sess.onRefreshStream!(sess.stream.clientUsed);
+          if (fresh != null && fresh.audioUrl.isNotEmpty && !sess.disposed) {
+            final freshHdrs = <String, String>{};
+            fresh.headers.forEach((k, v) {
+              if (!k.toLowerCase().startsWith('x-nami-')) freshHdrs[k] = v;
+            });
+            sess.stream = fresh;
+            sess.cleanHeaders = freshHdrs;
+            data = await _fetchBoundedChunk(fresh.audioUrl, freshHdrs, start, end);
+          }
+        } catch (_) {}
+      }
       if (data != null && data.isNotEmpty && !sess.disposed) {
         sess.storeChunk(index, data);
       }
       return data;
+    }();
+
+    sess.pendingChunks[index] = fut;
+    try {
+      return await fut;
     } finally {
       sess.pendingChunks.remove(index);
     }
@@ -3695,8 +3768,9 @@ class NamiYtProgressiveProxy {
         final chunkOffset = cursor % chunkSize;
         final chunk = await _getOrFetchChunk(sess, chunkIdx);
         if (chunk == null || chunk.isEmpty) break;
-        // Look-ahead pre-fetch next 2 video chunks while streaming!
-        if (sess.isVideo && chunkIdx + 1 < sess.chunkCount && !sess.chunks.containsKey(chunkIdx + 1)) {
+        if (sess.isVideo &&
+            chunkIdx + 1 < sess.chunkCount &&
+            !sess.chunks.containsKey(chunkIdx + 1)) {
           unawaited(_getOrFetchChunk(sess, chunkIdx + 1));
         }
         final available = chunk.length - chunkOffset;
@@ -3731,7 +3805,7 @@ class NamiYtProgressiveProxy {
         if (!uri.toString().contains('range=')) {
           hdrs['Range'] = 'bytes=$start-$end';
         }
-        final resp = await http
+        final resp = await _httpClient
             .get(uri, headers: hdrs)
             .timeout(const Duration(seconds: 9));
         if (resp.statusCode == 200 || resp.statusCode == 206) {
@@ -3748,11 +3822,12 @@ class NamiYtProgressiveProxy {
         }
       } catch (_) {}
       if (attempt == 0) {
-        await Future<void>.delayed(const Duration(milliseconds: 180));
+        await Future<void>.delayed(const Duration(milliseconds: 160));
       }
     }
     return null;
   }
 }
+
 
 

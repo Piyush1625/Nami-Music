@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4.0 — 2026-11-26
+
+### Live-Video Nami Mini-Player, 30s Cutoff Fix & Full YouTube Video Settings
+- **Permanent Fix for 30s YouTube Music & Video Cutoff:** Added Dual Head+Tail stream verification in `_probeStreamUrl()` (rejects token-limited streams past Google's 30s/60s 403 boundary before playback begins), promoted full-length `VISIONOS` to Tier 1, skipped `ump=1` SABR traps in `NamiYtWebViewEngine.kt`, and added Mid-Stream HTTP 403 Auto-Heal to `NamiYtProgressiveProxy`.
+- **Nami-Inspired Live-Video YouTube Mini-Player (`NamiYoutubeMiniPlayerBar` + Persistent Singleton `ExoPlayer`):** Hardware ExoPlayer now hands its surface seamlessly between the full Watch Screen and the floating Mini-Player with zero re-buffering — displaying live 16:9 video, a thin bottom progress bar, format badge (`YT 720P` / `YT OPUS`), Prev/Play-Pause/Next/Close controls, swipe-up expand, and swipe left/right skip.
+- **Interactive Video Gestures & Nami Audio-Only View:** Added double-tap ±10s seek, hold-for-2x speed boost, swipe-down minimize, 120Hz vertical sheet transitions, and a Nami-style radial-glow artwork view for Audio Only mode.
+- **Complete YouTube Video Settings Suite:** Added persisted **Default Video Quality (`Audio Only | 480p | 720p | 1080p`)**, **Preferred Video Codec**, **Live Video in Mini-Player**, **Video Player Gestures**, **Pause Video Decoder in Background**, **Auto-Rotate on Fullscreen**, and **Max YouTube Cache Size (`256/512/1024 MB`)**.
+
 ## v3.3.0 — 2026-11-26
 
 ### Full YouTube Audio/Video Experience, Comments & Channel Detail
