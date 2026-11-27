@@ -73,9 +73,10 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                   physics: const BouncingScrollPhysics(),
                   slivers: [
                     SliverAppBar(
-                      expandedHeight: 275,
+                      expandedHeight: 300,
                       pinned: true,
-                      backgroundColor: const Color(0xFF000000),
+                      stretch: true,
+                      backgroundColor: const Color(0xDD000000),
                       actions: [
                         _buildArtistHeroThreeDotsButton(ctx, artistName, artistTracks, onUpdated: () {
                           setAdState(() {});

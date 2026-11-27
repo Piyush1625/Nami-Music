@@ -55,6 +55,7 @@ part 'widgets/nami_v30_yt_bridge.dart';
 part 'widgets/nami_v30_discover_tab.dart';
 part 'widgets/nami_v31_suite.dart';
 part 'widgets/nami_v33_youtube_watch.dart';
+part 'widgets/nami_v39_suite.dart';
 part 'widgets/nami_v35_youtube_search.dart';
 part 'widgets/nami_v36_youtube_step3.dart';
 const Map<String, String> _httpHeaders = {
@@ -283,6 +284,8 @@ class NamiHomeShell extends StatefulWidget {
 }
 
 class _NamiHomeShellState extends State<NamiHomeShell> {
+  final ScrollController _v39TracksScrollCtrl = ScrollController();
+
   static _NamiHomeShellState? activeInstance;
   final Set<String> _artistImageFetching = <String>{};
   int _selectedIndex = 0;
@@ -6016,7 +6019,14 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             ],
           ),
         ),
-        for (final shelfKey in prefs.homeShelvesOrder)
+        NamiV39QuickAccessGrid(
+            songs: _songs,
+            artistGroups: artistGroups,
+            coverBuilder: _buildCoverArt,
+            onPlayTrack: _playSong,
+            onOpenArtist: _showArtistDetailScreen,
+          ),
+          for (final shelfKey in prefs.homeShelvesOrder)
           if (buildShelf(shelfKey) != null) buildShelf(shelfKey)!,
       ],
     );
@@ -6312,7 +6322,8 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
     }
     if (_isScanning) {
       return ListView.builder(
-        physics: const NeverScrollableScrollPhysics(),
+       
+            controller: _v39TracksScrollCtrl, physics: const NeverScrollableScrollPhysics(),
         itemCount: 15,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         itemBuilder: (context, index) {
@@ -6439,7 +6450,10 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             itemBuilder: (context, index) {
                             if (index == 0) return tracksHeaderBar;
                             final track = _filteredSongs[index - 1];
-                            return NamiSwipeableTrackRow(
+                            return Stack(
+      children: [
+        Builder(builder: (_) {
+          return NamiSwipeableTrackRow(
                               onPlayAfter: () => _handleV29SwipePlayAfter(track),
                               onShowInfo: () => showNamiFloatingTrackInfoCard(
                                 context,
@@ -6504,6 +6518,18 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         ),
       ],
     );
+        }),
+        NamiV39AzScrubberOverlay(
+          tracks: _filteredSongs,
+          onJumpToIndex: (idx) {
+            if (_v39TracksScrollCtrl.hasClients) {
+              final target = (idx * 66.0).clamp(0.0, _v39TracksScrollCtrl.position.maxScrollExtent);
+              _v39TracksScrollCtrl.jumpTo(target);
+            }
+          },
+        ),
+      ],
+    );
   }
 
   List<String> _buildArtistGroupsMap() {
@@ -6536,123 +6562,16 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
   }
 
   Widget _buildArtistsPageBody() {
-    final uniqueArtists = _buildArtistGroupsMap();
-    final accent = Theme.of(context).colorScheme.primary;
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 2, 12, 6),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shuffle_rounded, size: 20),
-                onPressed: _shufflePlay,
-              ),
-              IconButton(
-                icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                onPressed: () {
-                  if (uniqueArtists.isNotEmpty) {
-                    _playSong(artistGroups[uniqueArtists.first]!.first);
-                  }
-                },
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)),
-                child: Text('${uniqueArtists.length} artists', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              ),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Merge Duplicate Artists',
-                icon: const Icon(Icons.merge_type_rounded, size: 20),
-                onPressed: () => _showArtistAliasMergeDialog(),
-              ),
-              IconButton(
-                tooltip: _artistGridMode ? 'Switch to List View' : 'Switch to 3-Column Grid',
-                icon: Icon(_artistGridMode ? Icons.view_list_rounded : Icons.grid_view_rounded, size: 20),
-                onPressed: () => setState(() => _artistGridMode = !_artistGridMode),
-              ),
-              IconButton(
-                tooltip: _artistSortByCount ? 'Sort Alphabetically (A-Z)' : 'Sort by Track Count',
-                icon: Icon(_artistSortByCount ? Icons.sort_by_alpha_rounded : Icons.sort_rounded, size: 20, color: _artistSortByCount ? accent : Colors.white),
-                onPressed: () => setState(() => _artistSortByCount = !_artistSortByCount),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: NamiFastScroller(
-            controller: _artistListScrollController,
-            itemCount: uniqueArtists.length,
-            labelBuilder: (idx) {
-              final name = uniqueArtists[idx];
-              final letter = name.isNotEmpty ? name[0].toUpperCase() : '#';
-              return '$letter • ${idx + 1}/${uniqueArtists.length}';
-            },
-            child: _artistGridMode
-                ? GridView.builder(
-                    controller: _artistListScrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 95),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      childAspectRatio: 0.8,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 10,
-                    ),
-                    itemCount: uniqueArtists.length,
-                    itemBuilder: (context, index) {
-                      final aName = uniqueArtists[index];
-                      final aTracks = artistGroups[aName]!;
-                      final firstArtTrack = aTracks.firstWhere(
-                        (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
-                        orElse: () => aTracks.first,
-                      );
-                      return GestureDetector(
-                      onTap: () => _showArtistDetailScreen(aName, aTracks),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
-                        child: Column(children: [
-                          Expanded(child: _buildRoundArtistAvatar(firstArtTrack, 38, artistNameOverride: aName)),
-                          const SizedBox(height: 6),
-                          Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
-                          const SizedBox(height: 1),
-                          Text('${aTracks.length} ${aTracks.length == 1 ? 'Track' : 'Tracks'}', style: const TextStyle(fontSize: 10, color: Colors.white60)),
-                        ]),
-                      ),
-                    );
-                    },
-                  )
-                : ListView.builder(
-                    controller: _artistListScrollController,
-                    padding: const EdgeInsets.fromLTRB(10, 4, 12, 95),
-                    itemCount: uniqueArtists.length,
-                    itemBuilder: (context, index) {
-                      final aName = uniqueArtists[index];
-                      final aTracks = artistGroups[aName]!;
-                      final albumCount = aTracks.map((s) => s.album).toSet().length;
-                      final firstArtTrack = aTracks.firstWhere(
-                        (s) => s.albumArt != null || (s.thumbPath != null && File(s.thumbPath!).existsSync()),
-                        orElse: () => aTracks.first,
-                      );
-                      return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white10)),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                        leading: _buildRoundArtistAvatar(firstArtTrack, 24, artistNameOverride: aName),
-                        title: Text(aName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
-                        subtitle: Text('$albumCount albums • ${aTracks.length} ${aTracks.length == 1 ? 'track' : 'tracks'}', style: const TextStyle(fontSize: 11.5, color: Colors.white60)),
-                        trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38),
-                        onTap: () => _showArtistDetailScreen(aName, aTracks),
-                      ),
-                    );
-                    },
-                  ),
-          ),
-        ),
-      ],
+    _buildArtistGroupsMap();
+    return NamiV39ArtistsHub(
+      songs: _songs,
+      artistImagePaths: _artistImagePaths,
+      artworkTick: _artworkTick,
+      coverBuilder: _buildCoverArt,
+      onOpenArtist: _showArtistDetailScreen,
+      onPlaySong: _playSong,
+      onShuffleAll: _shufflePlay,
+      formatDuration: _formatTotalDurationHoursMins,
     );
   }
 
@@ -6965,8 +6884,15 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         background: Container(
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.only(left: 20),
-          decoration: BoxDecoration(color: Colors.pinkAccent.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(12)),
-          child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
+          decoration: BoxDecoration(color: const Color(0xFF00C853).withValues(alpha: 0.88), borderRadius: BorderRadius.circular(12)),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.playlist_play_rounded, color: Colors.white, size: 22),
+              SizedBox(width: 6),
+              Text('Play Next', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+            ],
+          ),
         ),
         secondaryBackground: Container(
           alignment: Alignment.centerRight,
@@ -8618,15 +8544,21 @@ void _showCreatePlaylistDialog() {
                   ),
               actions: [
                 IconButton(
-                  icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
+                  tooltip: 'Unified Search (Local + YouTube)',
+                  icon: const Icon(Icons.search_rounded),
                   onPressed: () {
-                    setState(() {
-                      _isSearching = !_isSearching;
-                      if (!_isSearching) {
-                        _searchController.clear();
-                        _filteredSongs = _songs;
-                      }
-                    });
+                    HapticFeedback.selectionClick();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => NamiV39UnifiedSearchSheet(
+                          allSongs: _songs,
+                          coverBuilder: _buildCoverArt,
+                          onPlayTrack: _playSong,
+                          onOpenArtist: _showArtistDetailScreen,
+                          onOpenSettings: _openSettings,
+                        ),
+                      ),
+                    );
                   },
                 ),
                 IconButton(

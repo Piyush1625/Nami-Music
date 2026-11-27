@@ -1186,8 +1186,9 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
         setState(() => _isHold2x = false);
       },
       onVerticalDragEnd: (d) {
-        if (!_isFullscreen && (d.primaryVelocity ?? 0) > 360) {
+        if (!_isFullscreen && (d.primaryVelocity ?? 0) > 260) {
           NamiUxPrefs.hapticLight();
+          _namiSafeSetNotifier<bool>(NamiYtVideoBridge.isPipMode, true);
           Navigator.of(context).maybePop();
         }
       },
@@ -1478,7 +1479,14 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                 const Spacer(),
                               ],
                             ),
-                            SliderTheme(
+                            Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                NamiV39YtTimelineOverlay(
+                                  totalMs: totalMs.toDouble(),
+                                  sponsorBlockEnabled: NamiUxPrefs.ytSponsorBlock,
+                                ),
+                                SliderTheme(
                               data: SliderTheme.of(context).copyWith(
                                 trackHeight: 2.6,
                                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5.5),
@@ -1499,6 +1507,8 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                   _scheduleHideOverlay();
                                 },
                               ),
+                            ),
+                              ],
                             ),
                           ],
                         ),
