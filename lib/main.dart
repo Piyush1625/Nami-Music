@@ -6317,6 +6317,24 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
   }
 
   Widget _buildTracksPageBody() {
+    return Stack(
+      children: [
+        _buildTracksPageBodyInner(),
+        if (_hasPermission && !_isScanning)
+          NamiV39AzScrubberOverlay(
+            tracks: _filteredSongs,
+            onJumpToIndex: (idx) {
+              if (_v39TracksScrollCtrl.hasClients) {
+                final target = (idx * 66.0).clamp(0.0, _v39TracksScrollCtrl.position.maxScrollExtent);
+                _v39TracksScrollCtrl.jumpTo(target);
+              }
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTracksPageBodyInner() {
     if (!_hasPermission) {
       return GestureDetector(onTap: () async { await Permission.storage.request(); await Permission.audio.request(); }, child: const Scaffold(backgroundColor: Color(0xFF07070B), body: SafeArea(child: YoutubeSkeletonLoader())));
     }
@@ -6450,10 +6468,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             itemBuilder: (context, index) {
                             if (index == 0) return tracksHeaderBar;
                             final track = _filteredSongs[index - 1];
-                            return Stack(
-      children: [
-        Builder(builder: (_) {
-          return NamiSwipeableTrackRow(
+                            return NamiSwipeableTrackRow(
                               onPlayAfter: () => _handleV29SwipePlayAfter(track),
                               onShowInfo: () => showNamiFloatingTrackInfoCard(
                                 context,
@@ -6515,18 +6530,6 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
               ),
             ),
           ),
-        ),
-      ],
-    );
-        }),
-        NamiV39AzScrubberOverlay(
-          tracks: _filteredSongs,
-          onJumpToIndex: (idx) {
-            if (_v39TracksScrollCtrl.hasClients) {
-              final target = (idx * 66.0).clamp(0.0, _v39TracksScrollCtrl.position.maxScrollExtent);
-              _v39TracksScrollCtrl.jumpTo(target);
-            }
-          },
         ),
       ],
     );

@@ -1774,15 +1774,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
       case 0: // Theme & Appearance
         return [
           if (w.onPitchBlackChanged != null)
-            NamiV39VisualThemeCards(
-            usePitchBlack: widget.usePitchBlack,
-            blurredBackdrop: widget.blurredBackdrop,
-            ambientGlow: widget.ambientGlow,
-            onPitchBlackChanged: widget.onPitchBlackChanged,
-            onBlurredBackdropChanged: widget.onBlurredBackdropChanged,
-            onAmbientGlowChanged: widget.onAmbientGlowChanged,
-          ),
-          _switchRow(
+            _switchRow(
               icon: Icons.contrast_rounded,
               title: 'Use Pitch Black',
               subtitle: 'Pure #000000 AMOLED canvas across the entire player',
