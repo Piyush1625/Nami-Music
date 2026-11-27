@@ -284,7 +284,6 @@ class NamiHomeShell extends StatefulWidget {
 }
 
 class _NamiHomeShellState extends State<NamiHomeShell> {
-  final ScrollController _v39TracksScrollCtrl = ScrollController();
 
   static _NamiHomeShellState? activeInstance;
   final Set<String> _artistImageFetching = <String>{};
@@ -6317,31 +6316,11 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
   }
 
   Widget _buildTracksPageBody() {
-    return Stack(
-      children: [
-        _buildTracksPageBodyInner(),
-        if (_hasPermission && !_isScanning)
-          NamiV39AzScrubberOverlay(
-            tracks: _filteredSongs,
-            onJumpToIndex: (idx) {
-              if (_v39TracksScrollCtrl.hasClients) {
-                final target = (idx * 66.0).clamp(0.0, _v39TracksScrollCtrl.position.maxScrollExtent);
-                _v39TracksScrollCtrl.jumpTo(target);
-              }
-            },
-          ),
-      ],
-    );
-  }
-
-  Widget _buildTracksPageBodyInner() {
     if (!_hasPermission) {
       return GestureDetector(onTap: () async { await Permission.storage.request(); await Permission.audio.request(); }, child: const Scaffold(backgroundColor: Color(0xFF07070B), body: SafeArea(child: YoutubeSkeletonLoader())));
     }
     if (_isScanning) {
-      return ListView.builder(
-       
-            controller: _v39TracksScrollCtrl, physics: const NeverScrollableScrollPhysics(),
+      return ListView.builder( physics: const NeverScrollableScrollPhysics(),
         itemCount: 15,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         itemBuilder: (context, index) {
