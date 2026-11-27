@@ -891,83 +891,43 @@ class _NamiSmoothSwipeArt extends StatefulWidget {
 
 class _NamiSmoothSwipeArtState extends State<_NamiSmoothSwipeArt> {
   double _dx = 0.0;
-  Duration _slideDuration = Duration.zero;
-  bool _optimisticHold = false;
-  Timer? _holdTimer;
-  Timer? _slideTimer;
+  bool _dragging = false;
 
-  void _startOptimisticHold() {
-    _holdTimer?.cancel();
-    setState(() => _optimisticHold = true);
-    _holdTimer = Timer(const Duration(milliseconds: 650), () {
-      if (mounted) setState(() => _optimisticHold = false);
-    });
-  }
-
-  void _triggerSwipe(int dir, VoidCallback action) {
-    HapticFeedback.selectionClick();
-    _startOptimisticHold();
-    _slideTimer?.cancel();
+  void _resetSmooth() {
     setState(() {
-      _slideDuration = const Duration(milliseconds: 110);
-      _dx = dir * 92.0;
+      _dragging = false;
+      _dx = 0.0;
     });
-    action();
-    _slideTimer = Timer(const Duration(milliseconds: 115), () {
-      if (!mounted) return;
-      setState(() {
-        _slideDuration = Duration.zero;
-        _dx = -dir * 68.0;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() {
-          _slideDuration = const Duration(milliseconds: 240);
-          _dx = 0.0;
-        });
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _holdTimer?.cancel();
-    _slideTimer?.cancel();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final dragNorm = (_dx.abs() / 160.0).clamp(0.0, 1.0);
-    final dragScale = 1.0 - (dragNorm * 0.04);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onHorizontalDragStart: (_) {
+        setState(() => _dragging = true);
+      },
       onHorizontalDragUpdate: (d) {
-        final resist = _dx.abs() > 80.0 ? 0.35 : 0.92;
+        final resist = _dx.abs() > 70.0 ? 0.35 : 0.85;
         setState(() {
-          _slideDuration = Duration.zero;
-          _dx = (_dx + d.delta.dx * resist).clamp(-155.0, 155.0);
+          _dragging = true;
+          _dx = (_dx + d.delta.dx * resist).clamp(-120.0, 120.0);
         });
       },
       onHorizontalDragEnd: (details) {
         final vx = details.primaryVelocity ?? 0.0;
-        if (_dx < -52.0 || vx < -240.0) {
-          _triggerSwipe(-1, widget.onNext);
-        } else if (_dx > 52.0 || vx > 240.0) {
-          _triggerSwipe(1, widget.onPrevious);
-        } else {
-          setState(() {
-            _slideDuration = const Duration(milliseconds: 220);
-            _dx = 0.0;
-          });
+        final goNext = _dx < -48.0 || vx < -220.0;
+        final goPrev = _dx > 48.0 || vx > 220.0;
+        _resetSmooth();
+        if (goNext) {
+          HapticFeedback.selectionClick();
+          widget.onNext();
+        } else if (goPrev) {
+          HapticFeedback.selectionClick();
+          widget.onPrevious();
         }
       },
-      onHorizontalDragCancel: () {
-        setState(() {
-          _slideDuration = const Duration(milliseconds: 220);
-          _dx = 0.0;
-        });
-      },
+      onHorizontalDragCancel: _resetSmooth,
       onVerticalDragEnd: (details) {
         if ((details.primaryVelocity ?? 0) > 360) {
           widget.onDismiss();
@@ -976,14 +936,15 @@ class _NamiSmoothSwipeArtState extends State<_NamiSmoothSwipeArt> {
       child: StreamBuilder<bool>(
         stream: widget.audioPlayer.stream.playing,
         builder: (ctx, snap) {
-          final isP = (snap.data ?? widget.audioPlayer.state.playing) || _optimisticHold;
-          return AnimatedContainer(
-            duration: _slideDuration,
+          final isP = snap.data ?? widget.audioPlayer.state.playing;
+          final pauseScale = isP ? 1.0 : 0.98;
+          return AnimatedSlide(
+            offset: Offset(_dx / 260.0, 0.0),
+            duration: Duration(milliseconds: _dragging ? 0 : 200),
             curve: Curves.easeOutCubic,
-            transform: Matrix4.translationValues(_dx, 0.0, 0.0),
             child: AnimatedScale(
-              scale: (isP ? 1.0 : 0.95) * dragScale,
-              duration: const Duration(milliseconds: 260),
+              scale: pauseScale,
+              duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutCubic,
               child: widget.child,
             ),

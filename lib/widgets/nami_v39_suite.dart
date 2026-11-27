@@ -385,6 +385,8 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
 
   void _openModeSheet() {
     HapticFeedback.selectionClick();
+    final host = context.findAncestorStateOfType<_NamiHomeShellState>();
+    host?._v39SetSheetOpen(true);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF101018),
@@ -419,11 +421,13 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
           ],
         ),
       ),
-    );
+    ).then((_) => host?._v39SetSheetOpen(false)));
   }
 
   void _openSortSheet() {
     HapticFeedback.selectionClick();
+    final host = context.findAncestorStateOfType<_NamiHomeShellState>();
+    host?._v39SetSheetOpen(true);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF101018),
@@ -473,7 +477,7 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
           ),
         ),
       ),
-    );
+    ).then((_) => host?._v39SetSheetOpen(false)));
   }
 
   Widget _buildAvatar(String name, List<AudioTrack> tracks, double size) {

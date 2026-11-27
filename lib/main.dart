@@ -284,6 +284,10 @@ class NamiHomeShell extends StatefulWidget {
 }
 
 class _NamiHomeShellState extends State<NamiHomeShell> {
+  void _v39SetSheetOpen(bool open) { if (mounted && _v39SheetOpen != open) setState(() => _v39SheetOpen = open); }
+
+  bool _v39SheetOpen = false;
+
 
   static _NamiHomeShellState? activeInstance;
   final Set<String> _artistImageFetching = <String>{};
@@ -7035,7 +7039,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
   }
 
   Widget _buildReactiveMiniPlayer() {
-    if (_selectedIndex >= 4) return const SizedBox.shrink();
+    if (_selectedIndex >= 4 || _v39SheetOpen) return const SizedBox.shrink();
     final accent = Theme.of(context).colorScheme.primary;
     return ValueListenableBuilder<AudioTrack?>(
       valueListenable: _currentSongNotifier,
@@ -7396,7 +7400,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
           return _buildNamiTrackTile(tracks[i - 1]);
         },
       ),
-      Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+      Positioned(left: 8, right: 8, bottom: 2, child: _buildReactiveMiniPlayer()),
     ]),
   )));
 }
@@ -7794,7 +7798,7 @@ void _showCreatePlaylistDialog() {
                       ),
                     ],
                   ),
-                  Positioned(left: 10, right: 10, bottom: 12, child: _buildReactiveMiniPlayer()),
+                  Positioned(left: 8, right: 8, bottom: 2, child: _buildReactiveMiniPlayer()),
                 ],
               ),
             );
@@ -8573,7 +8577,7 @@ void _showCreatePlaylistDialog() {
           if (_isSelectionMode)
             Positioned(left: 10, right: 10, bottom: 86, child: _buildBatchSelectionBar()),
           if (_selectedIndex < 4)
-            Positioned(left: 10, right: 10, bottom: 8, child: RepaintBoundary(child: _buildReactiveMiniPlayer())),
+            Positioned(left: 8, right: 8, bottom: 2, child: RepaintBoundary(child: _buildReactiveMiniPlayer())),
         ],
       ),
       bottomNavigationBar: NamiExpandableBottomNavWrap(

@@ -836,13 +836,13 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
         if (showDockedYt)
           NamiYoutubeMiniPlayerBar(
             track: ytActive,
-            bottomInset: pad.bottom + 76.0,
+            bottomInset: pad.bottom + 64.0,
             pipMode: false,
           ),
         if (showPipYt)
           NamiYoutubeMiniPlayerBar(
             track: ytActive,
-            bottomInset: pad.bottom + 76.0,
+            bottomInset: pad.bottom + 64.0,
             pipMode: true,
           ),
       ],
@@ -1045,7 +1045,7 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
           child: Container(
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: const Color(0xFF0A0A10),
+              color: const Color(0xFF07070B),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: accent.withValues(alpha: 0.58),
@@ -1276,7 +1276,7 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
               child: Container(
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0A0A10),
+                  color: const Color(0xFF07070B),
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
                     color: accent.withValues(alpha: 0.42),
