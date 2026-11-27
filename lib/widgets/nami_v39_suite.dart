@@ -421,7 +421,7 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
           ],
         ),
       ),
-    ).then((_) => host?._v39SetSheetOpen(false)));
+    ).then((_) => host?._v39SetSheetOpen(false));
   }
 
   void _openSortSheet() {
@@ -477,7 +477,7 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
           ),
         ),
       ),
-    ).then((_) => host?._v39SetSheetOpen(false)));
+    ).then((_) => host?._v39SetSheetOpen(false));
   }
 
   Widget _buildAvatar(String name, List<AudioTrack> tracks, double size) {
