@@ -78,27 +78,10 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
 
   void _jumpToCurrentSyncedLyric() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _viewMode != 1 || !_lyricsScrollCtrl.hasClients) return;
-      final lyrics = widget.lyrics;
-      if (lyrics.isEmpty) return;
-      final posMs = widget.audioPlayer.state.position.inMilliseconds + (_lyricsShiftSec * 1000).round();
-      int activeIdx = 0;
-      for (int i = 0; i < lyrics.length; i++) {
-        final tMs = lyrics[i].timestamp.inMilliseconds;
-        if (posMs >= tMs) {
-          activeIdx = i;
-        } else {
-          break;
-        }
-      }
-      _lastScrolledLyricIndex = activeIdx;
-      final maxExtent = _lyricsScrollCtrl.position.maxScrollExtent;
-      final targetOffset = ((activeIdx * 62.0) - 90.0).clamp(0.0, maxExtent);
-      _lyricsScrollCtrl.animateTo(
-        targetOffset,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-      );
+      if (!mounted || _viewMode != 1) return;
+      setState(() {
+        _lastScrolledLyricIndex = -1;
+      });
     });
   }
 

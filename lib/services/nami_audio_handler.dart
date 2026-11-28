@@ -5,8 +5,8 @@ import 'package:nami/services/playback_history_service.dart';
 
 class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool isFavorite = false;
-  VoidCallback? onToggleFavorite;
-  VoidCallback? onStopPlayback;
+  void Function()? onToggleFavorite;
+  void Function()? onStopPlayback;
 
   void setFavorite(bool fav) {
     if (isFavorite != fav) {
@@ -258,6 +258,7 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       playing: false,
       processingState: AudioProcessingState.idle,
     ));
+    onStopPlayback?.call();
     await super.stop();
   }
 
@@ -296,16 +297,5 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
-  @override
-  Future<void> stop() async {
-    await player.pause();
-    await player.seek(Duration.zero);
-    playbackState.add(playbackState.value.copyWith(
-      processingState: AudioProcessingState.idle,
-      playing: false,
-    ));
-    onStopPlayback?.call();
-    await super.stop();
-  }
 
 }

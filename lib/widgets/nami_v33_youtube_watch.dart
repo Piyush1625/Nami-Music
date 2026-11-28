@@ -809,7 +809,6 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               },
                             ),
                           ],
-                          const
                                       ],
                                     ),
                                   ),
@@ -819,7 +818,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               ],
                             ),
                           ),
-                          Divider(color: Colors.white10),
+                          const Divider(color: Colors.white10),
 
                           // 3. Playback Speed (0.75x .. 2.0x natively inside ExoPlayer!)
                           Padding(
