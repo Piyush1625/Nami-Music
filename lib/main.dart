@@ -7154,9 +7154,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                             ),
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
-                              child: Icon(
-                                playing ? NamiCustomIcons.pause : NamiCustomIcons.play,
-                                key: ValueKey<bool>(playing),
+                              child: NamiCustomIcon(playing ? NamiCustomIcons.pause : NamiCustomIcons.play, key: ValueKey<bool>(playing),
                                 size: 23,
                                 color: Colors.white,
                               ),
