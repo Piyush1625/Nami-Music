@@ -227,7 +227,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
         } else if (song?.thumbPath != null && File(song!.thumbPath!).existsSync()) {
           artWidget = Image.file(File(song.thumbPath!), fit: BoxFit.cover, width: double.infinity, height: double.infinity, gaplessPlayback: true, cacheWidth: 720);
         } else {
-          artWidget = Container(color: const Color(0xFF14141E), child: const Icon(Icons.album_rounded, size: 100, color: Colors.white24));
+          artWidget = Container(color: const Color(0xFF14141E), child: const NamiCustomIcon(NamiCustomIcons.albumDisc, size: 96, opacity: 0.45));
         }
 
         return Scaffold(
@@ -619,7 +619,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                             return Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(icon: const Icon(Icons.skip_previous_rounded, size: 28, color: Colors.white), onPressed: widget.onPrevious),
+                                IconButton(icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 27, flipHorizontal: true), onPressed: widget.onPrevious),
                                 const SizedBox(width: 8.0),
                                 GestureDetector(
                                   onTap: () {
@@ -647,17 +647,16 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                     ),
                                     child: AnimatedSwitcher(
                                       duration: const Duration(milliseconds: 180),
-                                      child: Icon(
-                                        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                      child: NamiCustomIcon(
+                                        playing ? NamiCustomIcons.pause : NamiCustomIcons.play,
                                         key: ValueKey<bool>(playing),
                                         size: 34,
-                                        color: Colors.white,
                                       ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 8.0),
-                                IconButton(icon: const Icon(Icons.skip_next_rounded, size: 28, color: Colors.white), onPressed: widget.onNext),
+                                IconButton(icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 27), onPressed: widget.onNext),
                               ],
                             );
                           },
@@ -698,7 +697,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   width: 28,
                                   height: 28,
                                   decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), shape: BoxShape.circle),
-                                  child: const Icon(Icons.headphones_outlined, size: 14, color: Colors.white70),
+                                  child: const NamiCustomIcon(NamiCustomIcons.headphones, size: 15),
                                 ),
                                 const SizedBox(width: 8),
                                 Column(
@@ -794,13 +793,13 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
-                                      Icon(
-                                        _shuffleLocal
-                                            ? Icons.shuffle_rounded
-                                            : (_repeatLocal == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded),
-                                        size: 21,
-                                        color: (_shuffleLocal || _repeatLocal > 0) ? accent : Colors.white70,
-                                      ),
+                                      _shuffleLocal
+                                          ? const NamiCustomIcon(NamiCustomIcons.shuffle, size: 21)
+                                          : Icon(
+                                              _repeatLocal == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                                              size: 21,
+                                              color: _repeatLocal > 0 ? accent : Colors.white70,
+                                            ),
                                       if (_shuffleLocal && _repeatLocal > 0)
                                         Positioned(
                                           right: -3,
@@ -821,7 +820,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
-                              icon: const Icon(Icons.tune_rounded, size: 20, color: Colors.white70),
+                              icon: const NamiCustomIcon(NamiCustomIcons.equalizer, size: 20, opacity: 0.88),
                               onPressed: widget.onShowEqualizer,
                             ),
                             const SizedBox(width: 12),
@@ -831,7 +830,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
-                                icon: Icon(Icons.lyrics_outlined, size: 20, color: _viewMode == 1 ? accent : Colors.white70),
+                                icon: NamiCustomIcon(NamiCustomIcons.lyrics, size: 20, opacity: _viewMode == 1 ? 1.0 : 0.72),
                                 onPressed: () {
                                   setState(() {
                                     _viewMode = _viewMode == 1 ? 0 : 1;
@@ -846,7 +845,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
-                              icon: const Icon(Icons.queue_music_rounded, size: 20, color: Colors.white70),
+                              icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.88),
                               onPressed: widget.onOpenQueue,
                             ),
                           ],

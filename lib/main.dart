@@ -56,6 +56,7 @@ part 'widgets/nami_v30_discover_tab.dart';
 part 'widgets/nami_v31_suite.dart';
 part 'widgets/nami_v33_youtube_watch.dart';
 part 'widgets/nami_v39_suite.dart';
+part 'widgets/nami_custom_icons.dart';
 part 'widgets/nami_v35_youtube_search.dart';
 part 'widgets/nami_v36_youtube_step3.dart';
 const Map<String, String> _httpHeaders = {
@@ -7154,7 +7155,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                             child: AnimatedSwitcher(
                               duration: const Duration(milliseconds: 180),
                               child: Icon(
-                                playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                playing ? NamiCustomIcons.pause : NamiCustomIcons.play,
                                 key: ValueKey<bool>(playing),
                                 size: 23,
                                 color: Colors.white,
@@ -8531,7 +8532,7 @@ void _showCreatePlaylistDialog() {
               actions: [
                 IconButton(
                   tooltip: 'Unified Search (Local + YouTube)',
-                  icon: const Icon(Icons.search_rounded),
+                  icon: const NamiCustomIcon(NamiCustomIcons.search, size: 22),
                   onPressed: () {
                     HapticFeedback.selectionClick();
                     Navigator.of(context).push(
@@ -8553,11 +8554,11 @@ void _showCreatePlaylistDialog() {
                     isLabelVisible: _playNextQueue.isNotEmpty,
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     label: Text('${_playNextQueue.length}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                    child: const Icon(Icons.queue_music_rounded),
+                    child: const NamiCustomIcon(NamiCustomIcons.playlist, size: 22),
                   ),
                   onPressed: () => _showQueueBottomSheet(context),
                 ),
-                IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
+                IconButton(icon: const NamiCustomIcon(NamiCustomIcons.settings, size: 22), onPressed: _openSettings),
               ],
             )),
             body: NamiSwipeableTabsView(
@@ -8608,23 +8609,23 @@ void _showCreatePlaylistDialog() {
             },
           destinations: const [
             NavigationDestination(
-              icon: Icon(Icons.home_outlined, color: Colors.white60, size: 23),
-              selectedIcon: Icon(Icons.home_rounded, color: Colors.white, size: 23),
+              icon: NamiCustomIcon(NamiCustomIcons.home, size: 23, opacity: 0.62),
+              selectedIcon: NamiCustomIcon(NamiCustomIcons.home, size: 24),
               label: 'Home',
             ),
             NavigationDestination(
-              icon: Icon(Icons.library_music_outlined, color: Colors.white60, size: 23),
-              selectedIcon: Icon(Icons.library_music_rounded, color: Colors.white, size: 23),
+              icon: NamiCustomIcon(NamiCustomIcons.tracks, size: 23, opacity: 0.62),
+              selectedIcon: NamiCustomIcon(NamiCustomIcons.tracks, size: 24),
               label: 'Tracks',
             ),
             NavigationDestination(
-              icon: Icon(Icons.people_outline_rounded, color: Colors.white60, size: 23),
-              selectedIcon: Icon(Icons.people_rounded, color: Colors.white, size: 23),
+              icon: NamiCustomIcon(NamiCustomIcons.artist, size: 23, opacity: 0.62),
+              selectedIcon: NamiCustomIcon(NamiCustomIcons.artist, size: 24),
               label: 'Artists',
             ),
             NavigationDestination(
-              icon: Icon(Icons.queue_music_outlined, color: Colors.white60, size: 23),
-              selectedIcon: Icon(Icons.queue_music_rounded, color: Colors.white, size: 23),
+              icon: NamiCustomIcon(NamiCustomIcons.playlist, size: 23, opacity: 0.62),
+              selectedIcon: NamiCustomIcon(NamiCustomIcons.playlist, size: 24),
               label: 'Playlists',
             ),
             NavigationDestination(

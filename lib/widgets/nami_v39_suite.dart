@@ -803,7 +803,7 @@ class _NamiV39UnifiedSearchSheetState extends State<NamiV39UnifiedSearchSheet> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.search_rounded, size: 19, color: accent),
+                          const NamiCustomIcon(NamiCustomIcons.search, size: 18),
                           const SizedBox(width: 8),
                           Expanded(
                             child: TextField(
@@ -832,7 +832,7 @@ class _NamiV39UnifiedSearchSheetState extends State<NamiV39UnifiedSearchSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.settings_outlined, color: Colors.white70, size: 21),
+                    icon: const NamiCustomIcon(NamiCustomIcons.settings, size: 21),
                     onPressed: () {
                       Navigator.pop(context);
                       widget.onOpenSettings();
