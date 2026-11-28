@@ -24,6 +24,7 @@ class NamiCustomIcon extends StatelessWidget {
   final bool flipHorizontal;
   final double opacity;
   final Color? tintColor;
+  final Color? color;
 
   const NamiCustomIcon(
     this.asset, {
@@ -32,6 +33,7 @@ class NamiCustomIcon extends StatelessWidget {
     this.flipHorizontal = false,
     this.opacity = 1.0,
     this.tintColor,
+    this.color,
   });
 
   @override
