@@ -398,7 +398,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                       ),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 30),
+                    child: const NamiCustomIcon(NamiCustomIcons.equalizer, size: 30),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -426,7 +426,7 @@ class _MainSettingsScreenState extends State<MainSettingsScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.person_rounded, size: 17, color: themeColor),
+                        NamiCustomIcon(NamiCustomIcons.artist, size: 17),
                         const SizedBox(width: 8),
                         const Text('Author & Maintainer', style: TextStyle(fontSize: 12, color: Colors.white60, fontWeight: FontWeight.w600)),
                       ],

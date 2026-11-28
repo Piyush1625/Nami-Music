@@ -226,7 +226,7 @@ void showNamiSignalChainSheet({
                     padding: const EdgeInsets.fromLTRB(18, 16, 14, 12),
                     child: Row(
                       children: [
-                        Icon(Icons.graphic_eq_rounded, color: accent, size: 20),
+                        NamiCustomIcon(NamiCustomIcons.equalizer, size: 20),
                         const SizedBox(width: 10),
                         const Text(
                           'Audio Signal Chain',

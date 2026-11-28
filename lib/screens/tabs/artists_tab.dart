@@ -104,7 +104,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                             } else if (firstArtTrack.thumbPath != null && File(firstArtTrack.thumbPath!).existsSync()) {
                               bgImage = Image.file(File(firstArtTrack.thumbPath!), fit: BoxFit.cover);
                             } else {
-                              bgImage = Container(color: const Color(0xFF14141E), child: const Icon(Icons.person_rounded, size: 96, color: Colors.white24));
+                              bgImage = Container(color: const Color(0xFF14141E), child: const NamiCustomIcon(NamiCustomIcons.artist, size: 96, opacity: 0.35));
                             }
                             return Stack(
                               fit: StackFit.expand,
@@ -162,7 +162,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                   child: ElevatedButton.icon(
                                     style: ElevatedButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                                     onPressed: () => _playSong(artistTracks.first),
-                                    icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                                    icon: const NamiCustomIcon(NamiCustomIcons.play, size: 20),
                                     label: const Text('Play All', style: TextStyle(fontWeight: FontWeight.w800)),
                                   ),
                                 ),
@@ -174,7 +174,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
                                       final sh = List<AudioTrack>.from(artistTracks)..shuffle();
                                       _playSong(sh.first);
                                     },
-                                    icon: const Icon(Icons.shuffle_rounded, size: 18),
+                                    icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 18),
                                     label: const Text('Shuffle', style: TextStyle(fontWeight: FontWeight.w700)),
                                   ),
                                 ),
@@ -436,7 +436,7 @@ extension _NamiArtistsTabExt on _NamiHomeShellState {
             radius: 22,
             backgroundColor: Colors.white10,
             backgroundImage: hasImg ? FileImage(File(imgPath)) : null,
-            child: hasImg ? null : const Icon(Icons.person_rounded, color: Colors.white70),
+            child: hasImg ? null : const NamiCustomIcon(NamiCustomIcons.artist, opacity: 0.78),
           ),
           actions: [
                 NamiFloatingActionItem(

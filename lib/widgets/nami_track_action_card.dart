@@ -71,7 +71,7 @@ void showNamiArtistPickerOrNavigate({
                 padding: const EdgeInsets.fromLTRB(18, 2, 18, 10),
                 child: Row(
                   children: [
-                    Icon(Icons.groups_rounded, color: accent, size: 20),
+                    NamiCustomIcon(NamiCustomIcons.artist, size: 20),
                     const SizedBox(width: 10),
                     const Text(
                       'Select Artist',
@@ -268,7 +268,7 @@ void showNamiTrackActionCard({
                       ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 1),
-                        leading: const Icon(Icons.album_rounded, color: Colors.white70, size: 21),
+                        leading: const NamiCustomIcon(NamiCustomIcons.albumDisc, size: 21, opacity: 0.78),
                         title: const Text('Go to Album', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
                         subtitle: Text(track.album, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5, color: Colors.white54)),
                         trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
@@ -382,7 +382,7 @@ void showNamiTrackActionCard({
                         ListTile(
                           dense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
-                          leading: const Icon(Icons.lyrics_rounded, color: Colors.white70, size: 20),
+                          leading: const NamiCustomIcon(NamiCustomIcons.lyrics, size: 20, opacity: 0.78),
                           title: const Text('Lyrics Metadata & Editor', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
                           onTap: () {
                             Navigator.pop(ctx);
@@ -933,7 +933,7 @@ void showNamiMediaImagePickerSheet({
                                   currentFuture = fetcher(q);
                                 });
                               },
-                              child: const Icon(Icons.search_rounded, size: 19),
+                              child: const NamiCustomIcon(NamiCustomIcons.search, size: 19),
                             ),
                           ],
                         ),

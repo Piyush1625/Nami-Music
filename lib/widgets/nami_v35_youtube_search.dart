@@ -247,7 +247,7 @@ class _NamiYoutubeSearchScreenState extends State<NamiYoutubeSearchScreen> {
         for (final s in mergedSugg)
           ListTile(
             dense: true,
-            leading: const Icon(Icons.search_rounded, color: Colors.white60, size: 20),
+            leading: const NamiCustomIcon(NamiCustomIcons.search, size: 20, opacity: 0.65),
             title: Text(
               s,
               maxLines: 1,
@@ -373,7 +373,7 @@ class _NamiYoutubeSearchScreenState extends State<NamiYoutubeSearchScreen> {
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   tooltip: 'Play Next',
-                  icon: const Icon(Icons.playlist_play_rounded, color: Colors.white60, size: 20),
+                  icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.65),
                   onPressed: () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(t),
                 ),
                 IconButton(
@@ -484,7 +484,7 @@ class _NamiYoutubeSearchScreenState extends State<NamiYoutubeSearchScreen> {
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(Icons.search_rounded, color: Colors.white54, size: 14),
+                                          const NamiCustomIcon(NamiCustomIcons.search, size: 14, opacity: 0.60),
                                           const SizedBox(width: 6),
                                           Text(
                                             rq,
@@ -513,7 +513,7 @@ class _NamiYoutubeSearchScreenState extends State<NamiYoutubeSearchScreen> {
                               backgroundColor: const Color(0xFF1A1A24),
                               backgroundImage: ch.avatarUrl.isNotEmpty ? NetworkImage(ch.avatarUrl) : null,
                               child: ch.avatarUrl.isEmpty
-                                  ? const Icon(Icons.person_rounded, color: Colors.white54)
+                                  ? const NamiCustomIcon(NamiCustomIcons.artist, opacity: 0.60)
                                   : null,
                             ),
                             title: Text(
@@ -884,7 +884,7 @@ class _NamiYoutubeConnectedHomeFeedState extends State<NamiYoutubeConnectedHomeF
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   tooltip: 'Play Next',
-                  icon: const Icon(Icons.playlist_play_rounded, color: Colors.white60, size: 20),
+                  icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.65),
                   onPressed: () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(t),
                 ),
               ],
@@ -1102,7 +1102,7 @@ class _NamiYoutubeConnectedHomeFeedState extends State<NamiYoutubeConnectedHomeF
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.search_rounded, color: Colors.white70, size: 14),
+                          NamiCustomIcon(NamiCustomIcons.search, size: 14, opacity: 0.78),
                           SizedBox(width: 5),
                           Text(
                             'Search YT',
@@ -1275,11 +1275,7 @@ class NamiYoutubeMergedAppBar extends StatelessWidget implements PreferredSizeWi
                 tooltip: 'Settings',
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
-                icon: const Icon(
-                  Icons.settings_outlined,
-                  color: Colors.white,
-                  size: 24.5,
-                ),
+                icon: const NamiCustomIcon(NamiCustomIcons.settings, size: 24.5),
                 onPressed: () {
                   NamiUxPrefs.hapticLight();
                   onOpenSettings();

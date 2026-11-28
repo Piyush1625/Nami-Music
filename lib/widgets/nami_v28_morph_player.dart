@@ -572,11 +572,7 @@ class NamiMorphNowPlayingRoute<T> extends PageRoute<T> {
                                           width: 1.0 + 0.3 * t,
                                         ),
                                       ),
-                                      child: Icon(
-                                        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                        color: Colors.white,
-                                        size: playBtnSize * 0.56,
-                                      ),
+                                      child: NamiCustomIcon(playing ? NamiCustomIcons.pause : NamiCustomIcons.play),
                                     ),
                                     SizedBox(width: ctrlGap),
                                     SizedBox(

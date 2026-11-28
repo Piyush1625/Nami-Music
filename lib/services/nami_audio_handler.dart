@@ -4,6 +4,17 @@ import 'package:media_kit/media_kit.dart';
 import 'package:nami/services/playback_history_service.dart';
 
 class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+  bool isFavorite = false;
+  VoidCallback? onToggleFavorite;
+  VoidCallback? onStopPlayback;
+
+  void setFavorite(bool fav) {
+    if (isFavorite != fav) {
+      isFavorite = fav;
+      _broadcastState();
+    }
+  }
+
   final Player player;
   final List<MediaItem> _playlistItems = [];
   String? _currentSongId;
@@ -19,9 +30,19 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void _initEmptyState() {
     playbackState.add(PlaybackState(
       controls: [
+        MediaControl.custom(
+          androidIcon: isFavorite ? 'drawable/ic_nami_heart_filled' : 'drawable/ic_nami_heart',
+          label: isFavorite ? 'Unfavorite' : 'Favorite',
+          name: 'toggle_favorite',
+        ),
         MediaControl.skipToPrevious,
         MediaControl.play,
         MediaControl.skipToNext,
+        const MediaControl(
+          androidIcon: 'drawable/ic_nami_stop',
+          label: 'Stop',
+          action: MediaAction.stop,
+        ),
       ],
       systemActions: const {
         MediaAction.seek,
@@ -29,8 +50,9 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         MediaAction.seekBackward,
         MediaAction.skipToNext,
         MediaAction.skipToPrevious,
+        MediaAction.stop,
       },
-      androidCompactActionIndices: const [0, 1, 2],
+      androidCompactActionIndices: const [1, 2, 3],
       processingState: AudioProcessingState.idle,
       playing: false,
     ));
@@ -40,9 +62,19 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final playing = player.state.playing;
     playbackState.add(playbackState.value.copyWith(
       controls: [
+        MediaControl.custom(
+          androidIcon: isFavorite ? 'drawable/ic_nami_heart_filled' : 'drawable/ic_nami_heart',
+          label: isFavorite ? 'Unfavorite' : 'Favorite',
+          name: 'toggle_favorite',
+        ),
         MediaControl.skipToPrevious,
         playing ? MediaControl.pause : MediaControl.play,
         MediaControl.skipToNext,
+        const MediaControl(
+          androidIcon: 'drawable/ic_nami_stop',
+          label: 'Stop',
+          action: MediaAction.stop,
+        ),
       ],
       systemActions: const {
         MediaAction.seek,
@@ -50,8 +82,9 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         MediaAction.seekBackward,
         MediaAction.skipToNext,
         MediaAction.skipToPrevious,
+        MediaAction.stop,
       },
-      androidCompactActionIndices: const [0, 1, 2],
+      androidCompactActionIndices: const [1, 2, 3],
       processingState: player.state.buffering
           ? AudioProcessingState.buffering
           : AudioProcessingState.ready,
@@ -251,4 +284,28 @@ class NamiAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         break;
     }
   }
+
+  @override
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == 'toggle_favorite') {
+      isFavorite = !isFavorite;
+      _broadcastState();
+      onToggleFavorite?.call();
+    } else if (name == 'stop_playback') {
+      await stop();
+    }
+  }
+
+  @override
+  Future<void> stop() async {
+    await player.pause();
+    await player.seek(Duration.zero);
+    playbackState.add(playbackState.value.copyWith(
+      processingState: AudioProcessingState.idle,
+      playing: false,
+    ));
+    onStopPlayback?.call();
+    await super.stop();
+  }
+
 }

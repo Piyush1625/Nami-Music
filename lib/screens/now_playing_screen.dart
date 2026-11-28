@@ -75,6 +75,33 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
     _repeatLocal = widget.repeatMode;
   }
 
+
+  void _jumpToCurrentSyncedLyric() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _viewMode != 1 || !_lyricsScrollCtrl.hasClients) return;
+      final lyrics = widget.lyrics;
+      if (lyrics.isEmpty) return;
+      final posMs = widget.audioPlayer.state.position.inMilliseconds + (_lyricsShiftSec * 1000).round();
+      int activeIdx = 0;
+      for (int i = 0; i < lyrics.length; i++) {
+        final tMs = lyrics[i].timestamp.inMilliseconds;
+        if (posMs >= tMs) {
+          activeIdx = i;
+        } else {
+          break;
+        }
+      }
+      _lastScrolledLyricIndex = activeIdx;
+      final maxExtent = _lyricsScrollCtrl.position.maxScrollExtent;
+      final targetOffset = ((activeIdx * 62.0) - 90.0).clamp(0.0, maxExtent);
+      _lyricsScrollCtrl.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   void _triggerSeekFeedback(int deltaSec) {
     HapticFeedback.lightImpact();
     _seekRelative(deltaSec);
@@ -383,7 +410,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                       _viewMode = _viewMode == 1 ? 0 : 1;
                                       _lastScrolledLyricIndex = -1;
                                     });
-                                    if (_viewMode == 1) widget.onRefreshLyrics();
+                                    if (_viewMode == 1) { widget.onRefreshLyrics(); _jumpToCurrentSyncedLyric(); }
                                   },
                                   child: Hero(
                                       tag: 'nami_np_art_${song?.path ?? ""}',
@@ -793,12 +820,12 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                   child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
-                                      _shuffleLocal
-                                          ? const NamiCustomIcon(NamiCustomIcons.shuffle, size: 21)
+                                      (_repeatLocal == 0)
+                                          ? NamiCustomIcon(NamiCustomIcons.shuffle, size: 21, opacity: _shuffleLocal ? 1.0 : 0.62)
                                           : Icon(
                                               _repeatLocal == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
                                               size: 21,
-                                              color: _repeatLocal > 0 ? accent : Colors.white70,
+                                              color: accent,
                                             ),
                                       if (_shuffleLocal && _repeatLocal > 0)
                                         Positioned(
@@ -836,7 +863,7 @@ class _NowPlayingModalState extends State<NowPlayingModal> {
                                     _viewMode = _viewMode == 1 ? 0 : 1;
                                     _lastScrolledLyricIndex = -1;
                                   });
-                                  if (_viewMode == 1) widget.onRefreshLyrics();
+                                  if (_viewMode == 1) { widget.onRefreshLyrics(); _jumpToCurrentSyncedLyric(); }
                                 },
                               ),
                             ),

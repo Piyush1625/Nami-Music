@@ -234,7 +234,7 @@ Future<void> showNamiYtDownloadPickerSheet(
                     color: accent.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(11),
                   ),
-                  child: Icon(Icons.headphones_rounded, color: accent, size: 21),
+                  child: NamiCustomIcon(NamiCustomIcons.headphones, size: 21),
                 ),
                 title: const Text(
                   'Audio Only (Opus / M4A)',
@@ -518,7 +518,7 @@ class _NamiYoutubeSmartMusicTabState extends State<NamiYoutubeSmartMusicTab>
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     color: const Color(0xFF161622),
-                    child: const Icon(Icons.music_note_rounded, color: Colors.white38),
+                    child: const NamiCustomIcon(NamiCustomIcons.tracks, opacity: 0.45),
                   ),
                 ),
               ),
@@ -822,7 +822,7 @@ class _NamiYoutubeSmartMusicTabState extends State<NamiYoutubeSmartMusicTab>
                                     color: accent,
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.play_arrow_rounded, color: Colors.black, size: 20),
+                                  child: const NamiCustomIcon(NamiCustomIcons.play, size: 20),
                                 ),
                               ),
                             ],
@@ -886,7 +886,7 @@ class _NamiYoutubeSmartMusicTabState extends State<NamiYoutubeSmartMusicTab>
                   style: const TextStyle(color: Colors.white54, fontSize: 11.4),
                 ),
                 trailing: IconButton(
-                  icon: const Icon(Icons.playlist_play_rounded, color: Colors.white60, size: 20),
+                  icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.65),
                   onPressed: () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(t),
                 ),
                 onTap: () => openNamiYoutubeWatchScreen(context, t, queue: _newReleases, startVideoMode: true),
@@ -1243,7 +1243,7 @@ class _NamiYoutubeUnifiedLibraryTabState extends State<NamiYoutubeUnifiedLibrary
                               ? Image.file(File(s.thumbPath!), fit: BoxFit.cover, cacheWidth: 144)
                               : Container(
                                   color: const Color(0xFF181824),
-                                  child: const Icon(Icons.music_note_rounded, color: Colors.white38, size: 20),
+                                  child: const NamiCustomIcon(NamiCustomIcons.tracks, size: 20, opacity: 0.45),
                                 ),
                         ),
                       ),
@@ -1390,7 +1390,7 @@ class _NamiYoutubeUnifiedLibraryTabState extends State<NamiYoutubeUnifiedLibrary
           padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
           child: Row(
             children: [
-              const Icon(Icons.playlist_play_rounded, color: Colors.white70, size: 22),
+              const NamiCustomIcon(NamiCustomIcons.playlist, size: 22, opacity: 0.78),
               const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1433,7 +1433,7 @@ class _NamiYoutubeUnifiedLibraryTabState extends State<NamiYoutubeUnifiedLibrary
                 color: accent.withValues(alpha: 0.16),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.playlist_play_rounded, color: accent, size: 24),
+              child: NamiCustomIcon(NamiCustomIcons.playlist, size: 24),
             ),
             title: Text(
               pl.name,
@@ -1443,7 +1443,7 @@ class _NamiYoutubeUnifiedLibraryTabState extends State<NamiYoutubeUnifiedLibrary
               '${pl.videoIds.length} videos',
               style: const TextStyle(color: Colors.white54, fontSize: 11.6),
             ),
-            trailing: const Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 22),
+            trailing: const NamiCustomIcon(NamiCustomIcons.play, size: 22, opacity: 0.78),
             onTap: () {
               final tracks = store.tracksForPlaylist(pl);
               if (tracks.isEmpty) {

@@ -592,7 +592,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
                         decoration: InputDecoration(
                           hintText: 'Search settings (DAC, EQ, backup, YouTube...)',
                           hintStyle: const TextStyle(color: Colors.white38, fontSize: 13.2),
-                          prefixIcon: Icon(Icons.search_rounded, color: accent, size: 20),
+                          prefixIcon: NamiCustomIcon(NamiCustomIcons.search, size: 20),
                           filled: true,
                           fillColor: const Color(0xFF14141C),
                           contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -809,7 +809,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
         actions: [
           IconButton(
             tooltip: 'Search Settings',
-            icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 22),
+            icon: const NamiCustomIcon(NamiCustomIcons.search, size: 22, opacity: 0.78),
             onPressed: _openSearchSheet,
           ),
           IconButton(
@@ -965,7 +965,7 @@ class _NamiUnifiedSettingsHubState extends State<NamiUnifiedSettingsHub> {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.search_rounded, color: Colors.white, size: 19),
+                    NamiCustomIcon(NamiCustomIcons.search, size: 19),
                     SizedBox(width: 8),
                     Text(
                       'Search',
@@ -1529,7 +1529,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                           shape: BoxShape.circle,
                           border: Border.all(color: accent.withValues(alpha: 0.45)),
                         ),
-                        child: Icon(Icons.person_rounded, color: accent, size: 22),
+                        child: NamiCustomIcon(NamiCustomIcons.artist, size: 22),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
@@ -1588,7 +1588,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   ),
                 ],
               ),
-              child: Icon(Icons.graphic_eq_rounded, color: accent, size: 44),
+              child: NamiCustomIcon(NamiCustomIcons.equalizer, size: 44),
             ),
           ],
         ),
@@ -1931,7 +1931,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.music_note_outlined, color: Colors.white60, size: 16),
+                        const NamiCustomIcon(NamiCustomIcons.tracks, size: 16, opacity: 0.65),
                         const SizedBox(width: 6),
                         Text(
                           'Tracks: ${songs.length}',
@@ -2577,7 +2577,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
         actions: [
           IconButton(
             tooltip: 'Search Settings',
-            icon: const Icon(Icons.search_rounded, color: Colors.white70, size: 22),
+            icon: const NamiCustomIcon(NamiCustomIcons.search, size: 22, opacity: 0.78),
             onPressed: widget.onOpenSearch,
           ),
           if (!isAbout)
@@ -2676,7 +2676,7 @@ class _NamiSettingsSubPageState extends State<_NamiSettingsSubPage> {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.search_rounded, color: Colors.white, size: 19),
+                      NamiCustomIcon(NamiCustomIcons.search, size: 19),
                       SizedBox(width: 8),
                       Text(
                         'Search',

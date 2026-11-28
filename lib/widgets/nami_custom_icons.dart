@@ -1,5 +1,4 @@
-// ignore_for_file: unused_element
-part of '../main.dart';
+import 'package:flutter/material.dart';
 
 class NamiCustomIcons {
   static const String home = 'assets/icons/nami/png/01_home.png';

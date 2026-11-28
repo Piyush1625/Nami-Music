@@ -131,7 +131,7 @@ extension _NamiMornyeTabExt on _NamiHomeShellState {
                       ),
                       IconButton(
                         tooltip: 'Templates & Rules',
-                        icon: const Icon(Icons.tune_rounded, size: 20, color: Colors.white70),
+                        icon: const NamiCustomIcon(NamiCustomIcons.equalizer, size: 20, opacity: 0.78),
                         onPressed: _showMornyeDownloadRulesDialog,
                       ),
                       if (tasks.isNotEmpty)

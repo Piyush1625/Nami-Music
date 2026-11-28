@@ -1061,7 +1061,7 @@ class _NamiStatsChartsScreenState extends State<NamiStatsChartsScreen> {
                       padding: const EdgeInsets.only(bottom: 9),
                       child: Row(
                         children: [
-                          const Icon(Icons.album_outlined, color: Colors.white54, size: 17),
+                          const NamiCustomIcon(NamiCustomIcons.albumDisc, size: 17, opacity: 0.60),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(

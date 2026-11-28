@@ -21,6 +21,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'widgets/nami_custom_icons.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter/services.dart';
 
@@ -56,7 +57,6 @@ part 'widgets/nami_v30_discover_tab.dart';
 part 'widgets/nami_v31_suite.dart';
 part 'widgets/nami_v33_youtube_watch.dart';
 part 'widgets/nami_v39_suite.dart';
-part 'widgets/nami_custom_icons.dart';
 part 'widgets/nami_v35_youtube_search.dart';
 part 'widgets/nami_v36_youtube_step3.dart';
 const Map<String, String> _httpHeaders = {
@@ -156,6 +156,8 @@ Future<void> main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.piyush.nami.channel.audio',
       androidNotificationChannelName: 'Nami Playback',
+      androidNotificationIcon: 'drawable/ic_stat_nami',
+      notificationColor: Color(0xFF07070B),
       androidNotificationOngoing: false,
       androidStopForegroundOnPause: false,
     ),
@@ -257,6 +259,17 @@ bool pitchBlack = true;
           brightness: Brightness.dark,
           surface: cardColor,
           primary: accentColor,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF14141E),
+          contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.14), width: 1),
+          ),
+          behavior: SnackBarBehavior.floating,
+          elevation: 8,
+          insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 84),
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: const Color(0xFF07070B),
@@ -521,6 +534,26 @@ class _NamiHomeShellState extends State<NamiHomeShell> {
   @override
   void initState() {
     super.initState();
+
+    if (audioHandler is NamiAudioHandler) {
+      final nh = audioHandler as NamiAudioHandler;
+      nh.onToggleFavorite = () {
+        final cur = _currentSong;
+        if (cur != null && mounted) {
+          setState(() {
+            cur.isFavorite = !cur.isFavorite;
+            nh.setFavorite(cur.isFavorite);
+          });
+          _saveStateCache();
+        }
+      };
+      nh.onStopPlayback = () {
+        if (mounted) {
+          setState(() {});
+        }
+      };
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _initV27AudiophileBridge();
     });
@@ -1919,7 +1952,7 @@ const SizedBox(height: 10),
                       ),
                       IconButton(
                         tooltip: 'Shift Timestamps -0.25s (Earlier)',
-                        icon: const Icon(Icons.fast_rewind_rounded, size: 19, color: Colors.white70),
+                        icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 19, flipHorizontal: true, opacity: 0.78),
                         onPressed: () {
                           setSheetState(() {
                             lyricsEditCtrl.text = _shiftLrcTimestamps(lyricsEditCtrl.text, -0.25);
@@ -1928,7 +1961,7 @@ const SizedBox(height: 10),
                       ),
                       IconButton(
                         tooltip: 'Shift Timestamps +0.25s (Later)',
-                        icon: const Icon(Icons.fast_forward_rounded, size: 19, color: Colors.white70),
+                        icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 19, opacity: 0.78),
                         onPressed: () {
                           setSheetState(() {
                             lyricsEditCtrl.text = _shiftLrcTimestamps(lyricsEditCtrl.text, 0.25);
@@ -2013,8 +2046,7 @@ const SizedBox(height: 10),
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
                         children: [
-                          const Icon(Icons.subtitles_outlined,
-                              size: 20, color: Colors.white70),
+                          const NamiCustomIcon(NamiCustomIcons.lyrics, size: 20, opacity: 0.78),
                           const SizedBox(width: 12),
                           const Expanded(
                             child: Column(
@@ -2106,8 +2138,7 @@ const SizedBox(height: 10),
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.lyrics_outlined,
-                                size: 18, color: Colors.white70),
+                            const NamiCustomIcon(NamiCustomIcons.lyrics, size: 18, opacity: 0.78),
                             const SizedBox(width: 8),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2404,7 +2435,7 @@ const SizedBox(height: 10),
                                   filled: true,
                                   fillColor: const Color(0xFF151522),
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                                  suffixIcon: IconButton(icon: const Icon(Icons.search_rounded), onPressed: () => searchOnlineArt(setModalState)),
+                                  suffixIcon: IconButton(icon: const NamiCustomIcon(NamiCustomIcons.search), onPressed: () => searchOnlineArt(setModalState)),
                                 ),
                               ),
                               const SizedBox(height: 10),
@@ -2510,7 +2541,7 @@ const SizedBox(height: 10),
                           .primary
                           .withValues(alpha: 0.12),
                     ),
-                    icon: const Icon(Icons.lyrics_outlined, size: 16),
+                    icon: const NamiCustomIcon(NamiCustomIcons.lyrics, size: 16),
                     label: const Text('Lyrics Manager',
                         style: TextStyle(
                             fontSize: 11.5, fontWeight: FontWeight.bold)),
@@ -2772,7 +2803,7 @@ const SizedBox(height: 10),
               const Text('Add to Playlist', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               ..._customPlaylists.map((pl) => ListTile(
-                    leading: const Icon(Icons.queue_music_rounded),
+                    leading: const NamiCustomIcon(NamiCustomIcons.playlist),
                     title: Text(pl.name),
                     subtitle: Text('${pl.tracks.length} ${pl.tracks.length == 1 ? 'Track' : 'Tracks'}'),
                     onTap: () {
@@ -2963,7 +2994,7 @@ const SizedBox(height: 10),
                           orElse: () => AudioTrack(title: name, artist: 'Local Audio', album: 'Storage', path: e.path),
                         );
                         return ListTile(
-                          leading: const Icon(Icons.music_note_rounded, color: Colors.white70),
+                          leading: const NamiCustomIcon(NamiCustomIcons.tracks, opacity: 0.78),
                           title: Text(match.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text(match.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
                           onTap: () {
@@ -3042,7 +3073,7 @@ const SizedBox(height: 10),
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), shape: BoxShape.circle),
-                                child: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 22),
+                                child: NamiCustomIcon(playing ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 22),
                               ),
                             );
                           },
@@ -3096,7 +3127,7 @@ const SizedBox(height: 10),
                                   Container(
                                     padding: const EdgeInsets.all(7),
                                     decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), shape: BoxShape.circle),
-                                    child: const Icon(Icons.queue_music_rounded, size: 16, color: Colors.white),
+                                    child: const NamiCustomIcon(NamiCustomIcons.playlist, size: 16),
                                   ),
                                   const SizedBox(width: 6),
                                   IconButton(
@@ -3116,7 +3147,7 @@ const SizedBox(height: 10),
                             decoration: InputDecoration(
                               hintText: 'Filter queue tracks or artists...',
                               hintStyle: const TextStyle(fontSize: 12, color: Colors.white38),
-                              prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Colors.white54),
+                              prefixIcon: const NamiCustomIcon(NamiCustomIcons.search, size: 18, opacity: 0.60),
                               isDense: true,
                               filled: true,
                               fillColor: const Color(0xFF14141E),
@@ -3246,7 +3277,7 @@ Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                 ),
-                                icon: const Icon(Icons.shuffle_rounded, size: 18),
+                                icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 18),
                                 label: const Text('Shuffle', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 onPressed: () {
                                   if (_playNextQueue.isNotEmpty) {
@@ -5330,7 +5361,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                               : CircleAvatar(
                                   radius: 30,
                                   backgroundColor: accent.withValues(alpha: 0.18),
-                                  child: Icon(Icons.headphones_rounded, color: accent, size: 28),
+                                  child: NamiCustomIcon(NamiCustomIcons.headphones, size: 28),
                                 ),
                           Container(
                             padding: const EdgeInsets.all(4),
@@ -5654,7 +5685,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                                         shape: BoxShape.circle,
                                         boxShadow: [BoxShadow(color: accent.withValues(alpha: 0.45), blurRadius: 12)],
                                       ),
-                                      child: Icon(activeHere ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 26),
+                                      child: NamiCustomIcon(activeHere ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 26),
                                     ),
                                   ],
                                 ),
@@ -5846,7 +5877,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                      icon: const NamiCustomIcon(NamiCustomIcons.play, size: 18),
                       label: const Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       onPressed: () => _playSong(spotlightTracks.first),
                     ),
@@ -5941,7 +5972,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                   children: [
                     (_userPhotoPath != null && File(_userPhotoPath!).existsSync())
                         ? CircleAvatar(radius: 26, backgroundImage: FileImage(File(_userPhotoPath!)))
-                        : CircleAvatar(radius: 26, backgroundColor: accent.withValues(alpha: 0.20), child: Icon(Icons.headphones_rounded, color: accent, size: 25)),
+                        : CircleAvatar(radius: 26, backgroundColor: accent.withValues(alpha: 0.20), child: NamiCustomIcon(NamiCustomIcons.headphones, size: 25)),
                     Positioned(
                       right: 0,
                       bottom: 0,
@@ -6210,7 +6241,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         return CircleAvatar(
           radius: radius,
           backgroundColor: const Color(0xFF161622),
-          child: Icon(Icons.person_rounded, size: radius * 0.9, color: Colors.white38),
+          child: NamiCustomIcon(NamiCustomIcons.artist, opacity: 0.45),
         );
       },
     );
@@ -6367,13 +6398,13 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
           child: Row(children: [
-            IconButton(icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: _shufflePlay),
-            IconButton(icon: const Icon(Icons.play_arrow_rounded, size: 22), onPressed: () { if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first); }),
+            IconButton(icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 20), onPressed: _shufflePlay),
+            IconButton(icon: const NamiCustomIcon(NamiCustomIcons.play, size: 22), onPressed: () { if (_filteredSongs.isNotEmpty) _playSong(_filteredSongs.first); }),
             Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: const Color(0xFF14141E), borderRadius: BorderRadius.circular(16)), child: Text(_filteredSongs.length == _songs.length ? '${_songs.length} ${_songs.length == 1 ? 'Track' : 'Tracks'}' : '${_filteredSongs.length} / ${_songs.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
             const Spacer(),
             TextButton.icon(
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: Colors.white70),
-              icon: const Icon(Icons.album_rounded, size: 17),
+              icon: const NamiCustomIcon(NamiCustomIcons.albumDisc, size: 17),
               label: const Text('Albums', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
               onPressed: _showAlbumsBrowserScreen,
             ),
@@ -6499,7 +6530,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    const Icon(Icons.shuffle_rounded, color: Colors.black, size: 24),
+                    const NamiCustomIcon(NamiCustomIcons.shuffle, size: 24),
                     Positioned(
                       right: 6,
                       bottom: 6,
@@ -6627,7 +6658,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                           onChanged: (v) => setAlbState(() => filterQuery = v),
                           decoration: InputDecoration(
                             hintText: 'Filter albums or artists...',
-                            prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                            prefixIcon: const NamiCustomIcon(NamiCustomIcons.search, size: 20),
                             filled: true,
                             fillColor: const Color(0xFF14141E),
                             contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -6760,7 +6791,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
               Text('Add ${batch.length} ${batch.length == 1 ? 'Track' : 'Tracks'} to Playlist', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               ..._customPlaylists.map((pl) => ListTile(
-                    leading: const Icon(Icons.queue_music_rounded),
+                    leading: const NamiCustomIcon(NamiCustomIcons.playlist),
                     title: Text(pl.name),
                     subtitle: Text('${pl.tracks.length} ${pl.tracks.length == 1 ? 'Track' : 'Tracks'}'),
                     onTap: () {
@@ -6797,7 +6828,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           TextButton.icon(
-            icon: Icon(Icons.playlist_play_rounded, color: accent, size: 20),
+            icon: NamiCustomIcon(NamiCustomIcons.playlist, size: 20),
             label: const Text('Play Next', style: TextStyle(fontSize: 11.5, color: Colors.white)),
             onPressed: () {
               setState(() => _playNextQueue.addAll(batch));
@@ -6806,7 +6837,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
             },
           ),
           TextButton.icon(
-            icon: Icon(Icons.playlist_add_rounded, color: accent, size: 20),
+            icon: NamiCustomIcon(NamiCustomIcons.playlist, size: 20),
             label: const Text('Playlist', style: TextStyle(fontSize: 11.5, color: Colors.white)),
             onPressed: () => _showBatchAddToPlaylistDialog(batch),
           ),
@@ -6875,7 +6906,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
           child: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.playlist_play_rounded, color: Colors.white, size: 22),
+              NamiCustomIcon(NamiCustomIcons.playlist, size: 22),
               SizedBox(width: 6),
               Text('Play Next', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
             ],
@@ -6885,7 +6916,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: 20),
           decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(12)),
-          child: const Icon(Icons.playlist_add_rounded, color: Colors.white, size: 22),
+          child: const NamiCustomIcon(NamiCustomIcons.playlist, size: 22),
         ),
         confirmDismiss: (direction) async {
           final act = direction == DismissDirection.startToEnd
@@ -7084,7 +7115,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: accent.withValues(alpha: 0.35)),
                     ),
-                    child: Icon(Icons.graphic_eq_rounded, size: 24, color: accent),
+                    child: NamiCustomIcon(NamiCustomIcons.equalizer, size: 24),
                   ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -7127,7 +7158,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                       children: [
                         IconButton(
                           visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.skip_previous_rounded, size: 23, color: Colors.white70),
+                          icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 23, flipHorizontal: true, opacity: 0.78),
                           onPressed: _playPrevTrack,
                         ),
                         GestureDetector(
@@ -7163,7 +7194,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
                         ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.skip_next_rounded, size: 23, color: Colors.white70),
+                          icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 23, opacity: 0.78),
                           onPressed: _playNextTrack,
                         ),
                 ],
@@ -7234,7 +7265,7 @@ Future<String?> _resolveFullTrackUrlFromExtensions(MornyeCatalogItem item) async
       width: size,
       height: size,
       decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(radius)),
-      child: Icon(Icons.album_rounded, size: size * 0.5, color: Colors.white38),
+      child: NamiCustomIcon(NamiCustomIcons.albumDisc, opacity: 0.45),
     );
   }
 
@@ -7309,7 +7340,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
                                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                                     ),
-                                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                                    icon: const NamiCustomIcon(NamiCustomIcons.play, size: 18),
                                     label: const Text('Play', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                     onPressed: () => _playSong(albumTracks.first),
                                   ),
@@ -7321,7 +7352,7 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                                     ),
-                                    icon: const Icon(Icons.shuffle_rounded, size: 16),
+                                    icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 16),
                                     label: const Text('Shuffle', style: TextStyle(fontSize: 12)),
                                     onPressed: () {
                                       final sh = List<AudioTrack>.from(albumTracks)..shuffle();
@@ -7389,9 +7420,9 @@ void _showAlbumDetailScreen(String albumName, List<AudioTrack> albumTracks) {
                   Text('Total duration • $durText', style: const TextStyle(fontSize: 12, color: Colors.white60)),
                 ])),
                 if (tracks.isNotEmpty) ...[
-                  IconButton.filled(style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black), icon: const Icon(Icons.play_arrow_rounded), onPressed: () => _playSong(tracks.first)),
+                  IconButton.filled(style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black), icon: const NamiCustomIcon(NamiCustomIcons.play), onPressed: () => _playSong(tracks.first)),
                   const SizedBox(width: 6),
-                  IconButton.outlined(style: IconButton.styleFrom(side: const BorderSide(color: Colors.white24)), icon: const Icon(Icons.shuffle_rounded, size: 20), onPressed: () { final sh = List<AudioTrack>.from(tracks)..shuffle(); _playSong(sh.first); }),
+                  IconButton.outlined(style: IconButton.styleFrom(side: const BorderSide(color: Colors.white24)), icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 20), onPressed: () { final sh = List<AudioTrack>.from(tracks)..shuffle(); _playSong(sh.first); }),
                 ],
               ]),
             );
@@ -7613,7 +7644,7 @@ void _showCreatePlaylistDialog() {
                   ),
                   IconButton(
                     tooltip: 'Add Tracks',
-                    icon: const Icon(Icons.playlist_add_rounded),
+                    icon: const NamiCustomIcon(NamiCustomIcons.playlist),
                     onPressed: () {
                       showModalBottomSheet(
     sheetAnimationStyle: namiSmoothSheetStyle,
@@ -7703,13 +7734,13 @@ void _showCreatePlaylistDialog() {
                             if (playlist.tracks.isNotEmpty) ...[
                               IconButton.filled(
                                 style: IconButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.white),
-                                icon: const Icon(Icons.play_arrow_rounded),
+                                icon: const NamiCustomIcon(NamiCustomIcons.play),
                                 onPressed: () => _playSong(playlist.tracks.first),
                               ),
                               const SizedBox(width: 6),
                               IconButton.outlined(
                                 style: IconButton.styleFrom(side: const BorderSide(color: Colors.white24)),
-                                icon: const Icon(Icons.shuffle_rounded, size: 20),
+                                icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 20),
                                 onPressed: () {
                                   final sh = List<AudioTrack>.from(playlist.tracks)..shuffle();
                                   _playSong(sh.first);
@@ -7726,7 +7757,7 @@ void _showCreatePlaylistDialog() {
                           style: const TextStyle(fontSize: 13),
                           decoration: InputDecoration(
                             hintText: 'Filter songs in ${playlist.name}...',
-                            prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                            prefixIcon: const NamiCustomIcon(NamiCustomIcons.search, size: 18),
                             isDense: true,
                             filled: true,
                             fillColor: const Color(0xFF12121B),
@@ -8219,7 +8250,7 @@ void _showCreatePlaylistDialog() {
               fillColor: const Color(0xFF14141F),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
               suffixIcon: IconButton(
-                icon: const Icon(Icons.search_rounded),
+                icon: const NamiCustomIcon(NamiCustomIcons.search),
                 onPressed: () => _searchMornyeCatalog(_mornyeSearchController.text),
               ),
             ),
@@ -8364,7 +8395,7 @@ void _showCreatePlaylistDialog() {
                                 IconButton(
                                   visualDensity: VisualDensity.compact,
                                   tooltip: 'Queue Stream Directly',
-                                  icon: const Icon(Icons.playlist_add_rounded, size: 20, color: Colors.white70),
+                                  icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.78),
                                   onPressed: () => _queueMornyeStreamTrack(item),
                                 ),
                                 if (item.previewUrl != null && item.previewUrl!.isNotEmpty)
@@ -8521,7 +8552,7 @@ void _showCreatePlaylistDialog() {
                           ),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.graphic_eq_rounded, size: 17, color: Colors.white),
+                        child: const NamiCustomIcon(NamiCustomIcons.equalizer, size: 17),
                       ),
                       const SizedBox(width: 10),
                       Text(tabTitles[_selectedIndex], style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.7)),
@@ -8628,7 +8659,7 @@ void _showCreatePlaylistDialog() {
             ),
             NavigationDestination(
                       icon: Icon(Icons.ondemand_video_rounded, color: Colors.white60, size: 25),
-                      selectedIcon: Icon(Icons.play_circle_filled_rounded, color: Colors.white, size: 25),
+                      selectedIcon: NamiCustomIcon(NamiCustomIcons.play, size: 25),
                       label: 'YouTube',
                     ),
           ],
@@ -9601,7 +9632,7 @@ List<String> _getSmartMornyeQuickSearches() {
                               padding: const EdgeInsets.symmetric(vertical: 4),
                               child: Row(
                                 children: [
-                                  Icon(Icons.play_arrow_rounded, size: 16, color: accent),
+                                  NamiCustomIcon(NamiCustomIcons.play, size: 16),
                                   const SizedBox(width: 6),
                                   Expanded(child: Text(playedTrackTitles[tEntry.key] ?? 'Track', style: const TextStyle(fontSize: 12, color: Colors.white), overflow: TextOverflow.ellipsis)),
                                   Text('${tEntry.value}x', style: const TextStyle(fontSize: 11, color: Colors.white60, fontWeight: FontWeight.bold)),
@@ -10328,7 +10359,7 @@ void _showListenBrainzSettingsDialog() {
           radius: 22,
           backgroundColor: Colors.white10,
           backgroundImage: hasImg ? FileImage(File(imgPath)) : null,
-          child: hasImg ? null : const Icon(Icons.person_rounded, color: Colors.white70),
+          child: hasImg ? null : const NamiCustomIcon(NamiCustomIcons.artist, opacity: 0.78),
         ),
         actions: [
           NamiFloatingActionItem(
@@ -10409,7 +10440,7 @@ void _showListenBrainzSettingsDialog() {
                 ),
                 const Divider(color: Colors.white10),
                 ListTile(
-                  leading: const Icon(Icons.playlist_play_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.playlist),
                   title: const Text('Play Next'),
                   onTap: () {
                     setState(() => _playNextQueue.insert(0, track));
@@ -10418,7 +10449,7 @@ void _showListenBrainzSettingsDialog() {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.queue_music_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.playlist),
                   title: const Text('Add to Queue'),
                   onTap: () {
                     setState(() => _playNextQueue.add(track));
@@ -10427,7 +10458,7 @@ void _showListenBrainzSettingsDialog() {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.person_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.artist),
                   title: const Text('Go to Artist'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -10439,7 +10470,7 @@ void _showListenBrainzSettingsDialog() {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.album_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.albumDisc),
                   title: const Text('Go to Album'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -10448,13 +10479,13 @@ void _showListenBrainzSettingsDialog() {
                 ),
               ] else if (albumName != null && albumTracks != null) ...[
                 ListTile(
-                  leading: const Icon(Icons.album_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.albumDisc),
                   title: Text(albumName, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('${albumTracks.length} ${albumTracks.length == 1 ? 'Track' : 'Tracks'}'),
                 ),
                 const Divider(color: Colors.white10),
                 ListTile(
-                  leading: const Icon(Icons.shuffle_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.shuffle),
                   title: const Text('Shuffle Album'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -10463,7 +10494,7 @@ void _showListenBrainzSettingsDialog() {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.playlist_play_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.playlist),
                   title: const Text('Play Album Next'),
                   onTap: () {
                     setState(() => _playNextQueue.insertAll(0, albumTracks));
@@ -10473,13 +10504,13 @@ void _showListenBrainzSettingsDialog() {
                 ),
               ] else if (artistName != null && artistTracks != null) ...[
                 ListTile(
-                  leading: const Icon(Icons.person_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.artist),
                   title: Text(artistName, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text('${artistTracks.length} ${artistTracks.length == 1 ? 'Track' : 'Tracks'}'),
                 ),
                 const Divider(color: Colors.white10),
                 ListTile(
-                  leading: const Icon(Icons.shuffle_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.shuffle),
                   title: const Text('Shuffle Artist'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -10488,7 +10519,7 @@ void _showListenBrainzSettingsDialog() {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.queue_music_rounded),
+                  leading: const NamiCustomIcon(NamiCustomIcons.playlist),
                   title: const Text('Add All to Queue'),
                   onTap: () {
                     setState(() => _playNextQueue.addAll(artistTracks));
@@ -10591,7 +10622,7 @@ void _showLiveOutputProfileSheet() {
                           },
                         ),
                       TextButton.icon(
-                        icon: const Icon(Icons.tune_rounded, size: 17),
+                        icon: const NamiCustomIcon(NamiCustomIcons.equalizer, size: 17),
                         label: const Text('Open 10-Band EQ'),
                         onPressed: () {
                           Navigator.pop(ctx);
@@ -10738,7 +10769,7 @@ Widget _buildPlaylistCollageArt(CustomPlaylist playlist, double size, double rad
       width: size,
       height: size,
       decoration: BoxDecoration(color: accent.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(radius)),
-      child: Icon(Icons.queue_music_rounded, color: accent, size: size * 0.5),
+      child: NamiCustomIcon(NamiCustomIcons.playlist),
     );
   }
 
@@ -10929,7 +10960,7 @@ Widget _buildPlaylistCollageArt(CustomPlaylist playlist, double size, double rad
                               children: [
                                 IconButton(
                                   tooltip: 'Queue Stream',
-                                  icon: const Icon(Icons.playlist_add_rounded, size: 20, color: Colors.white70),
+                                  icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.78),
                                   onPressed: () => _queueMornyeStreamTrack(t),
                                 ),
                                 IconButton(
@@ -11085,7 +11116,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                     decoration: InputDecoration(
                       hintText: 'Search in $scopeTitle (${scopeTracks.length} songs)...',
                       hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                      prefixIcon: Icon(Icons.search_rounded, color: accent, size: 20),
+                      prefixIcon: NamiCustomIcon(NamiCustomIcons.search, size: 20),
                       isDense: true,
                       filled: true,
                       fillColor: const Color(0xFF161622),
@@ -11159,7 +11190,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                   ),
                 ],
               ),
-              child: const Icon(Icons.search_rounded, color: Colors.white, size: 23),
+              child: const NamiCustomIcon(NamiCustomIcons.search, size: 23),
             ),
           ),
         ),
@@ -11211,7 +11242,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                         border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.50), blurRadius: 14, offset: const Offset(0, 4))],
                       ),
-                      child: Icon(Icons.home_rounded, color: accent, size: 24),
+                      child: NamiCustomIcon(NamiCustomIcons.home, size: 24),
                     ),
                   ),
                 ),
@@ -11266,7 +11297,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                                           width: 40,
                                           height: 40,
                                           decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
-                                          child: Icon(Icons.music_note_rounded, color: accent, size: 20),
+                                          child: NamiCustomIcon(NamiCustomIcons.tracks, size: 20),
                                         ),
                                       const SizedBox(width: 11),
                                       Expanded(
@@ -11303,11 +11334,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                                       IconButton(
                                         padding: EdgeInsets.zero,
                                         constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                                        icon: Icon(
-                                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                          color: Colors.white,
-                                          size: 27,
-                                        ),
+                                        icon: NamiCustomIcon(isPlaying ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 27),
                                         onPressed: () {
                                           HapticFeedback.selectionClick();
                                           if (song == null && scopeTracks.isNotEmpty) {
@@ -11371,7 +11398,7 @@ Future<void> _exportUnifiedNamiBackup() async {
                         border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.50), blurRadius: 14, offset: const Offset(0, 4))],
                       ),
-                      child: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
+                      child: const NamiCustomIcon(NamiCustomIcons.search, size: 24),
                     ),
                   ),
                 ),

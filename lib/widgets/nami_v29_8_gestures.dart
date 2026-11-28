@@ -539,11 +539,7 @@ class _NamiSwipeableTrackRowState extends State<NamiSwipeableTrackRow>
                                     ),
                                   ),
                                   const SizedBox(width: 7),
-                                  Icon(
-                                    Icons.playlist_play_rounded,
-                                    color: _crossedThreshold ? accent : Colors.white70,
-                                    size: 21,
-                                  ),
+                                  NamiCustomIcon(NamiCustomIcons.playlist, size: 21, opacity: 0.78),
                                 ]
                               : [
                                   Icon(

@@ -778,7 +778,7 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                                   return Row(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
-                                                      const Icon(Icons.skip_previous_rounded, color: Colors.white70, size: 21),
+                                                      const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 21, flipHorizontal: true, opacity: 0.78),
                                                       const SizedBox(width: 6),
                                                       Container(
                                                         width: 36,
@@ -788,14 +788,10 @@ class _NamiExpandablePlayerHostState extends State<NamiExpandablePlayerHost>
                                                           shape: BoxShape.circle,
                                                           border: Border.all(color: Colors.white24, width: 0.9),
                                                         ),
-                                                        child: Icon(
-                                                          playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                                          color: Colors.white,
-                                                          size: 20,
-                                                        ),
+                                                        child: NamiCustomIcon(playing ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 20),
                                                       ),
                                                       const SizedBox(width: 6),
-                                                      const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 21),
+                                                      const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 21, opacity: 0.78),
                                                     ],
                                                   );
                                                 },
@@ -1165,11 +1161,7 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
                                       shape: BoxShape.circle,
                                       border: Border.all(color: Colors.white30),
                                     ),
-                                    child: Icon(
-                                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                      color: Colors.white,
-                                      size: 22,
-                                    ),
+                                    child: NamiCustomIcon(playing ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 22),
                                   ),
                                 ),
                               ),
@@ -1186,7 +1178,7 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
                                     color: Colors.black.withValues(alpha: 0.55),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 18),
+                                  child: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 18),
                                 ),
                               ),
                             ],
@@ -1406,18 +1398,14 @@ class _NamiYoutubeMiniPlayerBarState extends State<NamiYoutubeMiniPlayerBar> {
                                     color: Colors.white.withValues(alpha: 0.13),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(
-                                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
+                                  child: NamiCustomIcon(playing ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 22),
                                 ),
                               ),
                             ),
                             IconButton(
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(minWidth: 30, minHeight: 36),
-                              icon: const Icon(Icons.skip_next_rounded, color: Colors.white70, size: 21),
+                              icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 21, opacity: 0.78),
                               onPressed: () {
                                 NamiUxPrefs.hapticLight();
                                 NamiYoutubePlaybackBridge.playNextInRadioQueue();

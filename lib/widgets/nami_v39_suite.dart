@@ -535,7 +535,7 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
               IconButton(
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Shuffle All',
-                icon: const Icon(Icons.shuffle_rounded, size: 19, color: Colors.white70),
+                icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 19, opacity: 0.78),
                 onPressed: widget.onShuffleAll,
               ),
               const Spacer(),
@@ -620,11 +620,11 @@ class _NamiV39ArtistsHubState extends State<NamiV39ArtistsHub> {
                     crossAxisCount: cols,
                     mainAxisSpacing: cols >= 5 ? 10 : 14,
                     crossAxisSpacing: cols >= 5 ? 8 : 12,
-                    childAspectRatio: cols >= 5 ? 0.74 : (cols == 4 ? 0.76 : 0.84),
+                    childAspectRatio: cols >= 5 ? 0.74 : (cols == 4 ? 0.76 : (cols == 3 ? 0.80 : 0.84)),
                   ),
                   itemBuilder: (ctx, i) {
                     final e = entries[i];
-                    final avatarSize = cols == 2 ? 124.0 : (cols == 4 ? 72.0 : (cols == 5 ? 58.0 : 46.0));
+                    final avatarSize = cols == 2 ? 124.0 : (cols == 3 ? 92.0 : (cols == 4 ? 72.0 : (cols == 5 ? 58.0 : 46.0)));
                     return GestureDetector(
                       onTap: () => widget.onOpenArtist(e.key, e.value),
                       child: Column(

@@ -353,7 +353,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
                         color: const Color(0xFF15151E),
-                        child: const Icon(Icons.music_note_rounded, color: Colors.white30),
+                        child: const NamiCustomIcon(NamiCustomIcons.tracks),
                       ),
                     ),
                   ),
@@ -674,7 +674,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
                                   color: const Color(0xFF161620),
-                                  child: const Icon(Icons.music_note_rounded, color: Colors.white38, size: 20),
+                                  child: const NamiCustomIcon(NamiCustomIcons.tracks, size: 20, opacity: 0.45),
                                 ),
                               ),
                             ),
@@ -762,7 +762,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => Container(
                           color: const Color(0xFF161620),
-                          child: const Icon(Icons.album_rounded, color: Colors.white30, size: 32),
+                          child: const NamiCustomIcon(NamiCustomIcons.albumDisc, size: 32),
                         ),
                       ),
                     ),
@@ -877,7 +877,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                                   ch.avatarUrl.startsWith('http') ? NetworkImage(ch.avatarUrl) : null,
                               child: ch.avatarUrl.startsWith('http')
                                   ? null
-                                  : const Icon(Icons.person_rounded, size: 15, color: Colors.white60),
+                                  : const NamiCustomIcon(NamiCustomIcons.artist, size: 15, opacity: 0.65),
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -900,7 +900,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.people_outline_rounded, color: Colors.white30, size: 48),
+                            const NamiCustomIcon(NamiCustomIcons.artist, size: 48),
                             const SizedBox(height: 12),
                             const Text(
                               'No local channels subscribed yet',
@@ -1127,7 +1127,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
               padding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
               child: Row(
                 children: [
-                  const Icon(Icons.queue_music_rounded, color: Colors.white60, size: 21),
+                  const NamiCustomIcon(NamiCustomIcons.playlist, size: 21, opacity: 0.65),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -1180,7 +1180,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                     color: const Color(0xFF14141C),
                     borderRadius: BorderRadius.circular(11),
                   ),
-                  child: Icon(Icons.playlist_play_rounded, color: accent, size: 24),
+                  child: NamiCustomIcon(NamiCustomIcons.playlist, size: 24),
                 ),
                 title: Text(
                   pl.name,
@@ -1190,7 +1190,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                   '${pl.videoIds.length} tracks',
                   style: const TextStyle(color: Colors.white54, fontSize: 11.5),
                 ),
-                trailing: const Icon(Icons.play_arrow_rounded, color: Colors.white70),
+                trailing: const NamiCustomIcon(NamiCustomIcons.play, opacity: 0.78),
                 onTap: () {
                   final list = store.tracksForPlaylist(pl);
                   if (list.isNotEmpty) {
@@ -1377,7 +1377,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                                             fit: BoxFit.cover,
                                             errorBuilder: (_, __, ___) => Container(
                                               color: const Color(0xFF181822),
-                                              child: const Icon(Icons.music_note_rounded, color: Colors.white38, size: 18),
+                                              child: const NamiCustomIcon(NamiCustomIcons.tracks, size: 18, opacity: 0.45),
                                             ),
                                           ),
                                         ),
@@ -1462,7 +1462,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Container(
                                       color: const Color(0xFF161620),
-                                      child: const Icon(Icons.music_note_rounded, color: Colors.white38),
+                                      child: const NamiCustomIcon(NamiCustomIcons.tracks, opacity: 0.45),
                                     ),
                                   ),
                                 ),
@@ -1513,7 +1513,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
                               leading: shell != null
                                   ? shell._buildCoverArt(s, 46, 10)
-                                  : const Icon(Icons.music_note_rounded, color: Colors.white54),
+                                  : const NamiCustomIcon(NamiCustomIcons.tracks, opacity: 0.60),
                               title: Text(
                                 s.title,
                                 maxLines: 1,
@@ -1620,7 +1620,7 @@ class _NamiDiscoverHubTabState extends State<NamiDiscoverHubTab> {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.search_rounded, color: Colors.white, size: 22),
+                child: const NamiCustomIcon(NamiCustomIcons.search, size: 22),
               ),
             ),
           ),
@@ -1689,7 +1689,7 @@ class _NamiYtWatchModalState extends State<_NamiYtWatchModal> {
         children: [
           for (final pl in pls)
             ListTile(
-              leading: const Icon(Icons.playlist_add_rounded, color: Colors.white70),
+              leading: const NamiCustomIcon(NamiCustomIcons.playlist, opacity: 0.78),
               title: Text(pl.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               onTap: () async {
                 await NamiYoutubeStore.instance.addTrackToPlaylist(pl.id, widget.track);
@@ -1802,7 +1802,7 @@ class _NamiYtWatchModalState extends State<_NamiYtWatchModal> {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white38, width: 1.4),
                         ),
-                        child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 34),
+                        child: const NamiCustomIcon(NamiCustomIcons.play, size: 34),
                       ),
                     ),
                   ),
@@ -1938,7 +1938,7 @@ class _NamiYtWatchModalState extends State<_NamiYtWatchModal> {
                                 : null,
                             child: (d?.channelAvatarUrl.startsWith('http') == true)
                                 ? null
-                                : const Icon(Icons.person_rounded, color: Colors.white60, size: 20),
+                                : const NamiCustomIcon(NamiCustomIcons.artist, size: 20, opacity: 0.65),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -2121,7 +2121,7 @@ class _NamiYtWatchModalState extends State<_NamiYtWatchModal> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.queue_music_rounded, color: accent, size: 20),
+                    NamiCustomIcon(NamiCustomIcons.playlist, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(

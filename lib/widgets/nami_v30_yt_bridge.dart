@@ -835,7 +835,7 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
               padding: const EdgeInsets.fromLTRB(18, 12, 14, 8),
               child: Row(
                 children: [
-                  Icon(Icons.play_circle_filled_rounded, color: accent, size: 22),
+                  NamiCustomIcon(NamiCustomIcons.play, size: 22),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Column(
@@ -873,7 +873,7 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
                 decoration: InputDecoration(
                   hintText: 'Search YouTube Music (e.g. Boom Shaka, 11K)...',
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                  prefixIcon: Icon(Icons.search_rounded, color: accent, size: 20),
+                  prefixIcon: NamiCustomIcon(NamiCustomIcons.search, size: 20),
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 20),
                     onPressed: () => _runSearch(_searchCtrl.text),
@@ -959,7 +959,7 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Container(
                                       color: const Color(0xFF161620),
-                                      child: const Icon(Icons.music_note_rounded, color: Colors.white38),
+                                      child: const NamiCustomIcon(NamiCustomIcons.tracks, opacity: 0.45),
                                     ),
                                   ),
                                 ),
@@ -989,7 +989,7 @@ class _NamiYtBetaEngineSheetState extends State<_NamiYtBetaEngineSheet> {
                                 children: [
                                   IconButton(
                                     tooltip: 'Play Next',
-                                    icon: const Icon(Icons.playlist_play_rounded, color: Colors.white60, size: 20),
+                                    icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.65),
                                     onPressed: () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(t),
                                   ),
                                   IconButton(

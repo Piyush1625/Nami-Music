@@ -558,6 +558,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
       sheetAnimationStyle: namiSmoothSheetStyle,
       builder: (sheetCtx) {
         final accent = Theme.of(sheetCtx).colorScheme.primary;
+        bool qualitySectionExpanded = false;
         return StatefulBuilder(
           builder: (ctx, setS) {
             final formats = NamiYtVideoBridge.activeVideoFormats.value.isNotEmpty
@@ -616,6 +617,60 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                       child: ListView(
                         shrinkWrap: true,
                         children: [
+                          Container(
+                            margin: const EdgeInsets.fromLTRB(4, 2, 4, 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF111119),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => setS(() => qualitySectionExpanded = !qualitySectionExpanded),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.high_quality_rounded, color: Colors.white70, size: 18),
+                                        const SizedBox(width: 8),
+                                        const Expanded(
+                                          child: Text(
+                                            'Quality & Data Saver',
+                                            style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w700),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: accent.withValues(alpha: 0.16),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            'Saver: ${NamiUxPrefs.ytDataSaver}',
+                                            style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w700),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        AnimatedRotation(
+                                          turns: qualitySectionExpanded ? 0.5 : 0.0,
+                                          duration: const Duration(milliseconds: 200),
+                                          child: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 20),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                AnimatedCrossFade(
+                                  firstChild: const SizedBox(width: double.infinity, height: 0),
+                                  secondChild: Padding(
+                                    padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+
                           // 1. Data Saver Mode Row (Off | Medium | High)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
@@ -754,7 +809,17 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               },
                             ),
                           ],
-                          const Divider(color: Colors.white10),
+                          const
+                                      ],
+                                    ),
+                                  ),
+                                  crossFadeState: qualitySectionExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                                  duration: const Duration(milliseconds: 220),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Divider(color: Colors.white10),
 
                           // 3. Playback Speed (0.75x .. 2.0x natively inside ExoPlayer!)
                           Padding(
@@ -998,7 +1063,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                     if (playlists.isNotEmpty) const Divider(color: Colors.white10),
                     for (final pl in playlists)
                       ListTile(
-                        leading: const Icon(Icons.playlist_play_rounded, color: Colors.white60),
+                        leading: const NamiCustomIcon(NamiCustomIcons.playlist, opacity: 0.65),
                         title: Text(
                           pl.name,
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.8),
@@ -1055,7 +1120,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
               ),
               const SizedBox(height: 12),
               ListTile(
-                leading: const Icon(Icons.playlist_play_rounded, color: Colors.white70),
+                leading: const NamiCustomIcon(NamiCustomIcons.playlist, opacity: 0.78),
                 title: const Text('Play Next / Add to Queue', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                 onTap: () {
                   Navigator.of(ctx).pop();
@@ -1360,7 +1425,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                             ),
                             IconButton(
                               tooltip: 'Quality & Settings',
-                              icon: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
+                              icon: const NamiCustomIcon(NamiCustomIcons.settings, size: 20),
                               onPressed: _openQualityMenu,
                             ),
                             if (!_isFullscreen)
@@ -1393,7 +1458,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 32),
+                            icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 32, flipHorizontal: true),
                             onPressed: () {
                               NamiUxPrefs.hapticLight();
                               NamiYoutubePlaybackBridge.playPrevInRadioQueue().then((ok) {
@@ -1434,19 +1499,13 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                                           color: Colors.white,
                                         ),
                                       )
-                                    : Icon(
-                                        _isPlaying
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        color: Colors.white,
-                                        size: 34,
-                                      ),
+                                    : NamiCustomIcon(_isPlaying ? NamiCustomIcons.pause : NamiCustomIcons.play, size: 34),
                               ),
                             ),
                           ),
                           const SizedBox(width: 18),
                           IconButton(
-                            icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 32),
+                            icon: const NamiCustomIcon(NamiCustomIcons.nextTrack, size: 32),
                             onPressed: () {
                               NamiUxPrefs.hapticLight();
                               NamiYoutubePlaybackBridge.playNextInRadioQueue().then((ok) {
@@ -1791,7 +1850,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                   backgroundImage:
                       channelAvatar.isNotEmpty ? NetworkImage(channelAvatar) : null,
                   child: channelAvatar.isEmpty
-                      ? const Icon(Icons.person_rounded, color: Colors.white54, size: 22)
+                      ? const NamiCustomIcon(NamiCustomIcons.artist, size: 22, opacity: 0.60)
                       : null,
                 ),
                 const SizedBox(width: 12),
@@ -1908,7 +1967,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         backgroundImage:
                             topAvatar.isNotEmpty ? NetworkImage(topAvatar) : null,
                         child: topAvatar.isEmpty
-                            ? const Icon(Icons.person_rounded, color: Colors.white54, size: 14)
+                            ? const NamiCustomIcon(NamiCustomIcons.artist, size: 14, opacity: 0.60)
                             : null,
                       ),
                       const SizedBox(width: 10),
@@ -2022,7 +2081,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) => Container(
                                 color: const Color(0xFF161622),
-                                child: const Icon(Icons.music_note_rounded, color: Colors.white38),
+                                child: const NamiCustomIcon(NamiCustomIcons.tracks, opacity: 0.45),
                               ),
                             ),
                           ),
@@ -2362,7 +2421,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                   const Spacer(),
                   IconButton(
                     tooltip: 'Shuffle Queue',
-                    icon: const Icon(Icons.shuffle_rounded, color: Colors.white70, size: 20),
+                    icon: const NamiCustomIcon(NamiCustomIcons.shuffle, size: 20, opacity: 0.78),
                     onPressed: () {
                       final copy = List<NamiYtTrack>.from(queue)..shuffle();
                       _namiSafeSetNotifier<List<NamiYtTrack>>(
@@ -2435,7 +2494,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                         style: const TextStyle(color: Colors.white54, fontSize: 11.4),
                       ),
                       trailing: isCurrent
-                          ? Icon(Icons.graphic_eq_rounded, color: accent, size: 20)
+                          ? NamiCustomIcon(NamiCustomIcons.equalizer, size: 20)
                           : IconButton(
                               icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 18),
                               onPressed: () {
@@ -2521,7 +2580,7 @@ class _NamiYoutubeWatchScreenState extends State<NamiYoutubeWatchScreen>
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.playlist_play_rounded, color: Colors.white70, size: 22),
+                    icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 22, opacity: 0.78),
                     onPressed: () => setState(() => _bodyMode = _bodyMode == 2 ? 0 : 2),
                   ),
                   IconButton(
@@ -2731,7 +2790,7 @@ class _NamiYoutubeChannelScreenState extends State<NamiYoutubeChannelScreen>
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.playlist_play_rounded, color: Colors.white54, size: 20),
+              icon: const NamiCustomIcon(NamiCustomIcons.playlist, size: 20, opacity: 0.60),
               tooltip: 'Play Next',
               onPressed: () => NamiYoutubePlaybackBridge.queueYoutubeTrackAfter(t),
             ),
@@ -2794,7 +2853,7 @@ class _NamiYoutubeChannelScreenState extends State<NamiYoutubeChannelScreen>
                   backgroundColor: const Color(0xFF181822),
                   backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
                   child: avatar.isEmpty
-                      ? const Icon(Icons.person_rounded, color: Colors.white54, size: 28)
+                      ? const NamiCustomIcon(NamiCustomIcons.artist, size: 28, opacity: 0.60)
                       : null,
                 ),
                 const SizedBox(width: 14),
